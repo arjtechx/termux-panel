@@ -749,12 +749,25 @@ async function fetchNginxSites() {
         : '<tr><td colspan="3" style="color:var(--text-muted)">Nenhum site configurado.</td></tr>';
 }
 
+function toggleNginxType() {
+    const type = document.getElementById('ngType').value;
+    if (type === 'proxy') {
+        document.getElementById('ngProxyGroup').classList.remove('hidden');
+        document.getElementById('ngPathGroup').classList.add('hidden');
+    } else {
+        document.getElementById('ngProxyGroup').classList.add('hidden');
+        document.getElementById('ngPathGroup').classList.remove('hidden');
+    }
+}
+
 async function createNginxSite(e) {
     e.preventDefault();
     await safeFetch(`${API_BASE}/nginx`, 'POST', {
         domain:     document.getElementById('ngDomain').value,
         listenPort: document.getElementById('ngListenPort').value,
+        type:       document.getElementById('ngType').value,
         port:       document.getElementById('ngPort').value,
+        path:       document.getElementById('ngPath').value,
     });
     fetchNginxSites();
 }

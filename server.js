@@ -490,11 +490,42 @@ app.get('/api/nginx', (req, res) => {
 });
 
 app.post('/api/nginx', async (req, res) => {
-    const { domain, listenPort, port } = req.body;
-    const listen = listenPort || 80;
+    const { domain, listenPort, type, port, path: sitePath } = req.body;
+    const listen = listenPort || 8080;
     const confName = `${domain}.conf`;
     const confPath = path.join(NGINX_CONF_DIR, confName);
-    const content = `server {
+    let content = '';
+
+    if (type === 'static') {
+        const docRoot = sitePath ? sitePath.replace(/\/$/, '') : '/data/data/com.termux/files/home';
+        // Procura o socket do PHP-FPM
+        const phpSock = fs.existsSync(`${PREFIX}/var/run/php-fpm.sock`) 
+                        ? `${PREFIX}/var/run/php-fpm.sock` 
+                        : `${PREFIX}/tmp/php-fpm.sock`;
+                        
+        content = `server {
+    listen ${listen};
+    server_name ${domain};
+    root ${docRoot};
+    index index.php index.html index.htm;
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+
+    location ~ \\.php$ {
+        fastcgi_pass unix:${phpSock};
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        include fastcgi_params;
+    }
+
+    location ~ /\\.(ht|git) {
+        deny all;
+    }
+}`;
+    } else {
+        content = `server {
     listen ${listen};
     server_name ${domain};
 
@@ -504,6 +535,7 @@ app.post('/api/nginx', async (req, res) => {
         proxy_set_header X-Real-IP $remote_addr;
     }
 }`;
+    }
 
     try {
         fs.writeFileSync(confPath, content);

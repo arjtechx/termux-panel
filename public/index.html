@@ -517,7 +517,7 @@
                 </div>
                 <div class="two-col">
                     <div class="card">
-                        <h3 class="card-title">Novo Proxy</h3>
+                        <h3 class="card-title">Novo Site / Proxy</h3>
                         <form onsubmit="createNginxSite(event)">
                             <div class="form-stack">
                                 <div>
@@ -526,17 +526,28 @@
                                 </div>
                                 <div style="display:flex; gap:10px;">
                                     <div style="flex:1;">
-                                        <label class="form-label">Porta Externa (Listen)</label>
-                                        <input type="number" id="ngListenPort" placeholder="ex: 8080" value="80" required>
+                                        <label class="form-label">Tipo</label>
+                                        <select id="ngType" onchange="toggleNginxType()" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-lighter); color:var(--text-color);">
+                                            <option value="proxy">Proxy Reverso</option>
+                                            <option value="static">Site em Pasta (HTML/PHP)</option>
+                                        </select>
                                     </div>
                                     <div style="flex:1;">
-                                        <label class="form-label">Porta Local (Alvo)</label>
-                                        <input type="number" id="ngPort" placeholder="ex: 3000" required>
+                                        <label class="form-label">Porta Externa (Listen)</label>
+                                        <input type="number" id="ngListenPort" placeholder="ex: 8080" value="8080" required>
                                     </div>
+                                </div>
+                                <div id="ngProxyGroup">
+                                    <label class="form-label">Porta Local (Alvo do Proxy)</label>
+                                    <input type="number" id="ngPort" placeholder="ex: 3000">
+                                </div>
+                                <div id="ngPathGroup" class="hidden">
+                                    <label class="form-label">Caminho da Pasta Absoluto</label>
+                                    <input type="text" id="ngPath" placeholder="ex: /data/data/com.termux/files/home/meusite">
                                 </div>
                             </div>
                             <button type="submit" class="btn btn-success btn-sm" style="margin-top:12px; width:100%;">
-                                <i data-lucide="plus"></i> Criar Proxy
+                                <i data-lucide="plus"></i> Criar Configuração
                             </button>
                         </form>
                     </div>
