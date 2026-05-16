@@ -878,7 +878,11 @@ function appendNoipLog(msg) {
 //  LOGS — eventos corretos do servidor
 // ============================================================
 function startLogWatch() {
-    const filePath = document.getElementById('logFilePath')?.value;
+    let filePath = document.getElementById('logFilePath')?.value;
+    // Se o usuário clicar com o input em branco, usa o placeholder como padrão
+    if (!filePath || filePath.trim() === '') {
+        filePath = document.getElementById('logFilePath')?.placeholder;
+    }
     if (!filePath) return;
     const d = document.getElementById('logs-display');
     if (d) d.textContent = `Monitorando: ${filePath}\n`;

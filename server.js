@@ -128,9 +128,22 @@ io.on('connection', (socket) => {
     let logTail = null;
     socket.on('log-start', (filePath) => {
         if (logTail) logTail.kill();
-        if (!fs.existsSync(filePath)) return socket.emit('log-data', `*** Arquivo não encontrado: ${filePath} ***\r\n`);
 
-        logTail = spawn('tail', ['-f', filePath]);
+        // Resolução inteligente de caminhos padrão do Linux para o Termux
+        let resolvedPath = filePath;
+        const termuxPrefix = process.env.PREFIX || '/data/data/com.termux/files/usr';
+        
+        if (filePath.startsWith('/var/log/')) {
+            resolvedPath = path.join(termuxPrefix, filePath);
+        } else if (filePath.startsWith('var/log/')) {
+            resolvedPath = path.join(termuxPrefix, '/' + filePath);
+        }
+
+        if (!fs.existsSync(resolvedPath)) {
+            return socket.emit('log-data', `*** Arquivo não encontrado: ${resolvedPath} ***\r\n`);
+        }
+
+        logTail = spawn('tail', ['-f', resolvedPath]);
         logTail.stdout.on('data', (data) => {
             socket.emit('log-data', data.toString());
         });
