@@ -10,6 +10,7 @@ const axios = require('axios');
 const { Client } = require('ssh2');
 const mysql = require('mysql2/promise');
 const net = require('net');
+const crypto = require('crypto');
 
 const app = express();
 const server = http.createServer(app);
@@ -763,6 +764,54 @@ app.get('/api/db/backups', (req, res) => {
     }
 });
 
+
+// --- phpMyAdmin SSO Logic ---
+const pmaTokens = new Map();
+
+app.post('/api/database/connect', (req, res) => {
+    const { database } = req.body;
+    try {
+        const config = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+        const token = crypto.randomUUID();
+        
+        pmaTokens.set(token, {
+            user: config.user,
+            password: config.password,
+            database: database || '',
+            expiresAt: Date.now() + 60000 // 60 seconds
+        });
+
+        // Cleanup expired tokens
+        for (const [k, v] of pmaTokens.entries()) {
+            if (Date.now() > v.expiresAt) pmaTokens.delete(k);
+        }
+
+        res.json({ success: true, token });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/database/verify-token', (req, res) => {
+    const { token } = req.query;
+    if (!token || !pmaTokens.has(token)) {
+        return res.status(401).json({ error: 'Token inválido ou expirado' });
+    }
+    
+    const data = pmaTokens.get(token);
+    if (Date.now() > data.expiresAt) {
+        pmaTokens.delete(token);
+        return res.status(401).json({ error: 'Token expirado' });
+    }
+    
+    pmaTokens.delete(token); // Single use
+    res.json({
+        success: true,
+        user: data.user,
+        password: data.password,
+        database: data.database
+    });
+});
 
 // --- File Manager Logic ---
 app.get('/api/files', async (req, res) => {

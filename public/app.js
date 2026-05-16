@@ -619,8 +619,9 @@ async function fetchDatabases() {
                 <td>🗄 <strong>${name}</strong> ${isSystem ? '<span style="font-size:0.7rem;color:var(--text-muted)">(sistema)</span>' : ''}</td>
                 <td>${size}</td>
                 <td>
-                    ${!isSystem ? `<button class="btn btn-sm btn-danger" onclick="deleteDb('${name}')">🗑 Drop</button>` : ''}
+                    <button class="btn btn-sm btn-primary" onclick="openPhpMyAdmin('${name}')" title="Acesso Automático">↗ phpMyAdmin</button>
                     <button class="btn btn-sm btn-secondary" onclick="document.getElementById('dbBackupName').value='${name}'; createDbBackup()" style="margin-left:4px">⬇ Backup</button>
+                    ${!isSystem ? `<button class="btn btn-sm btn-danger" onclick="deleteDb('${name}')" style="margin-left:4px">🗑 Drop</button>` : ''}
                 </td>
             </tr>
         `;
@@ -731,7 +732,21 @@ async function saveDbSetup() {
 
 
 // ============================================================
-//  NGINX
+//  PHPMYADMIN SSO
+// ============================================================
+async function openPhpMyAdmin(dbName = null) {
+    const data = await safeFetch(`${API_BASE}/database/connect`, 'POST', { database: dbName });
+    if (data && data.success && data.token) {
+        // Redireciona de forma segura enviando o token para o gateway PHP local
+        const pmaUrl = `${window.location.protocol}//${window.location.hostname}:8080/autologin.php?token=${data.token}`;
+        window.open(pmaUrl, '_blank');
+    } else {
+        alert("Falha ao gerar o token de acesso SSO.");
+    }
+}
+
+// ============================================================
+//  NGINX / PROXY
 // ============================================================
 async function fetchNginxSites() {
     const data = await safeFetch(`${API_BASE}/nginx`);
