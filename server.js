@@ -972,8 +972,103 @@ app.post('/api/noip/toggle', (req, res) => {
     res.json({ success: true, status: noipStatus });
 });
 
+// =============================================================
+// HEALTH CHECK — executa o script e transmite output em tempo real
+// =============================================================
+const HEALTH_SCRIPT = path.join(__dirname, 'scripts', 'health-check.sh');
+
+// SSE: Executa health-check e envia as linhas em tempo real
+app.get('/api/health-check/run', (req, res) => {
+    // Garante que o script é executável
+    try { require('fs').chmodSync(HEALTH_SCRIPT, '755'); } catch(e) {}
+
+    // Configura SSE (Server-Sent Events)
+    res.setHeader('Content-Type',  'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection',    'keep-alive');
+    res.flushHeaders();
+
+    const send = (data) => res.write(`data: ${JSON.stringify({ line: data })}\n\n`);
+
+    const proc = spawn('bash', [HEALTH_SCRIPT], {
+        env: { ...process.env, TERM: 'xterm' },
+    });
+
+    proc.stdout.on('data', chunk => {
+        chunk.toString().split('\n').forEach(line => {
+            if (line.trim()) send(line);
+        });
+    });
+
+    proc.stderr.on('data', chunk => {
+        chunk.toString().split('\n').forEach(line => {
+            if (line.trim()) send('[STDERR] ' + line);
+        });
+    });
+
+    proc.on('close', code => {
+        send(`__DONE__:${code}`);
+        res.end();
+    });
+
+    req.on('close', () => proc.kill());
+});
+
+// Status rápido dos serviços (sem script externo)
+app.get('/api/health-check/status', async (req, res) => {
+    const results = {};
+
+    const checkPort = (host, port) => new Promise(resolve => {
+        const sock = new net.Socket();
+        sock.setTimeout(1500);
+        sock.on('connect', () => { sock.destroy(); resolve(true); });
+        sock.on('timeout', () => { sock.destroy(); resolve(false); });
+        sock.on('error',   () => { sock.destroy(); resolve(false); });
+        sock.connect(port, host);
+    });
+
+    const checkProcess = (name) => new Promise(resolve => {
+        exec(`pgrep -x "${name}"`, (err, stdout) => resolve(!err && stdout.trim().length > 0));
+    });
+
+    const checkCmd = (cmd) => new Promise(resolve => {
+        exec(`which ${cmd} 2>/dev/null`, (err, stdout) => resolve(!err && stdout.trim().length > 0));
+    });
+
+    const [
+        nginxRunning, mariadbRunning, phpfpmRunning,
+        port80, port8080, port3306,
+        hasNginx, hasPHP, hasMariadb, hasPMA,
+    ] = await Promise.all([
+        checkProcess('nginx'),
+        checkProcess('mariadbd').then(r => r || checkProcess('mysqld')),
+        checkProcess('php-fpm'),
+        checkPort('127.0.0.1', 80),
+        checkPort('127.0.0.1', 8080),
+        checkPort('127.0.0.1', 3306),
+        checkCmd('nginx'),
+        checkCmd('php'),
+        checkCmd('mariadb'),
+        (async () => {
+            const p1 = process.env.PREFIX + '/share/phpmyadmin';
+            const p2 = '/usr/share/phpmyadmin';
+            return fs.existsSync(p1) || fs.existsSync(p2);
+        })(),
+    ]);
+
+    res.json({
+        services: {
+            nginx:    { installed: hasNginx,    running: nginxRunning,   port80 },
+            mariadb:  { installed: hasMariadb,  running: mariadbRunning, port3306 },
+            phpfpm:   { installed: hasPHP,      running: phpfpmRunning },
+            phpmyadmin: { installed: hasPMA,    port8080 },
+        }
+    });
+});
+
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`Painel Termux rodando em:`);
     console.log(`- Local: http://localhost:${PORT}`);
     console.log(`- Rede:  http://0.0.0.0:${PORT}`);
 });
+

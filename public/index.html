@@ -113,6 +113,9 @@
                 <a href="#" class="nav-link" data-target="tab-backup">
                     <i data-lucide="archive"></i> Backups
                 </a>
+                <a href="#" class="nav-link" data-target="tab-health">
+                    <i data-lucide="stethoscope"></i> Diagnóstico / Fix
+                </a>
             </nav>
         </aside>
 
@@ -584,6 +587,35 @@
                     </div>
                 </div>
                 <div id="logs-display" class="terminal-box" style="height: 550px;">Aguardando início do monitoramento...</div>
+            </div>
+
+            <!-- === TAB: DIAGNÓSTICO / FIX === -->
+            <div id="tab-health" class="tab-pane">
+                <div class="page-header">
+                    <h1>Diagnóstico do Servidor</h1>
+                    <div class="toolbar-group">
+                        <button class="btn btn-secondary btn-sm" onclick="checkHealthStatus()">
+                            <i data-lucide="refresh-cw"></i> Status Rápido
+                        </button>
+                        <button class="btn btn-primary btn-sm" onclick="runHealthCheck()">
+                            <i data-lucide="stethoscope"></i> Iniciar Reparo
+                        </button>
+                    </div>
+                </div>
+
+                <div class="stats-grid" id="health-quick-status" style="margin-bottom:20px;">
+                    <!-- Preenchido via JS -->
+                </div>
+
+                <div class="card">
+                    <h3 class="card-title">Console de Diagnóstico & Auto-Fix</h3>
+                    <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px;">
+                        O script de reparo verifica dependências, portas, processos e recria configurações quebradas automaticamente (NGINX, MariaDB, PHP-FPM, phpMyAdmin).
+                    </p>
+                    <div id="health-check-terminal" class="terminal-box" style="height:400px; overflow-y:auto; font-size:13px; font-family:monospace; white-space:pre-wrap; background:#0d1117; color:#c9d1d9; padding:16px;">
+                        [Aguardando execução...]
+                    </div>
+                </div>
             </div>
 
             <!-- === TAB: BACKUPS === -->
