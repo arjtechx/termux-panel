@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Termux cPanel | Professional</title>
     <link rel="stylesheet" href="style.css?v=4.0">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.1.0/css/xterm.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fira+Code&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.1.0/lib/xterm.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
@@ -285,35 +287,196 @@
             <div id="tab-database" class="tab-pane">
                 <div class="page-header">
                     <h1>Banco de Dados</h1>
-                    <button class="btn btn-secondary btn-sm" onclick="showDbSetup()">Configurar Root</button>
+                    <div class="toolbar-group">
+                        <button class="btn btn-secondary btn-sm" onclick="testDbConnection()">
+                            <i data-lucide="activity"></i> Testar Conexão
+                        </button>
+                        <button class="btn btn-secondary btn-sm" onclick="showDbSetup()">
+                            <i data-lucide="settings"></i> Configurar Root
+                        </button>
+                        <a href="http://localhost:8080" target="_blank" class="btn btn-primary btn-sm">
+                            <i data-lucide="external-link"></i> phpMyAdmin
+                        </a>
+                    </div>
                 </div>
-                <div class="two-col">
+
+                <!-- Status Cards -->
+                <div class="stats-grid" id="db-status-grid">
+                    <div class="stat-card" id="db-card-status">
+                        <span class="card-label"><i data-lucide="server"></i> MariaDB</span>
+                        <strong id="db-stat-status">--</strong>
+                        <small>Porta <span id="db-stat-port">3306</span></small>
+                    </div>
+                    <div class="stat-card">
+                        <span class="card-label"><i data-lucide="clock"></i> Uptime</span>
+                        <strong id="db-stat-uptime">--</strong>
+                    </div>
+                    <div class="stat-card">
+                        <span class="card-label"><i data-lucide="users"></i> Conexões Ativas</span>
+                        <strong id="db-stat-connections">--</strong>
+                    </div>
+                    <div class="stat-card">
+                        <span class="card-label"><i data-lucide="database"></i> Bancos</span>
+                        <strong id="db-stat-count">--</strong>
+                    </div>
+                    <div class="stat-card">
+                        <span class="card-label"><i data-lucide="hard-drive"></i> Tamanho Total</span>
+                        <strong id="db-stat-size">-- MB</strong>
+                    </div>
+                    <div class="stat-card">
+                        <span class="card-label"><i data-lucide="cpu"></i> RAM</span>
+                        <strong id="db-stat-ram">--%</strong>
+                    </div>
+                </div>
+
+                <!-- Controles MariaDB -->
+                <div class="card" style="margin-bottom:20px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:16px 20px;">
+                    <strong style="flex:1; min-width:120px;">Controles do Serviço</strong>
+                    <button class="btn btn-success btn-sm" onclick="mariadbAction('start')">
+                        <i data-lucide="play"></i> Iniciar
+                    </button>
+                    <button class="btn btn-danger btn-sm" onclick="mariadbAction('stop')">
+                        <i data-lucide="square"></i> Parar
+                    </button>
+                    <button class="btn btn-secondary btn-sm" onclick="mariadbAction('restart')">
+                        <i data-lucide="refresh-cw"></i> Reiniciar
+                    </button>
+                    <div id="mariadb-msg" style="font-size:0.8rem; color:var(--text-muted);"></div>
+                </div>
+
+                <div class="two-col" style="margin-bottom: 20px;">
+                    <!-- Criar Banco -->
                     <div class="card">
-                        <h3 class="card-title">Criar Banco</h3>
+                        <h3 class="card-title"><i data-lucide="plus-circle" style="width:16px;height:16px;vertical-align:middle;margin-right:6px;"></i>Criar Banco</h3>
                         <form onsubmit="createDatabase(event)">
                             <div class="form-stack">
-                                <input type="text" id="dbNewName" placeholder="Nome do Banco" required>
-                                <input type="text" id="dbNewUser" placeholder="Usuário" required>
-                                <input type="password" id="dbNewPass" placeholder="Senha" required>
+                                <div>
+                                    <label class="form-label">Nome do Banco</label>
+                                    <input type="text" id="dbNewName" placeholder="meu_banco" required>
+                                </div>
+                                <div>
+                                    <label class="form-label">Usuário (opcional)</label>
+                                    <input type="text" id="dbNewUser" placeholder="meu_usuario">
+                                </div>
+                                <div>
+                                    <label class="form-label">Senha do Usuário</label>
+                                    <input type="password" id="dbNewPass" placeholder="senha_segura">
+                                </div>
                             </div>
-                            <button type="submit" class="btn btn-success btn-sm" style="margin-top:12px">Criar</button>
+                            <button type="submit" class="btn btn-success btn-sm" style="margin-top:14px; width:100%">
+                                <i data-lucide="database"></i> Criar Banco
+                            </button>
                         </form>
                     </div>
+
+                    <!-- Criar Usuário -->
                     <div class="card">
-                        <h3 class="card-title">Bancos Existentes</h3>
-                        <div id="db-list">Aguardando conexão...</div>
+                        <h3 class="card-title"><i data-lucide="user-plus" style="width:16px;height:16px;vertical-align:middle;margin-right:6px;"></i>Criar Usuário</h3>
+                        <form onsubmit="createDbUser(event)">
+                            <div class="form-stack">
+                                <div>
+                                    <label class="form-label">Nome de Usuário</label>
+                                    <input type="text" id="dbUserName" placeholder="novo_usuario" required>
+                                </div>
+                                <div>
+                                    <label class="form-label">Senha</label>
+                                    <input type="password" id="dbUserPass" placeholder="senha_segura" required>
+                                </div>
+                                <div>
+                                    <label class="form-label">Banco (permissão total, opcional)</label>
+                                    <input type="text" id="dbUserDatabase" placeholder="nome_do_banco">
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-primary btn-sm" style="margin-top:14px; width:100%">
+                                <i data-lucide="user-check"></i> Criar Usuário
+                            </button>
+                        </form>
                     </div>
                 </div>
+
+                <!-- Bancos Existentes -->
+                <div class="card" style="margin-bottom:20px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                        <h3 class="card-title" style="margin:0"><i data-lucide="table" style="width:16px;height:16px;vertical-align:middle;margin-right:6px;"></i>Bancos Existentes</h3>
+                        <button class="btn btn-secondary btn-sm" onclick="fetchDatabases()">
+                            <i data-lucide="refresh-cw"></i>
+                        </button>
+                    </div>
+                    <div class="table-card">
+                        <table>
+                            <thead>
+                                <tr><th>Nome</th><th>Tamanho</th><th>Ações</th></tr>
+                            </thead>
+                            <tbody id="db-list-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Backup & Restore -->
+                <div class="two-col">
+                    <div class="card">
+                        <h3 class="card-title"><i data-lucide="download" style="width:16px;height:16px;vertical-align:middle;margin-right:6px;"></i>Backup SQL</h3>
+                        <div class="form-stack">
+                            <div>
+                                <label class="form-label">Banco (vazio = todos)</label>
+                                <input type="text" id="dbBackupName" placeholder="nome_do_banco">
+                            </div>
+                        </div>
+                        <button class="btn btn-primary btn-sm" style="margin-top:14px; width:100%" onclick="createDbBackup()">
+                            Gerar Dump SQL
+                        </button>
+                        <div id="db-backup-result" class="hidden" style="margin-top:12px; padding:10px; background:rgba(16,185,129,0.1); border:1px solid var(--success); border-radius:6px; font-size:0.82rem; color:var(--success);">
+                            ✅ Backup salvo: <span id="db-backup-filename"></span>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h3 class="card-title"><i data-lucide="upload" style="width:16px;height:16px;vertical-align:middle;margin-right:6px;"></i>Restaurar Backup</h3>
+                        <div class="form-stack">
+                            <div>
+                                <label class="form-label">Arquivo de Backup</label>
+                                <select id="dbRestoreFile">
+                                    <option value="">Selecione o backup...</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="form-label">Banco de Destino (opcional)</label>
+                                <input type="text" id="dbRestoreTarget" placeholder="nome_do_banco">
+                            </div>
+                        </div>
+                        <button class="btn btn-warning btn-sm" style="margin-top:14px; width:100%; background:var(--warning); color:white;" onclick="restoreDbBackup()">
+                            Restaurar Banco
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Modal Setup Root -->
                 <div id="dbSetupModal" class="modal hidden">
                     <div class="modal-box">
-                        <h3>Root MariaDB</h3>
-                        <div class="form-stack" style="margin-top:16px">
-                            <input type="text" id="dbRootUser" value="root">
-                            <input type="password" id="dbRootPass" placeholder="Senha Root">
+                        <div class="modal-header">
+                            <h3>🔐 Configurar Acesso Root</h3>
+                            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('dbSetupModal').classList.add('hidden')">✕</button>
                         </div>
-                        <div class="form-actions" style="margin-top:16px">
-                            <button class="btn btn-success btn-sm" onclick="saveDbSetup()">Salvar</button>
-                            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('dbSetupModal').classList.add('hidden')">Cancelar</button>
+                        <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:16px;">
+                            Configure as credenciais de acesso ao MariaDB. Sem isso, nenhuma função de banco funcionará.
+                        </p>
+                        <div class="form-stack">
+                            <div>
+                                <label class="form-label">Host</label>
+                                <input type="text" id="dbRootHost" value="localhost">
+                            </div>
+                            <div>
+                                <label class="form-label">Usuário</label>
+                                <input type="text" id="dbRootUser" value="root">
+                            </div>
+                            <div>
+                                <label class="form-label">Senha</label>
+                                <input type="password" id="dbRootPass" placeholder="Senha Root">
+                            </div>
+                        </div>
+                        <div class="form-actions" style="margin-top:20px">
+                            <button class="btn btn-success" onclick="saveDbSetup()">Salvar e Testar</button>
+                            <button class="btn btn-secondary" onclick="document.getElementById('dbSetupModal').classList.add('hidden')">Cancelar</button>
                         </div>
                     </div>
                 </div>

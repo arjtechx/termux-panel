@@ -520,14 +520,73 @@ async function getDbConn() {
     return await mysql.createConnection(config);
 }
 
+// Lista bancos com tamanho
 app.get('/api/db', async (req, res) => {
     try {
         const conn = await getDbConn();
         const [rows] = await conn.query('SHOW DATABASES');
+        const [sizeRows] = await conn.query(`
+            SELECT table_schema AS name,
+                   ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS size_mb
+            FROM information_schema.tables
+            GROUP BY table_schema
+        `);
         await conn.end();
-        res.json({ databases: rows.map(r => r.Database) });
+        const sizeMap = {};
+        sizeRows.forEach(r => sizeMap[r.name] = r.size_mb);
+        res.json({ databases: rows.map(r => ({ name: r.Database, size_mb: sizeMap[r.Database] || 0 })) });
     } catch (err) {
         res.status(500).json({ error: err.message });
+    }
+});
+
+// Status completo do MariaDB
+app.get('/api/db/status', async (req, res) => {
+    try {
+        const conn = await getDbConn();
+        const [[{ Value: uptime }]]     = await conn.query("SHOW GLOBAL STATUS LIKE 'Uptime'");
+        const [[{ Value: threads }]]    = await conn.query("SHOW GLOBAL STATUS LIKE 'Threads_connected'");
+        const [[{ Value: questions }]]  = await conn.query("SHOW GLOBAL STATUS LIKE 'Questions'");
+        const [sizeRows] = await conn.query(`
+            SELECT ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS total_mb
+            FROM information_schema.tables
+        `);
+        const [dbCountRows] = await conn.query('SHOW DATABASES');
+        await conn.end();
+
+        // RAM usage via ps
+        const ramOut = await runCmd('ps aux | grep mariad | grep -v grep | awk \'{print $4}\'');
+        const ramPct = ramOut.trim().split('\n')[0] || 'N/A';
+
+        const uptimeSec = parseInt(uptime);
+        const h = Math.floor(uptimeSec / 3600);
+        const m = Math.floor((uptimeSec % 3600) / 60);
+        const uptimeStr = `${h}h ${m}m`;
+
+        res.json({
+            online:      true,
+            port:        3306,
+            uptime:      uptimeStr,
+            connections: threads,
+            queries:     questions,
+            totalSizeMb: sizeRows[0]?.total_mb || 0,
+            dbCount:     dbCountRows.length,
+            ramPct:      ramPct,
+        });
+    } catch (err) {
+        res.json({ online: false, error: err.message });
+    }
+});
+
+// Test connection
+app.get('/api/db/test', async (req, res) => {
+    try {
+        const conn = await getDbConn();
+        await conn.ping();
+        await conn.end();
+        res.json({ success: true, message: 'Conexão OK!' });
+    } catch (err) {
+        res.json({ success: false, message: err.message });
     }
 });
 
@@ -540,13 +599,45 @@ app.post('/api/db/setup', (req, res) => {
     }
 });
 
+// Criar banco + usuário
 app.post('/api/db/create', async (req, res) => {
     const { dbName, dbUser, dbPass } = req.body;
     try {
         const conn = await getDbConn();
-        await conn.query(`CREATE DATABASE ??`, [dbName]);
-        await conn.query(`CREATE USER ?@'localhost' IDENTIFIED BY ?`, [dbUser, dbPass]);
-        await conn.query(`GRANT ALL PRIVILEGES ON ??.* TO ?@'localhost'`, [dbName, dbUser]);
+        await conn.query(`CREATE DATABASE IF NOT EXISTS \`${dbName}\``);
+        if (dbUser && dbPass) {
+            await conn.query(`CREATE USER IF NOT EXISTS ?@'localhost' IDENTIFIED BY ?`, [dbUser, dbPass]);
+            await conn.query(`GRANT ALL PRIVILEGES ON \`${dbName}\`.* TO ?@'localhost'`, [dbUser]);
+            await conn.query('FLUSH PRIVILEGES');
+        }
+        await conn.end();
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Drop banco
+app.delete('/api/db/:name', async (req, res) => {
+    try {
+        const conn = await getDbConn();
+        await conn.query(`DROP DATABASE IF EXISTS \`${req.params.name}\``);
+        await conn.end();
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Criar apenas usuário
+app.post('/api/db/user', async (req, res) => {
+    const { username, password, database } = req.body;
+    try {
+        const conn = await getDbConn();
+        await conn.query(`CREATE USER IF NOT EXISTS ?@'localhost' IDENTIFIED BY ?`, [username, password]);
+        if (database) {
+            await conn.query(`GRANT ALL PRIVILEGES ON \`${database}\`.* TO ?@'localhost'`, [username]);
+        }
         await conn.query('FLUSH PRIVILEGES');
         await conn.end();
         res.json({ success: true });
@@ -554,6 +645,58 @@ app.post('/api/db/create', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+
+// Backup de um banco específico
+app.post('/api/db/backup', async (req, res) => {
+    const { dbName } = req.body;
+    try {
+        if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
+        const config = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+        const ts = new Date().toISOString().replace(/[:.]/g, '-');
+        const filename = `db-${dbName || 'all'}-${ts}.sql`;
+        const filePath = path.join(BACKUP_DIR, filename);
+        const passArg = config.password ? `-p${config.password}` : '';
+        const dbArg = dbName ? `\`${dbName}\`` : '--all-databases';
+        await runCmd(`mysqldump -u ${config.user} ${passArg} ${dbArg} > "${filePath}"`);
+        res.json({ success: true, filename });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Restaurar backup SQL
+app.post('/api/db/restore', async (req, res) => {
+    const { filename, dbName } = req.body;
+    try {
+        const config   = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+        const filePath = path.join(BACKUP_DIR, filename);
+        if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Arquivo não encontrado' });
+        const passArg = config.password ? `-p${config.password}` : '';
+        const dbArg   = dbName ? `\`${dbName}\`` : '';
+        await runCmd(`mysql -u ${config.user} ${passArg} ${dbArg} < "${filePath}"`);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Listar backups SQL
+app.get('/api/db/backups', (req, res) => {
+    try {
+        if (!fs.existsSync(BACKUP_DIR)) return res.json({ backups: [] });
+        const files = fs.readdirSync(BACKUP_DIR)
+            .filter(f => f.endsWith('.sql'))
+            .map(f => {
+                const stats = fs.statSync(path.join(BACKUP_DIR, f));
+                return { name: f, size: (stats.size / 1024).toFixed(1) + ' KB', date: stats.mtime.toLocaleString() };
+            })
+            .sort((a, b) => new Date(b.date) - new Date(a.date));
+        res.json({ backups: files });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 
 // --- File Manager Logic ---
 app.get('/api/files', async (req, res) => {

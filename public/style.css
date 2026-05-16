@@ -52,6 +52,63 @@ body {
     line-height: 1.6;
 }
 
+/* ============================================================
+   GRIDS DE CARDS — stats-grid é alias de card-grid
+============================================================ */
+.stats-grid,
+.card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+/* ============================================================
+   STAT-CARD e CARD — estilos de widget
+============================================================ */
+.stat-card,
+.card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 24px;
+    box-shadow: var(--shadow);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.stat-card:hover,
+.card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+}
+
+.stat-card .card-label,
+.stat-card span:first-child {
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.7px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+}
+
+.stat-card strong,
+.stat-card .value {
+    display: block;
+    font-size: 1.75rem;
+    font-weight: 700;
+    letter-spacing: -1px;
+    color: var(--text);
+    line-height: 1;
+}
+
+.stat-card small {
+    display: block;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    margin-top: 6px;
+}
+
 /* === APP SHELL — ESTRUTURA MESTRE === */
 .app-shell {
     display: flex;

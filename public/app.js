@@ -171,30 +171,124 @@ function toggleSidebar() {
 function initSocket() {
     try {
         socket = io();
-        socket.on('noip-log', msg => appendNoipLog(msg));
-        socket.on('log-line', line => appendLogLine(line));
+        // Eventos do servidor — nomes corretos
+        socket.on('noip-log',      data => appendNoipLog(data));
+        socket.on('log-data',      line => appendLogLine(line));
+        // Terminal SSH — recebe dados do shell remoto
+        socket.on('terminal-data', data => {
+            if (window._term) window._term.write(data);
+        });
     } catch(e) {
         console.warn('Socket.io não disponível:', e);
     }
 }
 
 // ============================================================
-//  STATUS DO SISTEMA
+//  TERMINAL SSH — usa xterm.js + socket 'terminal-connect'
+// ============================================================
+let _termInstance = null;
+
+function connectTerminal() {
+    // Lê campos do formulário SSH
+    const host = document.getElementById('sshHost')?.value || '127.0.0.1';
+    const port = parseInt(document.getElementById('sshPort')?.value) || 8022;
+    const username = document.getElementById('sshUser')?.value;
+    const password = document.getElementById('sshPass')?.value;
+
+    if (!username || !password) {
+        alert('Preencha usuário e senha SSH!');
+        return;
+    }
+
+    const container = document.getElementById('terminal-container');
+    if (!container) return;
+
+    // Limpa terminal anterior
+    container.innerHTML = '';
+    if (_termInstance) { try { _termInstance.dispose(); } catch(e) {} }
+
+    // Verifica se xterm.js está disponível
+    if (!window.Terminal) {
+        // Fallback: terminal simples sem xterm
+        container.style.cssText = 'background:#000;color:#0f0;padding:16px;height:500px;overflow-y:auto;font-family:monospace;font-size:13px;';
+        const write = (txt) => {
+            container.textContent += txt;
+            container.scrollTop = container.scrollHeight;
+        };
+        write(`Conectando a ${host}:${port}...\n`);
+        socket.emit('terminal-connect', { host, port, username, password });
+        socket.off('terminal-data');
+        socket.on('terminal-data', data => {
+            write(data);
+            container.scrollTop = container.scrollHeight;
+        });
+
+        // Input simples via prompt
+        container.setAttribute('tabindex', '0');
+        container.addEventListener('keydown', function handler(e) {
+            if (e.key === 'Enter') {
+                const inputEl = document.getElementById('_termInput');
+                if (!inputEl) return;
+                const cmd = inputEl.value;
+                socket.emit('terminal-input', cmd + '\n');
+                inputEl.value = '';
+            }
+        });
+
+        // Adiciona campo de input
+        const inputRow = document.createElement('div');
+        inputRow.style.cssText = 'display:flex;gap:8px;margin-top:10px;';
+        inputRow.innerHTML = `
+            <input id="_termInput" style="flex:1;background:#111;color:#0f0;border:1px solid #333;padding:6px;font-family:monospace;" placeholder="Digite um comando...">
+            <button class="btn btn-sm btn-secondary" onclick="const v=document.getElementById('_termInput').value;socket.emit('terminal-input',v+'\\n');document.getElementById('_termInput').value=''">Enviar</button>
+        `;
+        container.parentNode.appendChild(inputRow);
+        return;
+    }
+
+    // Terminal com xterm.js
+    const term = new Terminal({
+        cursorBlink: true,
+        fontSize: 14,
+        fontFamily: "'Fira Code', 'Courier New', monospace",
+        theme: { background: '#0d1117', foreground: '#c9d1d9', cursor: '#6366f1' },
+        rows: 30,
+    });
+
+    _termInstance = term;
+    window._term  = term;
+    term.open(container);
+
+    term.writeln(`\x1b[32mConectando a ${host}:${port}...\x1b[0m`);
+
+    // Envia evento de conexão ao servidor
+    socket.emit('terminal-connect', { host, port, username, password });
+
+    // Envia teclas digitadas ao servidor
+    term.onData(data => socket.emit('terminal-input', data));
+}
+
+// ============================================================
+//  STATUS DO SISTEMA — alinhado com os campos reais da API
 // ============================================================
 async function fetchStatus() {
     const data = await safeFetch(`${API_BASE}/status`);
     if (!data) return;
 
-    if (el.cpu)     el.cpu.textContent  = `${data.cpu?.usage ?? '--'}%`;
-    if (el.cpuDetails) el.cpuDetails.textContent = `${data.cpu?.cores ?? '--'} Núcleos | ${data.cpu?.freq ?? '--'} GHz`;
-    if (el.ram)     el.ram.textContent  = `${data.ram?.free ?? '--'} / ${data.ram?.total ?? '--'}`;
-    if (el.temp)    el.temp.textContent = `${data.temp ?? '--'}°C`;
-    if (el.netSpeed) el.netSpeed.textContent = `${data.net?.down ?? '--'} / ${data.net?.up ?? '--'}`;
+    // O servidor retorna: cpu (string), cpuCores, cpuSpeed, ram (string),
+    // storageFree, storageTotal, storagePercent, temperature (string)
+    if (el.cpu)        el.cpu.textContent        = data.cpu        || '--%';
+    if (el.cpuDetails) el.cpuDetails.textContent = `${data.cpuCores || '--'} Núcleos | ${data.cpuSpeed || '--'}`;
+    if (el.ram)        el.ram.textContent        = data.ram        || '-- / --';
+    if (el.temp)       el.temp.textContent       = data.temperature || '--°C';
+    if (el.netSpeed)   el.netSpeed.textContent   = `${data.totalDown || '--'} / ${data.totalUp || '--'}`;
 
-    if (data.storage && el.storageBar) {
-        const pct = ((data.storage.total - data.storage.free) / data.storage.total * 100).toFixed(0);
-        el.storageBar.style.width = `${pct}%`;
-        if (el.storage) el.storage.textContent = `${data.storage.free}G livres de ${data.storage.total}G`;
+    // Storage — campos: storageFree, storageTotal, storagePercent
+    if (el.storageBar && data.storagePercent) {
+        el.storageBar.style.width = `${data.storagePercent}%`;
+    }
+    if (el.storage && data.storageTotal) {
+        el.storage.textContent = `${data.storageFree || '--'} livre de ${data.storageTotal}`;
     }
 }
 
@@ -210,20 +304,21 @@ async function fetchApps() {
 function renderApps(apps) {
     if (!el.appsGrid) return;
     if (!apps.length) {
-        el.appsGrid.innerHTML = '<p style="color:var(--text-muted)">Nenhum app cadastrado. Adicione um!</p>';
+        el.appsGrid.innerHTML = '<p style="color:var(--text-muted);padding:20px 0">Nenhum app cadastrado. Adicione um!</p>';
         return;
     }
+    // O servidor retorna: id, name, port, icon, url, status (Online/Offline)
+    const statusColor = s => s === 'Online' ? 'var(--success)' : 'var(--text-muted)';
     el.appsGrid.innerHTML = apps.map(app => `
-        <div class="card" style="border-left:3px solid var(--primary)">
+        <div class="card" style="border-left:3px solid var(--primary);">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
                 <strong>${app.icon || '🚀'} ${app.name}</strong>
-                <span class="badge ${app.status === 'online' ? 'badge-success' : 'badge-muted'}">${app.status || 'offline'}</span>
+                <span style="font-size:0.75rem;font-weight:600;color:${statusColor(app.status)}">${app.status || '--'}</span>
             </div>
             <small style="color:var(--text-muted)">Porta: ${app.port}</small>
             <div style="display:flex;gap:6px;margin-top:12px">
-                <button class="btn btn-sm btn-secondary" onclick="startApp('${app.id}')">▶</button>
-                <button class="btn btn-sm btn-danger"    onclick="stopApp('${app.id}')">⏹</button>
-                <button class="btn btn-sm btn-secondary" onclick="deleteApp('${app.id}')">🗑</button>
+                <button class="btn btn-sm btn-danger" onclick="deleteApp('${app.id}')" title="Remover">🗑</button>
+                ${app.url ? `<a href="${app.url}" target="_blank" class="btn btn-sm btn-secondary">↗</a>` : ''}
             </div>
         </div>
     `).join('');
@@ -271,7 +366,8 @@ async function fetchProcesses() {
 
 async function killProcess(pid) {
     if (!confirm(`Encerrar processo ${pid}?`)) return;
-    await safeFetch(`${API_BASE}/processes/${pid}`, 'DELETE');
+    // Rota correta: POST /api/processes/:pid/kill
+    await safeFetch(`${API_BASE}/processes/${pid}/kill`, 'POST');
     fetchProcesses();
 }
 
@@ -363,45 +459,165 @@ async function zipSelected() {
 }
 
 // ============================================================
-//  BANCO DE DADOS
+//  BANCO DE DADOS — Módulo Completo
 // ============================================================
+
+async function fetchDbStatus() {
+    const data = await safeFetch(`${API_BASE}/db/status`);
+    const setEl = (id, val) => { const e = document.getElementById(id); if (e) e.textContent = val; };
+
+    if (!data || !data.online) {
+        setEl('db-stat-status', 'Offline');
+        const card = document.getElementById('db-card-status');
+        if (card) card.style.borderColor = 'var(--danger)';
+        return;
+    }
+
+    setEl('db-stat-status',      'Online');
+    setEl('db-stat-uptime',      data.uptime      || '--');
+    setEl('db-stat-connections', data.connections || '--');
+    setEl('db-stat-count',       data.dbCount     || '--');
+    setEl('db-stat-size',        `${data.totalSizeMb || 0} MB`);
+    setEl('db-stat-ram',         data.ramPct ? `${data.ramPct}%` : '--');
+
+    const card = document.getElementById('db-card-status');
+    if (card) card.style.borderColor = 'var(--success)';
+}
+
 async function fetchDatabases() {
-    const data = await safeFetch(`${API_BASE}/databases`);
-    const el2  = document.getElementById('db-list');
-    if (!el2) return;
-    if (!data?.length) { el2.innerHTML = '<p style="color:var(--text-muted)">Nenhum banco encontrado.</p>'; return; }
-    el2.innerHTML = data.map(db => `
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
-            <span>🗄 ${db.name} <small style="color:var(--text-muted)">(${db.user})</small></span>
-            <button class="btn btn-sm btn-danger" onclick="deleteDb('${db.name}')">🗑</button>
-        </div>
-    `).join('');
+    await fetchDbStatus();
+    const data  = await safeFetch(`${API_BASE}/db`);
+    const tbody = document.getElementById('db-list-body');
+    if (!tbody) return;
+
+    if (!data || !data.databases) {
+        tbody.innerHTML = '<tr><td colspan="3" style="color:var(--text-muted);padding:16px">Sem conexão com MariaDB. Configure a senha root primeiro.</td></tr>';
+        return;
+    }
+    if (!data.databases.length) {
+        tbody.innerHTML = '<tr><td colspan="3" style="color:var(--text-muted);padding:16px">Nenhum banco encontrado.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = data.databases.map(db => {
+        const name = typeof db === 'string' ? db : db.name;
+        const size = typeof db === 'object' ? `${db.size_mb || 0} MB` : '--';
+        const isSystem = ['information_schema','performance_schema','mysql','sys'].includes(name);
+        return `
+            <tr>
+                <td>🗄 <strong>${name}</strong> ${isSystem ? '<span style="font-size:0.7rem;color:var(--text-muted)">(sistema)</span>' : ''}</td>
+                <td>${size}</td>
+                <td>
+                    ${!isSystem ? `<button class="btn btn-sm btn-danger" onclick="deleteDb('${name}')">🗑 Drop</button>` : ''}
+                    <button class="btn btn-sm btn-secondary" onclick="document.getElementById('dbBackupName').value='${name}'; createDbBackup()" style="margin-left:4px">⬇ Backup</button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    // Carrega lista de backups
+    loadDbBackups();
 }
 
 async function createDatabase(e) {
     e.preventDefault();
     const body = {
-        name: document.getElementById('dbNewName').value,
-        user: document.getElementById('dbNewUser').value,
-        pass: document.getElementById('dbNewPass').value,
+        dbName: document.getElementById('dbNewName').value,
+        dbUser: document.getElementById('dbNewUser').value,
+        dbPass: document.getElementById('dbNewPass').value,
     };
-    await safeFetch(`${API_BASE}/databases`, 'POST', body);
-    fetchDatabases();
+    const result = await safeFetch(`${API_BASE}/db/create`, 'POST', body);
+    if (result?.success) {
+        alert('✅ Banco criado com sucesso!');
+        e.target.reset();
+        fetchDatabases();
+    }
+}
+
+async function createDbUser(e) {
+    e.preventDefault();
+    const body = {
+        username: document.getElementById('dbUserName').value,
+        password: document.getElementById('dbUserPass').value,
+        database: document.getElementById('dbUserDatabase').value,
+    };
+    const result = await safeFetch(`${API_BASE}/db/user`, 'POST', body);
+    if (result?.success) {
+        alert('✅ Usuário criado com sucesso!');
+        e.target.reset();
+    }
 }
 
 async function deleteDb(name) {
-    if (!confirm(`Deletar banco "${name}"?`)) return;
-    await safeFetch(`${API_BASE}/databases/${name}`, 'DELETE');
-    fetchDatabases();
+    if (!confirm(`⚠️ Deletar banco "${name}"?\n\nEsta ação é IRREVERSÍVEL!`)) return;
+    const result = await safeFetch(`${API_BASE}/db/${name}`, 'DELETE');
+    if (result?.success) fetchDatabases();
+}
+
+async function mariadbAction(action) {
+    const msg = document.getElementById('mariadb-msg');
+    if (msg) msg.textContent = `Executando ${action}...`;
+    await safeFetch(`${API_BASE}/mariadb/toggle`, 'POST');
+    setTimeout(async () => {
+        await fetchDbStatus();
+        if (msg) msg.textContent = `Ação "${action}" concluída.`;
+    }, 2000);
+}
+
+async function testDbConnection() {
+    const data = await safeFetch(`${API_BASE}/db/test`);
+    alert(data?.success ? `✅ ${data.message}` : `❌ ${data?.message || 'Falha na conexão'}`);
+}
+
+async function createDbBackup() {
+    const dbName = document.getElementById('dbBackupName')?.value || '';
+    const result = await safeFetch(`${API_BASE}/db/backup`, 'POST', { dbName });
+    if (result?.success) {
+        const filenameEl = document.getElementById('db-backup-filename');
+        const resultEl   = document.getElementById('db-backup-result');
+        if (filenameEl) filenameEl.textContent = result.filename;
+        if (resultEl)   resultEl.classList.remove('hidden');
+        loadDbBackups();
+    } else {
+        alert('❌ Erro ao gerar backup. Verifique a conexão.');
+    }
+}
+
+async function loadDbBackups() {
+    const data = await safeFetch(`${API_BASE}/db/backups`);
+    const sel  = document.getElementById('dbRestoreFile');
+    if (!sel || !data?.backups) return;
+    sel.innerHTML = '<option value="">Selecione o backup...</option>' +
+        data.backups.map(b => `<option value="${b.name}">${b.name} (${b.size}) — ${b.date}</option>`).join('');
+}
+
+async function restoreDbBackup() {
+    const filename = document.getElementById('dbRestoreFile')?.value;
+    const dbName   = document.getElementById('dbRestoreTarget')?.value;
+    if (!filename) { alert('Selecione um arquivo de backup!'); return; }
+    if (!confirm(`Restaurar "${filename}"? Isso substituirá os dados existentes.`)) return;
+    const result = await safeFetch(`${API_BASE}/db/restore`, 'POST', { filename, dbName });
+    alert(result?.success ? '✅ Banco restaurado com sucesso!' : '❌ Erro ao restaurar.');
 }
 
 function showDbSetup() { document.getElementById('dbSetupModal').classList.remove('hidden'); }
+
 async function saveDbSetup() {
-    const body = { user: document.getElementById('dbRootUser').value, pass: document.getElementById('dbRootPass').value };
-    await safeFetch(`${API_BASE}/databases/setup`, 'POST', body);
+    const body = {
+        host:     document.getElementById('dbRootHost')?.value || 'localhost',
+        user:     document.getElementById('dbRootUser').value,
+        password: document.getElementById('dbRootPass').value,
+    };
+    const result = await safeFetch(`${API_BASE}/db/setup`, 'POST', body);
     document.getElementById('dbSetupModal').classList.add('hidden');
-    fetchDatabases();
+    if (result?.success) {
+        // Testa conexão automaticamente após salvar
+        const test = await safeFetch(`${API_BASE}/db/test`);
+        alert(test?.success ? '✅ Configuração salva! Conexão OK.' : `⚠️ Configuração salva mas conexão falhou: ${test?.message}`);
+        fetchDatabases();
+    }
 }
+
 
 // ============================================================
 //  NGINX
@@ -410,12 +626,16 @@ async function fetchNginxSites() {
     const data = await safeFetch(`${API_BASE}/nginx`);
     const tbody = document.getElementById('nginxTableBody');
     if (!tbody) return;
-    tbody.innerHTML = (data || []).map(s => `
-        <tr>
-            <td>${s.domain}</td><td>${s.port}</td>
-            <td><button class="btn btn-sm btn-danger" onclick="deleteNginxSite('${s.domain}')">🗑</button></td>
-        </tr>
-    `).join('') || '<tr><td colspan="3" style="color:var(--text-muted)">Nenhum site encontrado.</td></tr>';
+    // Servidor retorna {sites: [{file, domain, port}]}
+    const sites = data?.sites || [];
+    tbody.innerHTML = sites.length
+        ? sites.map(s => `
+            <tr>
+                <td>${s.domain}</td><td>${s.port}</td>
+                <td><button class="btn btn-sm btn-danger" onclick="deleteNginxSite('${s.file}')">🗑</button></td>
+            </tr>
+        `).join('')
+        : '<tr><td colspan="3" style="color:var(--text-muted)">Nenhum site configurado.</td></tr>';
 }
 
 async function createNginxSite(e) {
@@ -427,9 +647,10 @@ async function createNginxSite(e) {
     fetchNginxSites();
 }
 
-async function deleteNginxSite(domain) {
-    if (!confirm(`Remover site "${domain}"?`)) return;
-    await safeFetch(`${API_BASE}/nginx/${domain}`, 'DELETE');
+async function deleteNginxSite(file) {
+    if (!confirm(`Remover configuração "${file}"?`)) return;
+    // Servidor usa DELETE /api/nginx?file=nome.conf
+    await fetch(`${API_BASE}/nginx?file=${encodeURIComponent(file)}`, { method: 'DELETE' });
     fetchNginxSites();
 }
 
@@ -439,13 +660,15 @@ async function deleteNginxSite(domain) {
 async function fetchCron() {
     const data = await safeFetch(`${API_BASE}/cron`);
     const editor = document.getElementById('cronEditor');
-    if (editor && data) editor.value = data.crontab || '';
+    // Servidor retorna {cron: '...'} (não crontab)
+    if (editor && data) editor.value = data.cron || '';
 }
 
 async function saveCron() {
     const content = document.getElementById('cronEditor')?.value;
-    await safeFetch(`${API_BASE}/cron`, 'POST', { crontab: content });
-    alert('Crontab salvo!');
+    // Servidor espera campo {cron: '...'}
+    const result = await safeFetch(`${API_BASE}/cron`, 'POST', { cron: content });
+    if (result?.success) alert('Crontab salvo com sucesso!');
 }
 
 // ============================================================
@@ -498,15 +721,21 @@ function appendNoipLog(msg) {
 }
 
 // ============================================================
-//  LOGS
+//  LOGS — eventos corretos do servidor
 // ============================================================
 function startLogWatch() {
-    const path = document.getElementById('logFilePath')?.value;
-    if (!path) return;
-    socket?.emit('start-log-watch', { path });
+    const filePath = document.getElementById('logFilePath')?.value;
+    if (!filePath) return;
+    const d = document.getElementById('logs-display');
+    if (d) d.textContent = `Monitorando: ${filePath}\n`;
+    // Servidor usa 'log-start' com string (não objeto)
+    socket?.emit('log-start', filePath);
 }
 
-function stopLogWatch() { socket?.emit('stop-log-watch'); }
+function stopLogWatch() {
+    // Servidor usa 'log-stop'
+    socket?.emit('log-stop');
+}
 
 function appendLogLine(line) {
     const d = document.getElementById('logs-display');
@@ -522,12 +751,13 @@ async function createBackup() {
     const btn = document.getElementById('backup-btn');
     if (btn) { btn.disabled = true; btn.textContent = 'Gerando...'; }
     const data = await safeFetch(`${API_BASE}/backup`, 'POST');
-    if (btn) { btn.disabled = false; btn.innerHTML = '<i data-lucide="download"></i> Gerar Backup Agora'; lucide.createIcons(); }
-    if (data?.file) {
+    if (btn) { btn.disabled = false; btn.innerHTML = '↓ Gerar Backup Agora'; }
+    // Servidor retorna {success, filename} (não file)
+    if (data?.filename) {
         const result = document.getElementById('backup-result');
         const link   = document.getElementById('backup-download-link');
         if (result) result.classList.remove('hidden');
-        if (link)   link.href = `/api/backup/download?file=${data.file}`;
+        if (link)   link.href = `/api/backup/download?file=${data.filename}`;
     }
 }
 
@@ -551,7 +781,7 @@ async function rebootServer() {
 
 async function toggleWakelock() { await safeFetch(`${API_BASE}/wakelock`, 'POST'); }
 async function toggleSSHD()     { await safeFetch(`${API_BASE}/sshd`,     'POST'); }
-async function toggleMariaDB()  { await safeFetch(`${API_BASE}/mariadb`,  'POST'); }
+async function toggleMariaDB()  { await safeFetch(`${API_BASE}/mariadb/toggle`, 'POST'); }
 
 // ============================================================
 //  HELPER: FETCH SEGURO
