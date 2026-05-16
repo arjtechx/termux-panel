@@ -766,50 +766,57 @@ app.get('/api/db/backups', (req, res) => {
 
 
 // --- phpMyAdmin SSO Logic ---
-const pmaTokens = new Map();
+const phpMyAdminTokens = new Map();
 
-app.post('/api/database/connect', (req, res) => {
-    const { database } = req.body;
+app.post('/api/phpmyadmin/create-token', (req, res) => {
+    const { database, user } = req.body;
     try {
         const config = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
         const token = crypto.randomUUID();
         
-        pmaTokens.set(token, {
+        phpMyAdminTokens.set(token, {
             user: config.user,
             password: config.password,
             database: database || '',
-            expiresAt: Date.now() + 60000 // 60 seconds
+            expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes
+            used: false
         });
 
         // Cleanup expired tokens
-        for (const [k, v] of pmaTokens.entries()) {
-            if (Date.now() > v.expiresAt) pmaTokens.delete(k);
+        for (const [k, v] of phpMyAdminTokens.entries()) {
+            if (Date.now() > v.expiresAt) phpMyAdminTokens.delete(k);
         }
 
-        res.json({ success: true, token });
+        // Determina o host que fez a requisição para montar a URL corretamente
+        const host = req.hostname || '127.0.0.1';
+        const url = `http://${host}:8080/phpmyadmin/autologin.php?token=${token}`;
+
+        res.json({ ok: true, url });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ ok: false, error: err.message });
     }
 });
 
-app.get('/api/database/verify-token', (req, res) => {
-    const { token } = req.query;
-    if (!token || !pmaTokens.has(token)) {
-        return res.status(401).json({ error: 'Token inválido ou expirado' });
-    }
+app.post('/api/phpmyadmin/validate-token', (req, res) => {
+    const { token } = req.body;
+    if (!token) return res.status(400).json({ ok: false, error: 'TOKEN_MISSING' });
+
+    const data = phpMyAdminTokens.get(token);
     
-    const data = pmaTokens.get(token);
-    if (Date.now() > data.expiresAt) {
-        pmaTokens.delete(token);
-        return res.status(401).json({ error: 'Token expirado' });
-    }
+    if (!data) return res.status(401).json({ ok: false, error: 'TOKEN_INVALID_OR_NOT_FOUND' });
+    if (data.used) return res.status(401).json({ ok: false, error: 'TOKEN_ALREADY_USED' });
+    if (Date.now() > data.expiresAt) return res.status(401).json({ ok: false, error: 'TOKEN_EXPIRED' });
     
-    pmaTokens.delete(token); // Single use
+    data.used = true; // Single use
+    phpMyAdminTokens.delete(token); // Opcional, ou deleta após o uso
+
     res.json({
-        success: true,
+        ok: true,
         user: data.user,
         password: data.password,
-        database: data.database
+        database: data.database,
+        host: '127.0.0.1',
+        port: 3306
     });
 });
 

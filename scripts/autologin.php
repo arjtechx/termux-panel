@@ -1,64 +1,59 @@
 <?php
 /**
  * phpMyAdmin SSO Auto-Login Gateway
- * Receives a temporary token from the control panel, verifies it,
- * and initializes a signon session for phpMyAdmin.
  */
 
-session_set_cookie_params(0, '/', '', false, true);
-session_name('SignonSession');
-@session_start();
-
-// Enable basic error reporting for debugging if needed
+ini_set('display_errors', 1);
 error_reporting(E_ALL);
-ini_set('display_errors', 0);
 
-// Se não houver token, permite o acesso normal de login fallback se a sessão existir
-if (!isset($_GET['token']) || empty($_GET['token'])) {
-    if (isset($_SESSION['PMA_single_signon_user'])) {
-        header('Location: index.php');
-        exit;
-    } else {
-        // Strict SSO: Redireciona de volta para o painel de controle
-        $host = preg_replace('/:[0-9]+$/', '', $_SERVER['HTTP_HOST']);
-        header('Location: http://' . $host . ':8088/');
-        exit;
-    }
+$token = $_GET['token'] ?? '';
+
+if (!$token) {
+    http_response_code(400);
+    exit('Token ausente.');
 }
 
-$token = $_GET['token'];
-$backendUrl = 'http://127.0.0.1:8088/api/database/verify-token?token=' . urlencode($token);
+// Em desenvolvimento, o painel roda na porta 8088
+$backendUrl = 'http://127.0.0.1:8088/api/phpmyadmin/validate-token';
 
-// Usar cURL para contatar o backend local
-$ch = curl_init();
-curl_setopt($ch, CURLOPT_URL, $backendUrl);
+$payload = json_encode(['token' => $token]);
+
+$ch = curl_init($backendUrl);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_POST, true);
+curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
 curl_setopt($ch, CURLOPT_TIMEOUT, 5);
+
 $response = curl_exec($ch);
-$httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+$error = curl_error($ch);
+$code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 curl_close($ch);
 
-if ($httpCode !== 200 || !$response) {
-    die("Acesso Negado: Token inválido, expirado ou falha no backend.");
+if (!$response || $code !== 200) {
+    error_log("AUTOLOGIN BACKEND ERROR: " . $error . " CODE: " . $code);
+    exit('Acesso Negado: falha ao consultar backend.');
 }
 
 $data = json_decode($response, true);
 
-if (!isset($data['success']) || !$data['success']) {
-    die("Acesso Negado: " . (isset($data['error']) ? $data['error'] : 'Erro desconhecido.'));
+if (!$data || empty($data['ok'])) {
+    error_log("AUTOLOGIN TOKEN INVALIDO: " . $response);
+    exit('Acesso Negado: Token inválido ou expirado.');
 }
 
-// Inicializa variáveis de sessão requeridas pelo auth_type = 'signon'
+session_name('PMA_single_signon');
+session_start();
+
 $_SESSION['PMA_single_signon_user'] = $data['user'];
 $_SESSION['PMA_single_signon_password'] = $data['password'];
-$_SESSION['PMA_single_signon_host'] = '127.0.0.1'; // Optional
+$_SESSION['PMA_single_signon_host'] = $data['host'] ?? '127.0.0.1';
 
-$db = isset($data['database']) && !empty($data['database']) ? $data['database'] : '';
+$db = urlencode($data['database'] ?? '');
 
-// Redireciona para o phpMyAdmin
 if ($db) {
-    header("Location: index.php?server=1&db=" . urlencode($db));
+    header('Location: /phpmyadmin/index.php?db=' . $db);
 } else {
-    header("Location: index.php?server=1");
+    header('Location: /phpmyadmin/index.php');
 }
 exit;

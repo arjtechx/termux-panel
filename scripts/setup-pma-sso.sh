@@ -53,8 +53,9 @@ sed -i "s/\['auth_type'\] = 'cookie'/\['auth_type'\] = 'signon'/g" "$PMA_CONFIG"
 if ! grep -q "'SignonSession'" "$PMA_CONFIG"; then
     sed -i "/\['host'\]/a \
 \$cfg['Servers'][\$i]['auth_type'] = 'signon';\n\
-\$cfg['Servers'][\$i]['SignonSession'] = 'SignonSession';\n\
-\$cfg['Servers'][\$i]['SignonURL'] = 'autologin.php';\n\
+\$cfg['Servers'][\$i]['SignonSession'] = 'PMA_single_signon';\n\
+\$cfg['Servers'][\$i]['SignonURL'] = '/phpmyadmin/autologin.php';\n\
+\$cfg['Servers'][\$i]['LogoutURL'] = 'http://127.0.0.1:8088/';\n\
 " "$PMA_CONFIG"
 fi
 
