@@ -142,6 +142,11 @@ function switchTab(targetId) {
     document.querySelectorAll(`[data-target="${targetId}"]`).forEach(l => l.classList.add('active'));
 
     // Loaders específicos
+    if (targetId === 'tab-dashboard') {
+        fetchStatus();
+        fetchApps();
+        fetchProcesses();
+    }
     if (targetId === 'tab-files')    loadFiles();
     if (targetId === 'tab-database') fetchDatabases();
     if (targetId === 'tab-nginx')    fetchNginxSites();
@@ -357,7 +362,7 @@ async function fetchProcesses() {
             <td>${p.pid}</td>
             <td>${p.user}</td>
             <td>${p.cpu}%</td>
-            <td>${p.mem}</td>
+            <td>${p.ram}</td>
             <td style="font-family:monospace;font-size:0.8rem">${p.command}</td>
             <td><button class="btn btn-sm btn-danger" onclick="killProcess(${p.pid})">✕</button></td>
         </tr>
@@ -747,8 +752,9 @@ async function fetchNginxSites() {
 async function createNginxSite(e) {
     e.preventDefault();
     await safeFetch(`${API_BASE}/nginx`, 'POST', {
-        domain: document.getElementById('ngDomain').value,
-        port:   document.getElementById('ngPort').value,
+        domain:     document.getElementById('ngDomain').value,
+        listenPort: document.getElementById('ngListenPort').value,
+        port:       document.getElementById('ngPort').value,
     });
     fetchNginxSites();
 }

@@ -206,13 +206,23 @@
                 <div class="page-header">
                     <h1>Gerenciador de Arquivos</h1>
                     <div class="toolbar-group">
-                        <button class="btn btn-secondary btn-sm" onclick="createNewFolder()">
+                        <button class="btn btn-secondary btn-sm" onclick="loadFiles('/')" title="Raiz (/)">
+                            <i data-lucide="hard-drive"></i>
+                        </button>
+                        <button class="btn btn-secondary btn-sm" onclick="loadFiles('/data/data/com.termux/files/usr')" title="Termux Prefix">
+                            <i data-lucide="terminal-square"></i>
+                        </button>
+                        <button class="btn btn-secondary btn-sm" onclick="loadFiles('/data/data/com.termux/files/home')" title="Termux Home">
+                            <i data-lucide="home"></i>
+                        </button>
+                        <div style="width:1px; height:20px; background:var(--border-color); margin:0 8px;"></div>
+                        <button class="btn btn-secondary btn-sm" onclick="createNewFolder()" title="Nova Pasta">
                             <i data-lucide="folder-plus"></i>
                         </button>
-                        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('fileUploadInput').click()">
+                        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('fileUploadInput').click()" title="Upload">
                             <i data-lucide="upload"></i>
                         </button>
-                        <button class="btn btn-secondary btn-sm" onclick="zipSelected()">
+                        <button class="btn btn-secondary btn-sm" onclick="zipSelected()" title="Comprimir Zip/Tar">
                             <i data-lucide="file-archive"></i>
                         </button>
                         <input type="file" id="fileUploadInput" multiple style="display:none" onchange="handleUpload(event)">
@@ -510,10 +520,24 @@
                         <h3 class="card-title">Novo Proxy</h3>
                         <form onsubmit="createNginxSite(event)">
                             <div class="form-stack">
-                                <input type="text" id="ngDomain" placeholder="Domínio (ex: meusite.com)" required>
-                                <input type="number" id="ngPort" placeholder="Porta Local (ex: 3000)" required>
+                                <div>
+                                    <label class="form-label">Domínio / Host</label>
+                                    <input type="text" id="ngDomain" placeholder="ex: meusite.com" required>
+                                </div>
+                                <div style="display:flex; gap:10px;">
+                                    <div style="flex:1;">
+                                        <label class="form-label">Porta Externa (Listen)</label>
+                                        <input type="number" id="ngListenPort" placeholder="ex: 8080" value="80" required>
+                                    </div>
+                                    <div style="flex:1;">
+                                        <label class="form-label">Porta Local (Alvo)</label>
+                                        <input type="number" id="ngPort" placeholder="ex: 3000" required>
+                                    </div>
+                                </div>
                             </div>
-                            <button type="submit" class="btn btn-success btn-sm" style="margin-top:12px">Criar</button>
+                            <button type="submit" class="btn btn-success btn-sm" style="margin-top:12px; width:100%;">
+                                <i data-lucide="plus"></i> Criar Proxy
+                            </button>
                         </form>
                     </div>
                     <div class="card">

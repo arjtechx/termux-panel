@@ -490,11 +490,12 @@ app.get('/api/nginx', (req, res) => {
 });
 
 app.post('/api/nginx', async (req, res) => {
-    const { domain, port } = req.body;
+    const { domain, listenPort, port } = req.body;
+    const listen = listenPort || 80;
     const confName = `${domain}.conf`;
     const confPath = path.join(NGINX_CONF_DIR, confName);
     const content = `server {
-    listen 80;
+    listen ${listen};
     server_name ${domain};
 
     location / {
