@@ -231,16 +231,20 @@
                     </table>
                 </div>
 
-                <!-- Modal Viewer -->
+                <!-- Modal Viewer / Editor -->
                 <div id="fileViewerModal" class="modal hidden">
-                    <div class="modal-box">
+                    <div class="modal-box" style="max-width:800px; width:95vw;">
                         <div class="modal-header">
                             <h3 id="modalFileName">Arquivo</h3>
-                            <button class="btn btn-secondary btn-sm" onclick="closeFileViewer()">Fechar</button>
+                            <div style="display:flex;gap:8px;">
+                                <button class="btn btn-success btn-sm" onclick="saveFileContent()">💾 Salvar</button>
+                                <button class="btn btn-secondary btn-sm" onclick="closeFileViewer()">✕ Fechar</button>
+                            </div>
                         </div>
-                        <pre id="fileContentArea" class="file-viewer"></pre>
+                        <pre id="fileContentArea" class="file-viewer" contenteditable="true" spellcheck="false"></pre>
                     </div>
                 </div>
+
             </div>
 
             <!-- === TAB: TERMINAL === -->
