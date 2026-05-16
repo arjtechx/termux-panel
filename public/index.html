@@ -650,6 +650,32 @@
                     <!-- Preenchido via JS -->
                 </div>
 
+                <!-- Card de Atualização do Painel -->
+                <div class="card" style="margin-bottom:20px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+                        <div>
+                            <h3 class="card-title" style="margin-bottom:4px;">Atualização do Painel</h3>
+                            <p style="font-size:0.85rem; color:var(--text-muted);">
+                                Versão Atual: <strong id="update-current-version">v1.0.0</strong> | 
+                                Status: <span id="update-status-text" style="font-weight:600;">Carregando...</span>
+                            </p>
+                        </div>
+                        <div style="display:flex; gap:8px;">
+                            <button class="btn btn-success btn-sm hidden" id="btn-run-update" onclick="runSystemUpdate()">
+                                <i data-lucide="download-cloud"></i> Atualizar Agora
+                            </button>
+                            <button class="btn btn-secondary btn-sm" id="btn-check-update" onclick="checkSystemUpdates()">
+                                <i data-lucide="refresh-cw"></i> Verificar
+                            </button>
+                        </div>
+                    </div>
+                    <div id="update-terminal-wrapper" class="hidden" style="margin-top:16px;">
+                        <div id="update-terminal" class="terminal-box" style="height:250px; overflow-y:auto; font-size:13px; font-family:monospace; white-space:pre-wrap; background:#0d1117; color:#c9d1d9; padding:16px; border-radius:6px;">
+                            [Aguardando início da atualização...]
+                        </div>
+                    </div>
+                </div>
+
                 <div class="card">
                     <h3 class="card-title">Console de Diagnóstico & Auto-Fix</h3>
                     <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px;">

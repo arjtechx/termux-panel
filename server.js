@@ -1136,6 +1136,73 @@ app.get('/api/health-check/run', (req, res) => {
     req.on('close', () => proc.kill());
 });
 
+const UPDATE_SCRIPT = path.join(__dirname, 'scripts', 'update.sh');
+
+// SSE: Executa atualização do painel em tempo real
+app.get('/api/system/update/run', (req, res) => {
+    try { require('fs').chmodSync(UPDATE_SCRIPT, '755'); } catch(e) {}
+
+    res.setHeader('Content-Type',  'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection',    'keep-alive');
+    res.flushHeaders();
+
+    const send = (data) => res.write(`data: ${JSON.stringify({ line: data })}\n\n`);
+
+    const proc = spawn('bash', [UPDATE_SCRIPT], {
+        env: { ...process.env, TERM: 'xterm' },
+    });
+
+    proc.stdout.on('data', chunk => {
+        chunk.toString().split('\n').forEach(line => {
+            if (line.trim()) send(line);
+        });
+    });
+
+    proc.stderr.on('data', chunk => {
+        chunk.toString().split('\n').forEach(line => {
+            if (line.trim()) send('[STDERR] ' + line);
+        });
+    });
+
+    proc.on('close', code => {
+        send(`__DONE__:${code}`);
+        res.end();
+    });
+
+    req.on('close', () => proc.kill());
+});
+
+app.get('/api/system/update/check', async (req, res) => {
+    try {
+        const pjson = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+        let hasGitUpdate = false;
+        
+        const isGit = fs.existsSync(path.join(__dirname, '.git'));
+        if (isGit) {
+            try {
+                await new Promise((resolve) => {
+                    exec('git fetch --dry-run', () => resolve());
+                });
+                const statusOut = await new Promise((resolve) => {
+                    exec('git status -uno', (err, stdout) => resolve(stdout || ''));
+                });
+                if (statusOut.includes('behind')) {
+                    hasGitUpdate = true;
+                }
+            } catch (e) {}
+        }
+
+        res.json({
+            version: pjson.version || '1.0.0',
+            isGit,
+            hasUpdate: hasGitUpdate
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Status rápido dos serviços (sem script externo)
 app.get('/api/health-check/status', async (req, res) => {
     const results = {};

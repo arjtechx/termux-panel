@@ -153,6 +153,10 @@ function switchTab(targetId) {
     if (targetId === 'tab-cron')     fetchCron();
     if (targetId === 'tab-noip')     fetchNoipStatus();
     if (targetId === 'tab-docs')     loadDocumentation();
+    if (targetId === 'tab-health') {
+        checkHealthStatus();
+        checkSystemUpdates();
+    }
 }
 
 function initMobileNav() {
@@ -969,6 +973,108 @@ function runHealthCheck() {
     evtSource.onerror = () => {
         term.innerHTML += '\n<span style="color:var(--danger)">Conexão perdida com o servidor.</span>\n';
         evtSource.close();
+    };
+}
+
+// ============================================================
+//  SISTEMA DE ATUALIZAÇÃO DO PAINEL
+// ============================================================
+async function checkSystemUpdates() {
+    const statusText = document.getElementById('update-status-text');
+    const versionText = document.getElementById('update-current-version');
+    const btnRun = document.getElementById('btn-run-update');
+    
+    if (statusText) statusText.innerHTML = 'Verificando...';
+    
+    const data = await safeFetch(`${API_BASE}/system/update/check`);
+    if (!data) {
+        if (statusText) statusText.innerHTML = '<span style="color:var(--danger)">Erro ao verificar</span>';
+        return;
+    }
+    
+    if (versionText) versionText.textContent = `v${data.version}`;
+    
+    if (data.hasUpdate) {
+        if (statusText) statusText.innerHTML = '<span style="color:var(--success)">Nova versão disponível!</span>';
+        if (btnRun) btnRun.classList.remove('hidden');
+    } else {
+        if (data.isGit) {
+            if (statusText) statusText.innerHTML = '<span style="color:var(--text-muted)">Painel atualizado (Git)</span>';
+        } else {
+            if (statusText) statusText.innerHTML = '<span style="color:var(--text-muted)">Atualizar via tarball</span>';
+        }
+        // Se for manual, sempre deixa o botão de atualizar ativo para reinstalar/atualizar via tarball local se quiser
+        if (btnRun) {
+            if (data.isGit) {
+                btnRun.classList.add('hidden');
+            } else {
+                btnRun.classList.remove('hidden');
+                if (statusText) statusText.innerHTML = '<span style="color:var(--text-muted)">Instalação manual (coloque termux-panel-dist.tar.gz no home para atualizar)</span>';
+            }
+        }
+    }
+}
+
+function runSystemUpdate() {
+    if (!confirm('Deseja realmente iniciar a atualização do painel? O servidor será reiniciado ao final.')) return;
+    
+    const termWrapper = document.getElementById('update-terminal-wrapper');
+    const term = document.getElementById('update-terminal');
+    const btnRun = document.getElementById('btn-run-update');
+    const btnCheck = document.getElementById('btn-check-update');
+    
+    if (termWrapper) termWrapper.classList.remove('hidden');
+    if (term) term.innerHTML = '<span style="color:var(--primary)">Iniciando processo de auto-atualização...</span>\n\n';
+    if (btnRun) btnRun.disabled = true;
+    if (btnCheck) btnCheck.disabled = true;
+    
+    const evtSource = new EventSource(`${API_BASE}/system/update/run`);
+    
+    evtSource.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            const line = data.line;
+            
+            if (line.startsWith('__DONE__:')) {
+                evtSource.close();
+                const code = line.split(':')[1];
+                term.innerHTML += `\n<span style="color:${code == 0 ? 'var(--success)' : 'var(--warning)'}">Processo finalizado com código ${code}.</span>\n`;
+                if (code == 0) {
+                    term.innerHTML += `<span style="color:var(--success)">Painel atualizado com sucesso! Recarregando a página...</span>\n`;
+                } else {
+                    term.innerHTML += `<span style="color:var(--danger)">Erro na atualização. Verifique a saída acima.</span>\n`;
+                }
+                if (btnRun) btnRun.disabled = false;
+                if (btnCheck) btnCheck.disabled = false;
+                checkSystemUpdates();
+                return;
+            }
+            
+            // Coloração básica ANSI para HTML
+            let htmlLine = line
+                .replace(/\033\[0;31m/g, '<span style="color:var(--danger)">')
+                .replace(/\033\[0;32m/g, '<span style="color:var(--success)">')
+                .replace(/\033\[1;33m/g, '<span style="color:var(--warning)">')
+                .replace(/\033\[0;34m/g, '<span style="color:#58a6ff">')
+                .replace(/\033\[0;36m/g, '<span style="color:#39c5bb">')
+                .replace(/\033\[1m/g, '<strong>')
+                .replace(/\033\[0m/g, '</span>');
+                
+            term.innerHTML += htmlLine + '\n';
+            term.scrollTop = term.scrollHeight;
+        } catch (e) {
+            console.error('Erro ao processar linha de atualização', e);
+        }
+    };
+    
+    evtSource.onerror = () => {
+        term.innerHTML += '\n<span style="color:var(--warning)">Servidor desconectado (reiniciando para concluir atualização...).</span>\n';
+        evtSource.close();
+        setTimeout(() => {
+            if (btnRun) btnRun.disabled = false;
+            if (btnCheck) btnCheck.disabled = false;
+            location.reload();
+        }, 5000);
     };
 }
 
