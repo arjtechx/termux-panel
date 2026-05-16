@@ -760,6 +760,18 @@ async function deleteNginxSite(file) {
     fetchNginxSites();
 }
 
+async function actionNginx(action) {
+    const labels = { start: 'iniciar', stop: 'parar', restart: 'reiniciar' };
+    if (!confirm(`Deseja ${labels[action]} o serviço do NGINX?`)) return;
+    const res = await safeFetch(`${API_BASE}/nginx/action`, 'POST', { action });
+    if (res?.success) {
+        alert(`NGINX ${labels[action]} com sucesso!`);
+        fetchNginxSites();
+    } else {
+        alert('Erro ao processar o comando.');
+    }
+}
+
 // ============================================================
 //  CRONJOBS
 // ============================================================

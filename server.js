@@ -457,7 +457,8 @@ app.post('/api/cron', async (req, res) => {
 });
 
 // --- NGINX Manager Logic ---
-const NGINX_CONF_DIR = process.env.PREFIX ? `${process.env.PREFIX}/etc/nginx/conf.d` : '/etc/nginx/conf.d';
+const PREFIX = process.env.PREFIX || '/data/data/com.termux/files/usr';
+const NGINX_CONF_DIR = `${PREFIX}/etc/nginx/conf.d`;
 
 app.get('/api/nginx', (req, res) => {
     try {
@@ -466,11 +467,20 @@ app.get('/api/nginx', (req, res) => {
         const sites = files.map(file => {
             const content = fs.readFileSync(path.join(NGINX_CONF_DIR, file), 'utf8');
             const domainMatch = content.match(/server_name\s+([^;]+);/);
-            const portMatch = content.match(/proxy_pass\s+http:\/\/127.0.0.1:(\d+);/);
+            const listenMatch = content.match(/listen\s+(\d+)/);
+            const proxyMatch = content.match(/proxy_pass\s+http:\/\/(?:127\.0\.0\.1|localhost):(\d+);/);
+            
+            let targetPort = '?';
+            if (proxyMatch) {
+                targetPort = `${proxyMatch[1]} (Proxy)`;
+            } else if (listenMatch) {
+                targetPort = `${listenMatch[1]} (Direto)`;
+            }
+
             return {
                 file,
-                domain: domainMatch ? domainMatch[1] : '?',
-                port: portMatch ? portMatch[1] : '?'
+                domain: domainMatch ? domainMatch[1].trim() : '?',
+                port: targetPort
             };
         });
         res.json({ sites });
@@ -508,6 +518,29 @@ app.delete('/api/nginx', async (req, res) => {
     try {
         fs.unlinkSync(path.join(NGINX_CONF_DIR, file));
         await runCmd('nginx -s reload');
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/nginx/action', async (req, res) => {
+    const { action } = req.body;
+    try {
+        if (action === 'start') {
+            await runCmd('nginx');
+        } else if (action === 'stop') {
+            await runCmd('nginx -s stop');
+            await runCmd('pkill nginx');
+        } else if (action === 'restart') {
+            await runCmd('nginx -t'); // check syntax
+            await runCmd('nginx -s stop');
+            await runCmd('pkill nginx');
+            await new Promise(r => setTimeout(r, 500));
+            await runCmd('nginx');
+        } else if (action === 'reload') {
+            await runCmd('nginx -s reload');
+        }
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
