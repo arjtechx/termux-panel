@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Termux cPanel | Professional</title>
+    <link rel="stylesheet" href="style.css?v=4.0">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fira+Code&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+
+<!-- ============================================================
+     BOOT OVERLAY — Terminal de Inicialização
+============================================================ -->
+<div id="boot-overlay" class="boot-overlay">
+    <div class="boot-box">
+        <div class="boot-logo">
+            <span class="boot-icon">☁️</span>
+            <h1>Termux <span>cPanel</span></h1>
+        </div>
+        <div class="boot-terminal" id="boot-terminal">
+            <p class="boot-line">&gt; Inicializando sistema...</p>
+        </div>
+        <div class="boot-progress-wrap">
+            <div class="boot-progress-bar" id="boot-progress"></div>
+        </div>
+        <p class="boot-status" id="boot-status-text">Carregando módulos...</p>
+    </div>
+</div>
+
+<!-- ============================================================
+     APP SHELL
+============================================================ -->
+<div class="app-shell">
+
+    <!-- NAVBAR -->
+    <header class="top-navbar">
+        <div class="navbar-left">
+            <button class="btn-icon-ghost" onclick="toggleSidebar()" id="menu-toggle">
+                <i data-lucide="menu"></i>
+            </button>
+            <div class="logo">☁️ Termux <b>cPanel</b></div>
+        </div>
+        <div class="navbar-right">
+            <button class="btn-icon-ghost" onclick="toggleTheme()">
+                <i data-lucide="sun" class="icon-sun"></i>
+                <i data-lucide="moon" class="icon-moon"></i>
+            </button>
+            <button class="btn-icon-ghost" onclick="logout()">
+                <i data-lucide="log-out"></i>
+            </button>
+        </div>
+    </header>
+
+    <div class="app-body">
+
+        <!-- ============================================================
+             SIDEBAR
+        ============================================================ -->
+        <aside class="sidebar" id="sidebar">
+
+            <!-- Controles Rápidos -->
+            <div class="sidebar-controls">
+                <button class="btn btn-danger btn-block" onclick="rebootServer()">
+                    <i data-lucide="refresh-cw"></i> Reiniciar
+                </button>
+                <div class="control-row">
+                    <button class="btn btn-secondary" onclick="toggleWakelock()">
+                        <i data-lucide="zap"></i> Wake
+                    </button>
+                    <button class="btn btn-secondary" onclick="toggleSSHD()">
+                        <i data-lucide="unplug"></i> SSHD
+                    </button>
+                </div>
+                <button class="btn btn-secondary btn-block" onclick="toggleMariaDB()">
+                    <i data-lucide="database"></i> MariaDB
+                </button>
+            </div>
+
+            <!-- Navegação -->
+            <nav class="sidebar-nav">
+                <a href="#" class="nav-link active" data-target="tab-dashboard">
+                    <i data-lucide="layout-dashboard"></i> Dashboard
+                </a>
+                <a href="#" class="nav-link" data-target="tab-files">
+                    <i data-lucide="folder"></i> Arquivos
+                </a>
+                <a href="#" class="nav-link" data-target="tab-terminal">
+                    <i data-lucide="terminal"></i> Terminal SSH
+                </a>
+                <a href="#" class="nav-link" data-target="tab-docs">
+                    <i data-lucide="file-text"></i> Documentação
+                </a>
+                <a href="#" class="nav-link" data-target="tab-database">
+                    <i data-lucide="database"></i> Banco de Dados
+                </a>
+                <a href="#" class="nav-link" data-target="tab-nginx">
+                    <i data-lucide="globe"></i> NGINX
+                </a>
+                <a href="#" class="nav-link" data-target="tab-cron">
+                    <i data-lucide="calendar"></i> Cronjobs
+                </a>
+                <a href="#" class="nav-link" data-target="tab-noip">
+                    <i data-lucide="wifi"></i> NO-IP IPv6
+                </a>
+                <a href="#" class="nav-link" data-target="tab-logs">
+                    <i data-lucide="scroll-text"></i> Logs
+                </a>
+                <a href="#" class="nav-link" data-target="tab-backup">
+                    <i data-lucide="archive"></i> Backups
+                </a>
+            </nav>
+        </aside>
+
+        <!-- Overlay para fechar sidebar no mobile -->
+        <div class="sidebar-backdrop" id="sidebar-backdrop" onclick="toggleSidebar()"></div>
+
+        <!-- ============================================================
+             CONTEÚDO PRINCIPAL
+        ============================================================ -->
+        <main class="main-content">
+
+            <!-- === TAB: DASHBOARD === -->
+            <div id="tab-dashboard" class="tab-pane active">
+                <div class="page-header">
+                    <h1>Visão Geral do Servidor</h1>
+                </div>
+
+                <!-- Storage Card -->
+                <div class="card storage-card">
+                    <div class="storage-icon"><i data-lucide="hard-drive"></i></div>
+                    <div class="storage-info">
+                        <span class="card-label">Armazenamento Interno</span>
+                        <div class="progress-track"><div class="progress-fill" id="stat-storage-progress"></div></div>
+                        <small id="stat-storage">-- livre de --</small>
+                    </div>
+                </div>
+
+                <!-- Stats Cards -->
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <span class="card-label"><i data-lucide="cpu"></i> CPU</span>
+                        <strong id="stat-cpu">--%</strong>
+                        <small id="stat-cpu-details">-- Núcleos</small>
+                    </div>
+                    <div class="stat-card">
+                        <span class="card-label"><i data-lucide="memory-stick"></i> RAM</span>
+                        <strong id="stat-ram">-- / --</strong>
+                    </div>
+                    <div class="stat-card">
+                        <span class="card-label"><i data-lucide="thermometer"></i> Temperatura</span>
+                        <strong id="stat-temperature">--°C</strong>
+                    </div>
+                    <div class="stat-card">
+                        <span class="card-label"><i data-lucide="arrow-up-down"></i> Rede</span>
+                        <strong id="stat-net-speed">-- / --</strong>
+                    </div>
+                </div>
+
+                <!-- Apps Section -->
+                <div class="section-header">
+                    <h2>Meus Apps</h2>
+                    <button class="btn btn-primary btn-sm" onclick="toggleForm()">
+                        <i data-lucide="plus"></i> Novo App
+                    </button>
+                </div>
+
+                <form id="addAppForm" class="card hidden" onsubmit="addApp(event)" style="margin-bottom: 20px;">
+                    <div class="form-row">
+                        <input type="text" id="appName" placeholder="Nome" required>
+                        <input type="number" id="appPort" placeholder="Porta" required>
+                        <input type="text" id="appIcon" placeholder="Ícone (emoji)">
+                        <input type="url" id="appUrl" placeholder="URL">
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-success btn-sm">Salvar</button>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="toggleForm()">Cancelar</button>
+                    </div>
+                </form>
+
+                <div class="stats-grid" id="appsGrid"></div>
+
+                <!-- Processos -->
+                <div class="section-header" style="margin-top: 10px;">
+                    <h2>Processos Simples</h2>
+                </div>
+                <div class="table-card">
+                    <table>
+                        <thead>
+                            <tr><th>PID</th><th>Usuário</th><th>CPU</th><th>RAM</th><th>Comando</th><th>Ações</th></tr>
+                        </thead>
+                        <tbody id="processesTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- === TAB: ARQUIVOS === -->
+            <div id="tab-files" class="tab-pane">
+                <div class="page-header">
+                    <h1>Gerenciador de Arquivos</h1>
+                    <div class="toolbar-group">
+                        <button class="btn btn-secondary btn-sm" onclick="createNewFolder()">
+                            <i data-lucide="folder-plus"></i>
+                        </button>
+                        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('fileUploadInput').click()">
+                            <i data-lucide="upload"></i>
+                        </button>
+                        <button class="btn btn-secondary btn-sm" onclick="zipSelected()">
+                            <i data-lucide="file-archive"></i>
+                        </button>
+                        <input type="file" id="fileUploadInput" multiple style="display:none" onchange="handleUpload(event)">
+                    </div>
+                </div>
+                <div class="breadcrumb" id="file-breadcrumb">/home</div>
+                <div class="table-card">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width:40px"><input type="checkbox" id="selectAllFiles" onclick="toggleSelectAllFiles()"></th>
+                                <th>Nome</th>
+                                <th>Tamanho</th>
+                                <th>Modificado</th>
+                                <th style="text-align:right">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="file-list"></tbody>
+                    </table>
+                </div>
+
+                <!-- Modal Viewer -->
+                <div id="fileViewerModal" class="modal hidden">
+                    <div class="modal-box">
+                        <div class="modal-header">
+                            <h3 id="modalFileName">Arquivo</h3>
+                            <button class="btn btn-secondary btn-sm" onclick="closeFileViewer()">Fechar</button>
+                        </div>
+                        <pre id="fileContentArea" class="file-viewer"></pre>
+                    </div>
+                </div>
+            </div>
+
+            <!-- === TAB: TERMINAL === -->
+            <div id="tab-terminal" class="tab-pane">
+                <div class="page-header">
+                    <h1>Terminal Web SSH</h1>
+                    <button class="btn btn-primary btn-sm" onclick="connectTerminal()">Conectar</button>
+                </div>
+                <div class="card" style="margin-bottom: 20px;">
+                    <div class="form-row">
+                        <div>
+                            <label class="form-label">Host</label>
+                            <input type="text" id="sshHost" value="127.0.0.1">
+                        </div>
+                        <div>
+                            <label class="form-label">Porta</label>
+                            <input type="number" id="sshPort" value="8022">
+                        </div>
+                        <div>
+                            <label class="form-label">Usuário</label>
+                            <input type="text" id="sshUser" placeholder="usuário">
+                        </div>
+                        <div>
+                            <label class="form-label">Senha</label>
+                            <input type="password" id="sshPass" placeholder="senha">
+                        </div>
+                    </div>
+                </div>
+                <div id="terminal-container" class="terminal-box"></div>
+            </div>
+
+            <!-- === TAB: DOCUMENTAÇÃO === -->
+            <div id="tab-docs" class="tab-pane">
+                <div class="page-header">
+                    <h1>Documentação</h1>
+                    <button class="btn btn-secondary btn-sm" onclick="loadDocumentation()">
+                        <i data-lucide="refresh-cw"></i> Atualizar
+                    </button>
+                </div>
+                <div id="docs-container" class="card"></div>
+            </div>
+
+            <!-- === TAB: BANCO DE DADOS === -->
+            <div id="tab-database" class="tab-pane">
+                <div class="page-header">
+                    <h1>Banco de Dados</h1>
+                    <button class="btn btn-secondary btn-sm" onclick="showDbSetup()">Configurar Root</button>
+                </div>
+                <div class="two-col">
+                    <div class="card">
+                        <h3 class="card-title">Criar Banco</h3>
+                        <form onsubmit="createDatabase(event)">
+                            <div class="form-stack">
+                                <input type="text" id="dbNewName" placeholder="Nome do Banco" required>
+                                <input type="text" id="dbNewUser" placeholder="Usuário" required>
+                                <input type="password" id="dbNewPass" placeholder="Senha" required>
+                            </div>
+                            <button type="submit" class="btn btn-success btn-sm" style="margin-top:12px">Criar</button>
+                        </form>
+                    </div>
+                    <div class="card">
+                        <h3 class="card-title">Bancos Existentes</h3>
+                        <div id="db-list">Aguardando conexão...</div>
+                    </div>
+                </div>
+                <div id="dbSetupModal" class="modal hidden">
+                    <div class="modal-box">
+                        <h3>Root MariaDB</h3>
+                        <div class="form-stack" style="margin-top:16px">
+                            <input type="text" id="dbRootUser" value="root">
+                            <input type="password" id="dbRootPass" placeholder="Senha Root">
+                        </div>
+                        <div class="form-actions" style="margin-top:16px">
+                            <button class="btn btn-success btn-sm" onclick="saveDbSetup()">Salvar</button>
+                            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('dbSetupModal').classList.add('hidden')">Cancelar</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- === TAB: NGINX === -->
+            <div id="tab-nginx" class="tab-pane">
+                <div class="page-header">
+                    <h1>Virtual Hosts (NGINX)</h1>
+                    <button class="btn btn-secondary btn-sm" onclick="fetchNginxSites()">
+                        <i data-lucide="refresh-cw"></i> Atualizar
+                    </button>
+                </div>
+                <div class="two-col">
+                    <div class="card">
+                        <h3 class="card-title">Novo Proxy</h3>
+                        <form onsubmit="createNginxSite(event)">
+                            <div class="form-stack">
+                                <input type="text" id="ngDomain" placeholder="Domínio (ex: meusite.com)" required>
+                                <input type="number" id="ngPort" placeholder="Porta Local (ex: 3000)" required>
+                            </div>
+                            <button type="submit" class="btn btn-success btn-sm" style="margin-top:12px">Criar</button>
+                        </form>
+                    </div>
+                    <div class="card">
+                        <h3 class="card-title">Sites Ativos</h3>
+                        <div class="table-card" style="margin-top:12px">
+                            <table>
+                                <thead><tr><th>Domínio</th><th>Porta</th><th>Ação</th></tr></thead>
+                                <tbody id="nginxTableBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- === TAB: CRONJOBS === -->
+            <div id="tab-cron" class="tab-pane">
+                <div class="page-header">
+                    <h1>Tarefas Agendadas</h1>
+                    <button class="btn btn-success btn-sm" onclick="saveCron()">
+                        <i data-lucide="save"></i> Salvar
+                    </button>
+                </div>
+                <div class="card">
+                    <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 12px;">
+                        Formato: <code>* * * * * comando</code> (Min, Hora, Dia, Mês, DiaSemana)
+                    </p>
+                    <textarea id="cronEditor" class="terminal-box" style="width:100%; height:380px; resize:vertical;"></textarea>
+                </div>
+            </div>
+
+            <!-- === TAB: NO-IP === -->
+            <div id="tab-noip" class="tab-pane">
+                <div class="page-header">
+                    <h1>NO-IP IPv6</h1>
+                    <button class="btn btn-primary btn-sm" id="noip-toggle-btn" onclick="toggleNoip()">
+                        <i data-lucide="play"></i> Iniciar
+                    </button>
+                </div>
+                <div class="stats-grid" style="margin-bottom: 20px;">
+                    <div class="stat-card"><span class="card-label">Status</span><strong id="noip-status-text">--</strong></div>
+                    <div class="stat-card"><span class="card-label">IP Atual</span><strong id="noip-current-ip">--</strong></div>
+                    <div class="stat-card"><span class="card-label">Última Atualização</span><strong id="noip-last-update">--</strong></div>
+                </div>
+                <div class="two-col">
+                    <div class="card">
+                        <h3 class="card-title">Configurações</h3>
+                        <form id="noipForm" onsubmit="saveNoipConfig(event)">
+                            <div class="form-stack">
+                                <input type="text" id="noipUsername" placeholder="Usuário/Email" required>
+                                <input type="password" id="noipPassword" placeholder="Senha" required>
+                                <input type="text" id="noipHostname" placeholder="Hostname (ex: meu.ddns.net)" required>
+                                <input type="number" id="noipInterval" placeholder="Intervalo (minutos)" value="15">
+                            </div>
+                            <label style="display:flex; align-items:center; gap:8px; margin-top:12px; font-size:0.85rem;">
+                                <input type="checkbox" id="noipAutostart"> Auto-iniciar
+                            </label>
+                            <button type="submit" class="btn btn-success btn-sm" style="margin-top:12px">Salvar</button>
+                        </form>
+                    </div>
+                    <div class="card">
+                        <h3 class="card-title">Log de Atividades</h3>
+                        <div id="noip-log-container" class="terminal-box" style="height:260px; margin-top:12px;">Aguardando...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- === TAB: LOGS === -->
+            <div id="tab-logs" class="tab-pane">
+                <div class="page-header">
+                    <h1>Visualizador de Logs</h1>
+                    <div class="toolbar-group">
+                        <input type="text" id="logFilePath" placeholder="/var/log/nginx/access.log" style="width:280px">
+                        <button class="btn btn-primary btn-sm" onclick="startLogWatch()">
+                            <i data-lucide="play"></i> Monitorar
+                        </button>
+                        <button class="btn btn-danger btn-sm" onclick="stopLogWatch()">
+                            <i data-lucide="square"></i> Parar
+                        </button>
+                    </div>
+                </div>
+                <div id="logs-display" class="terminal-box" style="height: 550px;">Aguardando início do monitoramento...</div>
+            </div>
+
+            <!-- === TAB: BACKUPS === -->
+            <div id="tab-backup" class="tab-pane">
+                <div class="page-header">
+                    <h1>Sistema de Backup</h1>
+                </div>
+                <div class="card" style="text-align:center; padding: 60px 40px;">
+                    <i data-lucide="archive" style="width:56px; height:56px; color: var(--primary); margin-bottom:20px;"></i>
+                    <h2 style="margin-bottom:12px;">Criar Backup Completo</h2>
+                    <p style="color:var(--text-muted); margin-bottom:28px; max-width:440px; margin-inline:auto;">
+                        Gera um arquivo <code>.tar.gz</code> com todos os arquivos da pasta Home e um dump completo dos bancos MariaDB.
+                    </p>
+                    <button class="btn btn-primary" onclick="createBackup()" id="backup-btn">
+                        <i data-lucide="download"></i> Gerar Backup Agora
+                    </button>
+                    <div id="backup-result" class="hidden" style="margin-top:28px; padding:16px; background:rgba(16,185,129,0.1); border:1px solid var(--success); border-radius:8px;">
+                        <p style="color:var(--success); font-weight:600;">✅ Backup concluído!</p>
+                        <a id="backup-download-link" href="#" class="btn btn-success btn-sm" style="margin-top:10px;">Baixar Arquivo</a>
+                    </div>
+                </div>
+            </div>
+
+        </main><!-- /main-content -->
+    </div><!-- /app-body -->
+
+    <!-- MOBILE BOTTOM NAV -->
+    <nav class="mobile-nav">
+        <a href="#" class="mobile-nav-item active" data-target="tab-dashboard">
+            <i data-lucide="layout-dashboard"></i><span>Painel</span>
+        </a>
+        <a href="#" class="mobile-nav-item" data-target="tab-files">
+            <i data-lucide="folder"></i><span>Arquivos</span>
+        </a>
+        <a href="#" class="mobile-nav-item" data-target="tab-terminal">
+            <i data-lucide="terminal"></i><span>Terminal</span>
+        </a>
+        <a href="#" class="mobile-nav-item" data-target="tab-database">
+            <i data-lucide="database"></i><span>Banco</span>
+        </a>
+        <a href="#" class="mobile-nav-item" data-target="tab-logs">
+            <i data-lucide="scroll-text"></i><span>Logs</span>
+        </a>
+    </nav>
+
+</div><!-- /app-shell -->
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="app.js?v=4.0"></script>
+</body>
+</html>
