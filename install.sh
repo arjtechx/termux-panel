@@ -102,7 +102,8 @@ while true; do
     echo -e "2) 🔄 Atualizar Dependências"
     echo -e "3) 🧹 Limpar Dados e Configurações"
     echo -e "4) 🗑️  Remover Dependências do Sistema"
-    echo -e "5) ▶️  Iniciar Painel"
+    echo -e "5) ▶️  Iniciar Painel (modo básico)"
+    echo -e "6) 🔁 Iniciar com Auto-Restart + PHP + NGINX + MariaDB"
     echo -e "0) ❌ Sair"
     echo -en "\nEscolha uma opção: "
     read opt
@@ -113,6 +114,7 @@ while true; do
         3) uninstall_all ;;
         4) remove_dependencies ;;
         5) fuser -k 8088/tcp 2>/dev/null; pkill -9 -f "node server.js" 2>/dev/null; sleep 1; node server.js; break ;;
+        6) bash scripts/start.sh; break ;;
         0) break ;;
         *) echo "Opção inválida" ;;
     esac

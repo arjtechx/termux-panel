@@ -19,7 +19,7 @@ if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     git pull
 else
     echo -e "\033[1;33m[*] Instalação manual detectada. Buscando tarball de atualização...\033[0m"
-    
+
     # Se houver um arquivo termux-panel-dist.tar.gz na pasta home, extraímos ele
     TAR_PATH="/data/data/com.termux/files/home/termux-panel-dist.tar.gz"
     if [ -f "$TAR_PATH" ]; then
@@ -35,7 +35,7 @@ fi
 echo -e "\033[0;34m[*] Atualizando dependências do Node.js...\033[0m"
 npm install --no-audit --no-fund
 
-# 3. Executa a configuração SSO do phpMyAdmin para garantir que as portas e arquivos estejam sincronizados
+# 3. Executa a configuração SSO do phpMyAdmin
 echo -e "\033[0;34m[*] Aplicando correções automáticas do phpMyAdmin SSO...\033[0m"
 if [ -f "scripts/setup-pma-sso.sh" ]; then
     bash scripts/setup-pma-sso.sh
@@ -43,17 +43,56 @@ fi
 
 echo -e "\033[0;32m[+] Painel atualizado com sucesso!\033[0m"
 
-# 4. Força o reinício do servidor Node.js
-# Se rodando via PM2, o PM2 reinicia sozinho. Se rodando via node puro, matamos e reiniciamos.
-echo -e "\033[1;33m[*] Reiniciando servidor do painel...\033[0m"
+# 4. Inicia PHP-FPM se não estiver rodando
+echo -e "\033[0;34m[*] Verificando PHP-FPM...\033[0m"
+if ! pgrep -x php-fpm > /dev/null 2>&1; then
+    echo -e "\033[1;33m[*] PHP-FPM não está rodando. Iniciando...\033[0m"
+    PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
+    mkdir -p "$PREFIX/var/run"
+    php-fpm --daemonize 2>/dev/null || php-fpm -D 2>/dev/null || php-fpm &
+    sleep 1
+    if pgrep -x php-fpm > /dev/null 2>&1; then
+        echo -e "\033[0;32m[+] PHP-FPM iniciado.\033[0m"
+    else
+        echo -e "\033[1;33m[!] PHP-FPM não pôde iniciar automaticamente.\033[0m"
+    fi
+else
+    echo -e "\033[0;32m[+] PHP-FPM já está rodando.\033[0m"
+fi
+
+# 5. Reinicia o NGINX para carregar a nova configuração SSO
+echo -e "\033[0;34m[*] Recarregando NGINX...\033[0m"
+if pgrep -x nginx > /dev/null 2>&1; then
+    nginx -s reload 2>/dev/null && echo -e "\033[0;32m[+] NGINX recarregado.\033[0m"
+else
+    nginx 2>/dev/null && echo -e "\033[0;32m[+] NGINX iniciado.\033[0m"
+fi
+
+# 6. Reinicia o painel — mata o processo atual e o loop start.sh reinicia automaticamente
+echo -e "\033[1;33m[*] Encerrando processo do painel para auto-restart...\033[0m"
 sleep 2
 
-# Encontra a porta 8088 e mata o processo Node.js para que o PM2 / loop de inicialização o reinicie
-PID=$(lsof -t -i:8088 2>/dev/null)
-if [ -n "$PID" ]; then
-    kill -9 "$PID"
+OLDPID=$(lsof -t -i:8088 2>/dev/null)
+if [ -n "$OLDPID" ]; then
+    kill -9 "$OLDPID" 2>/dev/null
+    echo -e "\033[0;32m[+] Processo encerrado. O auto-restart iniciará o painel automaticamente.\033[0m"
 else
-    pkill -f "server.js" || exit 0
+    # Fallback caso não encontre via lsof
+    pkill -f "server.js" 2>/dev/null
+    echo -e "\033[0;32m[+] Sinal de restart enviado.\033[0m"
+fi
+
+# Pequena espera para que o start.sh pegue o restart
+sleep 1
+
+# Caso o start.sh não esteja rodando (sessão iniciada sem ele), inicia o painel diretamente em background
+if ! lsof -t -i:8088 > /dev/null 2>&1; then
+    echo -e "\033[0;34m[*] Nenhum auto-restart detectado. Iniciando painel diretamente...\033[0m"
+    sleep 2
+    if ! lsof -t -i:8088 > /dev/null 2>&1; then
+        nohup node server.js > /tmp/panel.log 2>&1 &
+        echo -e "\033[0;32m[+] Painel reiniciado em background (PID: $!).\033[0m"
+    fi
 fi
 
 exit 0
