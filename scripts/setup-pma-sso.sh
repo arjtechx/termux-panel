@@ -7,7 +7,11 @@ PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 PMA_DIR="$PREFIX/share/phpmyadmin"
 
 echo "Verificando phpMyAdmin..."
-if [ ! -d "$PMA_DIR" ]; then
+CUSTOM_PMA="/data/data/com.termux/files/home/server/sites/phpMyAdmin-5.2.3-all-languages"
+
+if [ -d "$CUSTOM_PMA" ]; then
+    PMA_DIR="$CUSTOM_PMA"
+elif [ ! -d "$PMA_DIR" ]; then
     ALT_PMA=$(find "$PREFIX/share" -name "phpmyadmin" -type d 2>/dev/null | head -1)
     if [ -n "$ALT_PMA" ]; then
         PMA_DIR="$ALT_PMA"

@@ -737,8 +737,8 @@ async function saveDbSetup() {
 async function openPhpMyAdmin(dbName = null) {
     const data = await safeFetch(`${API_BASE}/database/connect`, 'POST', { database: dbName });
     if (data && data.success && data.token) {
-        // Redireciona de forma segura enviando o token para o gateway PHP local
-        const pmaUrl = `${window.location.protocol}//${window.location.hostname}:8080/autologin.php?token=${data.token}`;
+        // Redireciona de forma segura enviando o token para o gateway PHP local (com alias /phpmyadmin/)
+        const pmaUrl = `${window.location.protocol}//${window.location.hostname}:8080/phpmyadmin/autologin.php?token=${data.token}`;
         window.open(pmaUrl, '_blank');
     } else {
         alert("Falha ao gerar o token de acesso SSO.");
