@@ -205,30 +205,32 @@
             </div>
 
             <!-- === TAB: ARQUIVOS === -->
-            <div id="tab-files" class="tab-pane" style="height: calc(100vh - 60px); display: flex; flex-direction: column;">
-                <div class="page-header" style="margin-bottom: 15px;">
-                    <h1>Gerenciador de Arquivos Avançado</h1>
-                    <span class="badge" style="background: var(--primary); color: #000; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 0.8rem;">FileBrowser Integrado</span>
-                </div>
-                
-                <div class="embedded-filebrowser-layout" style="display: flex; flex: 1; gap: 16px; overflow: hidden;">
-                    <!-- Sidebar Rápida -->
-                    <div class="fb-sidebar" style="width: 220px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto;">
-                        <h4 style="color: var(--text-muted); font-size: 0.85rem; text-transform: uppercase; margin-bottom: 5px;">Acesso Rápido</h4>
-                        <button class="btn btn-secondary" style="justify-content: flex-start;" onclick="fbNavigate('/data/data/com.termux/files/home')"><i data-lucide="home"></i> Home do Termux</button>
-                        <button class="btn btn-secondary" style="justify-content: flex-start;" onclick="fbNavigate('/data/data/com.termux/files/usr')"><i data-lucide="terminal-square"></i> Root do Termux</button>
-                        <button class="btn btn-secondary" style="justify-content: flex-start;" onclick="fbNavigate('/data/data/com.termux/files/usr/share/nginx/html')"><i data-lucide="globe"></i> Pasta WWW</button>
-                        <button class="btn btn-secondary" style="justify-content: flex-start;" onclick="fbNavigate('/data/data/com.termux/files/home/termux-panel/backups')"><i data-lucide="archive"></i> Backups</button>
-                        <button class="btn btn-secondary" style="justify-content: flex-start;" onclick="fbNavigate('/data/data/com.termux/files/home/termux-panel/config')"><i data-lucide="settings"></i> Configurações</button>
-                        
-                        <div style="height: 1px; background: var(--border-color); margin: 10px 0;"></div>
-                        
-                        <button class="btn btn-secondary" style="justify-content: flex-start;" onclick="document.getElementById('iframe-filebrowser').contentWindow.location.reload();"><i data-lucide="refresh-cw"></i> Recarregar</button>
+            <div id="tab-files" class="tab-pane">
+                <div style="height: calc(100vh - 60px); display: flex; flex-direction: column;">
+                    <div class="page-header" style="margin-bottom: 15px;">
+                        <h1>Gerenciador de Arquivos Avançado</h1>
+                        <span class="badge" style="background: var(--primary); color: #000; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 0.8rem;">FileBrowser Integrado</span>
                     </div>
                     
-                    <!-- Iframe Nativo -->
-                    <div class="fb-content" style="flex: 1; border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; background: var(--surface);">
-                        <iframe id="iframe-filebrowser" src="/__filebrowser/" style="width: 100%; height: 100%; border: none;"></iframe>
+                    <div class="embedded-filebrowser-layout" style="display: flex; flex: 1; gap: 16px; overflow: hidden;">
+                        <!-- Sidebar Rápida -->
+                        <div class="fb-sidebar" style="width: 220px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto;">
+                            <h4 style="color: var(--text-muted); font-size: 0.85rem; text-transform: uppercase; margin-bottom: 5px;">Acesso Rápido</h4>
+                            <button class="btn btn-secondary" style="justify-content: flex-start;" onclick="fbNavigate('/data/data/com.termux/files/home')"><i data-lucide="home"></i> Home do Termux</button>
+                            <button class="btn btn-secondary" style="justify-content: flex-start;" onclick="fbNavigate('/data/data/com.termux/files/usr')"><i data-lucide="terminal-square"></i> Root do Termux</button>
+                            <button class="btn btn-secondary" style="justify-content: flex-start;" onclick="fbNavigate('/data/data/com.termux/files/usr/share/nginx/html')"><i data-lucide="globe"></i> Pasta WWW</button>
+                            <button class="btn btn-secondary" style="justify-content: flex-start;" onclick="fbNavigate('/data/data/com.termux/files/home/termux-panel/backups')"><i data-lucide="archive"></i> Backups</button>
+                            <button class="btn btn-secondary" style="justify-content: flex-start;" onclick="fbNavigate('/data/data/com.termux/files/home/termux-panel/config')"><i data-lucide="settings"></i> Configurações</button>
+                            
+                            <div style="height: 1px; background: var(--border-color); margin: 10px 0;"></div>
+                            
+                            <button class="btn btn-secondary" style="justify-content: flex-start;" onclick="document.getElementById('iframe-filebrowser').contentWindow.location.reload();"><i data-lucide="refresh-cw"></i> Recarregar</button>
+                        </div>
+                        
+                        <!-- Iframe Nativo -->
+                        <div class="fb-content" style="flex: 1; border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; background: var(--surface);">
+                            <iframe id="iframe-filebrowser" src="/__filebrowser/" style="width: 100%; height: 100%; border: none;"></iframe>
+                        </div>
                     </div>
                 </div>
             </div>
