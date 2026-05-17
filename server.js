@@ -490,6 +490,8 @@ app.post('/api/cron', async (req, res) => {
 });
 
 // --- Hospedagem (Sites & Apps) Logic ---
+const PREFIX = process.env.PREFIX || '/data/data/com.termux/files/usr';
+const NGINX_CONF_DIR = `${PREFIX}/etc/nginx/conf.d`;
 const HOSTING_FILE = path.join(__dirname, 'config', 'hosting.json');
 const HOSTING_LOGS_DIR = path.join(__dirname, 'logs');
 
@@ -908,8 +910,6 @@ setInterval(async () => {
 }, 15000);
 
 // --- NGINX Manager Logic ---
-const PREFIX = process.env.PREFIX || '/data/data/com.termux/files/usr';
-const NGINX_CONF_DIR = `${PREFIX}/etc/nginx/conf.d`;
 
 app.get('/api/nginx', (req, res) => {
     try {
@@ -1868,8 +1868,40 @@ app.get('/api/system/update/check', async (req, res) => {
                     hasUpdate = publishedAt > localStat.mtime;
                 }
             } catch(e) {
-                // Se falhar na API do GitHub, reporta sem update mas com erro
-                updateMethod = 'github_error';
+                // FALLBACK: Usar git ls-remote para obter a última versão sem limite de taxa de API!
+                try {
+                    const gitUrl = `https://github.com/${config.github_repo}.git`;
+                    const tagsOut = await new Promise((resolve, reject) => {
+                        exec(`git ls-remote --tags ${gitUrl}`, (err, stdout) => {
+                            if (err) reject(err);
+                            else resolve(stdout || '');
+                        });
+                    });
+                    const tags = tagsOut.split('\n')
+                        .map(line => {
+                            const match = line.match(/refs\/tags\/(v?\d+\.\d+\.\d+)/);
+                            return match ? match[1] : null;
+                        })
+                        .filter(Boolean);
+                    if (tags.length > 0) {
+                        const sorted = tags.sort((a, b) => {
+                            const parse = v => v.replace(/^v/, '').split('.').map(Number);
+                            const [pa, pb] = [parse(a), parse(b)];
+                            for (let i = 0; i < 3; i++) {
+                                if (pa[i] !== pb[i]) return pa[i] - pb[i];
+                            }
+                            return 0;
+                        });
+                        const latestTag = sorted[sorted.length - 1];
+                        latestVersion = latestTag.replace(/^v/, '');
+                        hasUpdate = latestVersion !== currentVersion;
+                        updateMethod = 'github'; // Recuperado com sucesso via Git!
+                    } else {
+                        updateMethod = 'github_error';
+                    }
+                } catch (errGit) {
+                    updateMethod = 'github_error';
+                }
             }
         }
 
@@ -1957,7 +1989,71 @@ app.get('/api/system/update/versions', async (req, res) => {
             versions
         });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        // FALLBACK: se a API do GitHub falhar (rate limit ou DNS), usa git ls-remote para listar as tags de forma segura!
+        try {
+            const config = getUpdateConfig();
+            const pjson = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+            const currentVersion = pjson.version || '1.0.0';
+            const gitUrl = `https://github.com/${config.github_repo}.git`;
+            
+            const tagsOut = await new Promise((resolve, reject) => {
+                exec(`git ls-remote --tags ${gitUrl}`, (err, stdout) => {
+                    if (err) reject(err);
+                    else resolve(stdout || '');
+                });
+            });
+
+            const lines = tagsOut.split('\n').filter(Boolean);
+            const rawVersions = lines.map(line => {
+                const match = line.match(/refs\/tags\/(v?\d+\.\d+\.\d+)/);
+                if (!match) return null;
+                const tag = match[1].startsWith('v') ? match[1] : 'v' + match[1];
+                const tagClean = tag.replace(/^v/, '');
+                
+                let compatStatus = 'compatible';
+                let compatMessage = 'Upgrade/Reinstalação 100% seguro.';
+
+                if (tagClean === currentVersion) {
+                    compatStatus = 'compatible';
+                    compatMessage = 'Esta é a sua versão ativa atual.';
+                } else {
+                    const cmp = tagClean.localeCompare(currentVersion, undefined, { numeric: true, sensitivity: 'base' });
+                    if (cmp < 0) {
+                        compatStatus = 'breaking';
+                        compatMessage = 'Aviso: Downgrade. Recursos novos da v1.2.0 (Hospedagem) ficarão inativos.';
+                    } else {
+                        compatStatus = 'compatible';
+                        compatMessage = 'Upgrade compatível e recomendado.';
+                    }
+                }
+
+                return {
+                    tag,
+                    name: `Termux Panel ${tag}`,
+                    publishedAt: new Date().toISOString(), // Fallback de data
+                    body: 'Release carregada dinamicamente via Git tags (API rate limit bypass).',
+                    compatStatus,
+                    compatMessage
+                };
+            }).filter(Boolean);
+
+            const sortedVersions = rawVersions.sort((a, b) => {
+                const parse = v => v.tag.replace(/^v/, '').split('.').map(Number);
+                const [pa, pb] = [parse(b), parse(a)]; // Decrescente
+                for (let i = 0; i < 3; i++) {
+                    if (pa[i] !== pb[i]) return pa[i] - pb[i];
+                }
+                return 0;
+            });
+
+            res.json({
+                success: true,
+                currentVersion,
+                versions: sortedVersions
+            });
+        } catch (errFallback) {
+            res.status(500).json({ error: `GitHub API indisponível e falha no Git fallback: ${err.message}` });
+        }
     }
 });
 
