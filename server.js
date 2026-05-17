@@ -3858,6 +3858,61 @@ app.post('/api/filebrowser/reinstall', async (req, res) => {
     }
 });
 
+server.on('error', (e) => {
+    if (e.code === 'EADDRINUSE') {
+        console.warn(`[WARN] A porta ${PORT} já está sendo utilizada por outro processo!`);
+        console.log(`[INFO] Tentando liberar a porta ${PORT} automaticamente...`);
+        const { execSync } = require('child_process');
+        try {
+            if (os.platform() === 'win32') {
+                // Windows: Encontra o PID ocupando a porta e mata
+                const findCmd = `netstat -aon | findstr :${PORT}`;
+                const output = execSync(findCmd).toString().trim().split('\n');
+                if (output.length > 0) {
+                    const parts = output[0].trim().split(/\s+/);
+                    const pid = parts[parts.length - 1];
+                    if (pid && pid !== '0' && pid !== process.pid.toString()) {
+                        console.log(`[INFO] Matando processo antigo (PID ${pid}) no Windows...`);
+                        execSync(`taskkill /F /PID ${pid}`);
+                    }
+                }
+            } else {
+                // Linux / Android (Termux): Encontra e derruba o processo na porta
+                try {
+                    console.log(`[INFO] Matando processo antigo utilizando porta ${PORT} no Termux/Linux...`);
+                    execSync(`fuser -k ${PORT}/tcp`);
+                } catch(e1) {
+                    // Fallback usando lsof + kill
+                    try {
+                        const pid = execSync(`lsof -t -i:${PORT}`).toString().trim();
+                        if (pid && pid !== process.pid.toString()) {
+                            execSync(`kill -9 ${pid}`);
+                        }
+                    } catch(e2) {}
+                }
+            }
+            console.log(`[OK] Porta ${PORT} liberada com sucesso! Reiniciando escuta do servidor em 1.5s...`);
+            setTimeout(() => {
+                server.listen(PORT, '0.0.0.0', () => {
+                    console.log(`Painel Termux rodando em:`);
+                    console.log(`- Local: http://localhost:${PORT}`);
+                    console.log(`- Rede:  http://0.0.0.0:${PORT}`);
+                    
+                    // Iniciar FileBrowser Service em background
+                    fileBrowserService.init().catch(err => {
+                        console.error('[ERR] Falha ao iniciar FileBrowser:', err.message);
+                    });
+                });
+            }, 1500);
+        } catch (err) {
+            console.error('[ERR] Erro crítico ao tentar liberar a porta:', err.message);
+            process.exit(1);
+        }
+    } else {
+        console.error('[ERR] Erro no servidor HTTP:', e.message);
+    }
+});
+
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`Painel Termux rodando em:`);
     console.log(`- Local: http://localhost:${PORT}`);
