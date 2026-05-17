@@ -1227,7 +1227,13 @@ app.get('/api/system/update/config', (req, res) => {
 
 app.post('/api/system/update/config', (req, res) => {
     try {
-        const config = { ...getUpdateConfig(), ...req.body };
+        let repo = req.body.github_repo || '';
+        // Sanitiza URL completa caso o usuário cole: https://github.com/user/repo
+        repo = repo.replace(/https?:\/\/github\.com\//i, '').trim();
+        // Remove barras extras no início ou fim
+        repo = repo.replace(/^\/+|\/+$/g, '');
+
+        const config = { ...getUpdateConfig(), github_repo: repo };
         fs.writeFileSync(UPDATE_CONFIG_FILE, JSON.stringify(config, null, 2));
         res.json({ success: true, config });
     } catch(err) {

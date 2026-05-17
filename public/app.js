@@ -1040,9 +1040,15 @@ async function checkSystemUpdates() {
 
 async function saveGithubRepo() {
     const input = document.getElementById('github-repo-input');
-    const repo  = input?.value?.trim();
+    let repo  = input?.value?.trim() || '';
+    
+    // Limpa a URL se o usuário colou completo (https://github.com/user/repo)
+    repo = repo.replace(/https?:\/\/github\.com\//i, '').replace(/^\/+|\/+$/g, '');
+    
+    if (input) input.value = repo; // mostra limpo no input
+
     if (!repo || !repo.includes('/')) {
-        alert('Formato inválido. Use: usuario/repositorio');
+        alert('Formato inválido. Use: usuario/repositorio ou a URL completa do GitHub');
         return;
     }
     const result = await safeFetch(`${API_BASE}/system/update/config`, 'POST', { github_repo: repo });
