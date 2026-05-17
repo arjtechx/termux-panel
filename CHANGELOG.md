@@ -2,6 +2,14 @@
 
 ---
 
+## 🏆 MARCO v1.2.5 — 2026-05-17 (Process Verification Engine Estabilizado)
+
+### ✅ Novidades da Versão
+- **Detecção Híbrida de Processos (pgrep -f + TCP):** Modificada toda a lógica de checagem do `health-check.sh` para usar busca híbrida em ambiente Android/Termux. Os processos (NGINX, PHP-FPM e MariaDB) agora são validados usando `pgrep -f`, `pgrep -x`, sinais de reload (`nginx -s reload`) e escuta de portas de rede (`nc -z`). Isso elimina completamente os falsos-negativos causados por limitações de permissão do kernel Android sobre processos truncados.
+- **Correção de Permissão no Log do MariaDB:** Alterado o diretório do arquivo temporário de log de inicialização do MariaDB de `/tmp` para o diretório de dados do Termux (`$PREFIX/tmp`), eliminando erros de `Permission denied` ao rodar em ambientes não-root.
+
+---
+
 ## 🏆 MARCO v1.2.4 — 2026-05-17 (Correções Críticas de Inicialização do Termux)
 
 ### ✅ Novidades da Versão

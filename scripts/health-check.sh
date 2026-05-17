@@ -114,7 +114,16 @@ else
 fi
 
 # Verifica se processo está rodando
-if pgrep -x "mariadbd" > /dev/null 2>&1 || pgrep -x "mysqld" > /dev/null 2>&1; then
+MARIADB_RUNNING=0
+if pgrep -f "mariadbd" > /dev/null 2>&1 || pgrep -f "mysqld" > /dev/null 2>&1; then
+    MARIADB_RUNNING=1
+elif pgrep -x "mariadbd" > /dev/null 2>&1 || pgrep -x "mysqld" > /dev/null 2>&1; then
+    MARIADB_RUNNING=1
+elif mysql -u root -e "SELECT 1" >/dev/null 2>&1 || nc -z 127.0.0.1 3306 2>/dev/null; then
+    MARIADB_RUNNING=1
+fi
+
+if [ $MARIADB_RUNNING -eq 1 ]; then
     log_ok "Processo MariaDB está rodando"
     
     # Verifica porta 3306
@@ -130,17 +139,18 @@ else
     # Garante o diretório de socket do MariaDB para evitar crashes
     mkdir -p "$PREFIX/var/run/mysqld"
     chmod 777 "$PREFIX/var/run/mysqld" 2>/dev/null
+    mkdir -p "$PREFIX/tmp"
     
     # Inicia usando o script mysqld_safe correto do Termux
-    mysqld_safe --datadir="$MARIADB_DATA" > /tmp/mariadb_start.log 2>&1 &
+    mysqld_safe --datadir="$MARIADB_DATA" > "$PREFIX/tmp/mariadb_start.log" 2>&1 &
     sleep 4
-    if pgrep -x "mariadbd" > /dev/null 2>&1 || pgrep -x "mysqld" > /dev/null 2>&1; then
+    if pgrep -f "mariadbd" > /dev/null 2>&1 || pgrep -f "mysqld" > /dev/null 2>&1 || nc -z 127.0.0.1 3306 2>/dev/null; then
         log_ok "MariaDB iniciado com sucesso"
     else
         log_err "Não foi possível iniciar o MariaDB"
-        if [ -f /tmp/mariadb_start.log ]; then
+        if [ -f "$PREFIX/tmp/mariadb_start.log" ]; then
             log_info "Erros de inicialização do MariaDB:"
-            cat /tmp/mariadb_start.log | while IFS= read -r line; do
+            cat "$PREFIX/tmp/mariadb_start.log" | while IFS= read -r line; do
                 echo -e "  ${RED}→ $line${NC}"
             done
         fi
@@ -171,7 +181,14 @@ else
 fi
 
 # Verifica PHP-FPM
-if pgrep -x "php-fpm" > /dev/null 2>&1; then
+PHP_FPM_RUNNING=0
+if pgrep -f "php-fpm" > /dev/null 2>&1 || pgrep -x "php-fpm" > /dev/null 2>&1; then
+    PHP_FPM_RUNNING=1
+elif nc -z 127.0.0.1 9000 2>/dev/null; then
+    PHP_FPM_RUNNING=1
+fi
+
+if [ $PHP_FPM_RUNNING -eq 1 ]; then
     log_ok "PHP-FPM está rodando"
 else
     log_warn "PHP-FPM não está em execução"
@@ -180,7 +197,7 @@ else
     
     PHPOUT=$(php-fpm --daemonize 2>&1)
     sleep 2
-    if pgrep -x "php-fpm" > /dev/null 2>&1; then
+    if pgrep -f "php-fpm" > /dev/null 2>&1 || pgrep -x "php-fpm" > /dev/null 2>&1 || nc -z 127.0.0.1 9000 2>/dev/null; then
         log_ok "PHP-FPM iniciado"
     else
         log_err "Falha ao iniciar PHP-FPM: $PHPOUT"
@@ -431,7 +448,14 @@ fi
 log_sep
 log_info "Verificando processo NGINX..."
 
-if pgrep -x "nginx" > /dev/null 2>&1; then
+NGINX_RUNNING=0
+if pgrep -f "nginx" > /dev/null 2>&1 || pgrep -x "nginx" > /dev/null 2>&1; then
+    NGINX_RUNNING=1
+elif nginx -s reload >/dev/null 2>&1; then
+    NGINX_RUNNING=1
+fi
+
+if [ $NGINX_RUNNING -eq 1 ]; then
     log_ok "NGINX está rodando"
     # Recarrega para pegar novas configs
     log_fix "Recarregando configurações do NGINX..."
@@ -456,7 +480,7 @@ else
     if nginx -t 2>/dev/null; then
         NGOUT=$(nginx 2>&1)
         sleep 2
-        if pgrep -x "nginx" > /dev/null 2>&1; then
+        if pgrep -f "nginx" > /dev/null 2>&1 || pgrep -x "nginx" > /dev/null 2>&1 || nginx -s reload >/dev/null 2>&1; then
             log_ok "NGINX iniciado com sucesso"
         else
             log_err "Falha ao iniciar NGINX: $NGOUT"
