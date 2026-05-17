@@ -1210,23 +1210,40 @@ async function loadSettings() {
         const passInput = document.getElementById('settings-pass-input');
         if (passInput) passInput.value = '';
 
-        // Preenche autostart badge e botão
+        // Preenche autostart badge e botão (Opção 1)
         const badge = document.getElementById('autostart-status-badge');
         const btn = document.getElementById('btn-toggle-autostart');
         if (badge && btn) {
             if (res.autostart) {
                 badge.className = 'badge badge-success';
                 badge.textContent = 'Ativo';
-                btn.className = 'btn btn-danger btn-block';
-                btn.innerHTML = '<i data-lucide="power-off"></i> Desativar Auto-Início';
+                btn.className = 'btn btn-danger btn-block btn-sm';
+                btn.innerHTML = 'Desativar';
             } else {
                 badge.className = 'badge badge-danger';
                 badge.textContent = 'Inativo';
-                btn.className = 'btn btn-primary btn-block';
-                btn.innerHTML = '<i data-lucide="zap"></i> Ativar Auto-Início';
+                btn.className = 'btn btn-primary btn-block btn-sm';
+                btn.innerHTML = 'Ativar';
             }
-            if (window.lucide) lucide.createIcons();
         }
+
+        // Preenche autostart boot badge e botão (Opção 2 - Termux:Boot)
+        const badgeBoot = document.getElementById('autostart-boot-badge');
+        const btnBoot = document.getElementById('btn-toggle-autostart-boot');
+        if (badgeBoot && btnBoot) {
+            if (res.autostartBoot) {
+                badgeBoot.className = 'badge badge-success';
+                badgeBoot.textContent = 'Ativo';
+                btnBoot.className = 'btn btn-danger btn-block btn-sm';
+                btnBoot.innerHTML = 'Desativar';
+            } else {
+                badgeBoot.className = 'badge badge-danger';
+                badgeBoot.textContent = 'Inativo';
+                btnBoot.className = 'btn btn-primary btn-block btn-sm';
+                btnBoot.innerHTML = 'Ativar';
+            }
+        }
+        if (window.lucide) lucide.createIcons();
     }
 }
 
@@ -1238,12 +1255,29 @@ async function toggleBootAutostart() {
     const res = await safeFetch(`${API_BASE}/system/settings/autostart/toggle`, 'POST', { active: nextState });
     if (res?.success) {
         alert(nextState 
-            ? '✅ Auto-inicialização configurada com sucesso!\nSempre que abrir o aplicativo Termux, o painel e os serviços iniciarão sozinhos.' 
-            : '✅ Auto-inicialização removida com sucesso.'
+            ? '✅ Regra de inicialização (Ao abrir o Termux) configurada com sucesso!' 
+            : '✅ Regra de inicialização (Ao abrir o Termux) removida.'
         );
         loadSettings();
     } else {
         alert('❌ Falha ao alterar a regra de auto-inicialização.');
+    }
+}
+
+async function toggleTermuxBoot() {
+    const badge = document.getElementById('autostart-boot-badge');
+    const isCurrentActive = badge?.textContent === 'Ativo';
+    const nextState = !isCurrentActive;
+
+    const res = await safeFetch(`${API_BASE}/system/settings/autostart-boot/toggle`, 'POST', { active: nextState });
+    if (res?.success) {
+        alert(nextState 
+            ? '✅ Regra de inicialização via Termux:Boot configurada!\n\nNota importante: Lembre-se de instalar o aplicativo auxiliar "Termux:Boot" no seu celular para que o script rode de forma invisível em segundo plano ao ligar o celular.' 
+            : '✅ Regra de inicialização via Termux:Boot removida com sucesso.'
+        );
+        loadSettings();
+    } else {
+        alert('❌ Falha ao alterar a regra do Termux:Boot.');
     }
 }
 

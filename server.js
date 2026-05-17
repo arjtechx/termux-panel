@@ -1282,6 +1282,9 @@ app.get('/api/system/settings', (req, res) => {
             const content = fs.readFileSync(bashrcPath, 'utf8');
             autostart = content.includes('termux-panel/scripts/start.sh');
         }
+
+        const bootScriptPath = path.join(os.homedir(), '.termux', 'boot', 'start-cpanel');
+        const autostartBoot = fs.existsSync(bootScriptPath);
         
         let adminUser = 'admin';
         if (fs.existsSync(AUTH_FILE)) {
@@ -1295,6 +1298,7 @@ app.get('/api/system/settings', (req, res) => {
             success: true,
             port: PORT,
             autostart,
+            autostartBoot,
             adminUser
         });
     } catch(err) {
@@ -1367,6 +1371,34 @@ app.post('/api/system/settings/autostart/toggle', (req, res) => {
             }
         }
         
+        res.json({ success: true, active });
+    } catch(err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/system/settings/autostart-boot/toggle', (req, res) => {
+    try {
+        const { active } = req.body;
+        const bootDir = path.join(os.homedir(), '.termux', 'boot');
+        const bootScriptPath = path.join(bootDir, 'start-cpanel');
+        
+        if (active) {
+            // Cria a pasta .termux/boot se não existir
+            if (!fs.existsSync(bootDir)) {
+                fs.mkdirSync(bootDir, { recursive: true });
+            }
+            // Conteúdo do script de boot para o Termux:Boot
+            const scriptContent = `#!/data/data/com.termux/files/usr/bin/bash\ntermux-wake-lock\nbash ~/termux-panel/scripts/start.sh\n`;
+            fs.writeFileSync(bootScriptPath, scriptContent);
+            // Permissão de execução (chmod +x)
+            fs.chmodSync(bootScriptPath, '755');
+        } else {
+            // Remove o script se existir
+            if (fs.existsSync(bootScriptPath)) {
+                fs.unlinkSync(bootScriptPath);
+            }
+        }
         res.json({ success: true, active });
     } catch(err) {
         res.status(500).json({ error: err.message });

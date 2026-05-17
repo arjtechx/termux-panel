@@ -747,16 +747,37 @@
                     <div class="card" style="display:flex; flex-direction:column; justify-content:space-between; height: 100%;">
                         <div>
                             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
-                                <h3 class="card-title" style="margin-bottom:0; display:flex; align-items:center;"><i data-lucide="power" style="color:var(--success); margin-right:8px;"></i>Regra de Boot</h3>
-                                <span id="autostart-status-badge" class="badge badge-danger">Inativo</span>
+                                <h3 class="card-title" style="margin-bottom:0; display:flex; align-items:center;"><i data-lucide="power" style="color:var(--success); margin-right:8px;"></i>Regras de Boot</h3>
                             </div>
-                            <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:20px;">
-                                Configure o painel para iniciar automaticamente em segundo plano (incluindo NGINX, PHP-FPM e MariaDB) sempre que você abrir o aplicativo do Termux no seu celular.
-                            </p>
+                            
+                            <!-- Opção 1: Abrir Termux -->
+                            <div style="padding:12px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:12px;">
+                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                                    <span style="font-weight:600; font-size:0.85rem;">1. Ao abrir o Termux</span>
+                                    <span id="autostart-status-badge" class="badge badge-danger">Inativo</span>
+                                </div>
+                                <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:10px;">
+                                    Inicia o painel e os serviços automaticamente no momento em que você abre o app Termux.
+                                </p>
+                                <button class="btn btn-secondary btn-block btn-sm" id="btn-toggle-autostart" onclick="toggleBootAutostart()">
+                                    Ativar
+                                </button>
+                            </div>
+
+                            <!-- Opção 2: Ligar Aparelho (Termux:Boot) -->
+                            <div style="padding:12px; background:var(--surface2); border:1px solid var(--border); border-radius:6px;">
+                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                                    <span style="font-weight:600; font-size:0.85rem;">2. Ao ligar o Celular</span>
+                                    <span id="autostart-boot-badge" class="badge badge-danger">Inativo</span>
+                                </div>
+                                <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:10px;">
+                                    Inicia silenciosamente ao ligar o celular. Requer o aplicativo auxiliar <a href="https://f-droid.org/packages/com.termux.boot/" target="_blank" style="color:var(--primary); text-decoration:underline;">Termux:Boot</a>.
+                                </p>
+                                <button class="btn btn-secondary btn-block btn-sm" id="btn-toggle-autostart-boot" onclick="toggleTermuxBoot()">
+                                    Ativar
+                                </button>
+                            </div>
                         </div>
-                        <button class="btn btn-primary btn-block" id="btn-toggle-autostart" onclick="toggleBootAutostart()">
-                            <i data-lucide="zap"></i> Ativar Auto-Início
-                        </button>
                     </div>
 
                     <!-- Port Card -->
