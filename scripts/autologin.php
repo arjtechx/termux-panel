@@ -33,7 +33,7 @@ curl_setopt_array($ch, [
 $response = curl_exec($ch);
 $error = curl_error($ch);
 $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-curl_close($ch);
+// curl_close($ch); // Depreciado no PHP 8.0+
 
 if ($response === false || $httpCode !== 200) {
     die("Acesso Negado: falha no backend. HTTP=$httpCode ERRO=$error RESPOSTA=$response");

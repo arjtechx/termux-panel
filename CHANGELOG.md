@@ -2,6 +2,14 @@
 
 ---
 
+## 🏆 MARCO v1.2.6 — 2026-05-17 (phpMyAdmin SSO Resiliência & PHP 8.5 Deprecations)
+
+### ✅ Novidades da Versão
+- **Janela de Tolerância Antirrisco de 15 Segundos (SSO):** Introduzido um mecanismo de tolerância temporal no backend do painel. Em vez de apagar os tokens de autenticação instantaneamente na primeira validação do phpMyAdmin, o painel agora permite leituras repetidas dos tokens dentro de uma janela de segurança de 15 segundos após seu primeiro uso. Isso resolve de forma definitiva e elegante as corridas de concorrência (`TOKEN_INVALID_OR_NOT_FOUND`) causadas por redirecionamentos em loops, prefetchers de navegadores modernos ou recarregamentos de página.
+- **Bypass de Depreciação no PHP 8.5:** Comentada a chamada da função `curl_close($ch)` no script `autologin.php`, eliminando a exibição de logs de aviso (`curl_close() is deprecated`) que eram impressos em tela no PHP 8.5+.
+
+---
+
 ## 🏆 MARCO v1.2.5 — 2026-05-17 (Process Verification Engine Estabilizado)
 
 ### ✅ Novidades da Versão

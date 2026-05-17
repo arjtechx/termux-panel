@@ -1263,11 +1263,14 @@ app.post('/api/phpmyadmin/validate-token', (req, res) => {
     const data = phpMyAdminTokens.get(token);
     
     if (!data) return res.status(401).json({ ok: false, error: 'TOKEN_INVALID_OR_NOT_FOUND' });
-    if (data.used) return res.status(401).json({ ok: false, error: 'TOKEN_ALREADY_USED' });
+    if (data.firstUsedAt && Date.now() - data.firstUsedAt > 15000) {
+        return res.status(401).json({ ok: false, error: 'TOKEN_ALREADY_USED' });
+    }
     if (Date.now() > data.expiresAt) return res.status(401).json({ ok: false, error: 'TOKEN_EXPIRED' });
     
-    data.used = true; // Single use
-    phpMyAdminTokens.delete(token); // Opcional, ou deleta após o uso
+    if (!data.firstUsedAt) {
+        data.firstUsedAt = Date.now();
+    }
 
     res.json({
         ok: true,
@@ -1286,11 +1289,14 @@ app.get('/api/pma/sso/validate', (req, res) => {
     const data = phpMyAdminTokens.get(token);
     
     if (!data) return res.status(401).json({ success: false, error: 'TOKEN_INVALID_OR_NOT_FOUND' });
-    if (data.used) return res.status(401).json({ success: false, error: 'TOKEN_ALREADY_USED' });
+    if (data.firstUsedAt && Date.now() - data.firstUsedAt > 15000) {
+        return res.status(401).json({ success: false, error: 'TOKEN_ALREADY_USED' });
+    }
     if (Date.now() > data.expiresAt) return res.status(401).json({ success: false, error: 'TOKEN_EXPIRED' });
     
-    data.used = true;
-    phpMyAdminTokens.delete(token);
+    if (!data.firstUsedAt) {
+        data.firstUsedAt = Date.now();
+    }
 
     res.json({
         success: true,
@@ -1310,11 +1316,14 @@ app.get('/api/database/verify-token', (req, res) => {
     const data = phpMyAdminTokens.get(token);
     
     if (!data) return res.status(401).json({ success: false, error: 'TOKEN_INVALID_OR_NOT_FOUND' });
-    if (data.used) return res.status(401).json({ success: false, error: 'TOKEN_ALREADY_USED' });
+    if (data.firstUsedAt && Date.now() - data.firstUsedAt > 15000) {
+        return res.status(401).json({ success: false, error: 'TOKEN_ALREADY_USED' });
+    }
     if (Date.now() > data.expiresAt) return res.status(401).json({ success: false, error: 'TOKEN_EXPIRED' });
     
-    data.used = true;
-    phpMyAdminTokens.delete(token);
+    if (!data.firstUsedAt) {
+        data.firstUsedAt = Date.now();
+    }
 
     res.json({
         success: true,
