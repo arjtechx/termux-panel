@@ -2190,9 +2190,285 @@ app.get('/api/health-check/status', async (req, res) => {
     });
 });
 
+// ─── MariaDB Smart Install & Recovery API ───────────────────────
+
+const DB_FULL_FILE = path.join(__dirname, 'config', 'database.json');
+
+// Lê config completa (database.json > db.json fallback)
+function getFullDbConfig() {
+    try {
+        if (fs.existsSync(DB_FULL_FILE)) return JSON.parse(fs.readFileSync(DB_FULL_FILE, 'utf8'));
+        if (fs.existsSync(DB_FILE))      return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+    } catch(e) {}
+    return { host: '127.0.0.1', port: 3306, database: 'painel', user: 'root', password: '' };
+}
+
+// Verifica se MariaDB está instalado
+app.get('/api/mariadb/detect', async (req, res) => {
+    try {
+        const prefix = systemConfig.prefix || process.env.PREFIX || '/data/data/com.termux/files/usr';
+        const mysqlDir = systemConfig.is_termux ? `${prefix}/var/lib/mysql` : '/var/lib/mysql';
+
+        const hasBinary  = await runCmd('command -v mariadbd || command -v mysqld').then(r => !!r).catch(() => false);
+        const hasDataDir = fs.existsSync(mysqlDir);
+        let   isRunning  = false;
+
+        try {
+            const cfg = getFullDbConfig();
+            const conn = await mysql.createConnection({ host: '127.0.0.1', port: cfg.port || 3306, user: cfg.user, password: cfg.password });
+            await conn.ping();
+            await conn.end();
+            isRunning = true;
+        } catch(e) {
+            // Try root no-pass
+            try {
+                const conn = await mysql.createConnection({ host: '127.0.0.1', port: 3306, user: 'root', password: '' });
+                await conn.ping();
+                await conn.end();
+                isRunning = true;
+            } catch(e2) {}
+        }
+
+        res.json({ found: hasBinary || hasDataDir, hasBinary, hasDataDir, isRunning });
+    } catch(err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Repara pacotes APT/DPKG quebrados
+app.post('/api/mariadb/repair-packages', async (req, res) => {
+    try {
+        const isTermux = systemConfig.is_termux;
+        const results = [];
+
+        if (isTermux) {
+            results.push(await runCmd('pkg clean 2>/dev/null || true').catch(() => ''));
+            results.push(await runCmd('apt autoclean -y 2>/dev/null || true').catch(() => ''));
+            results.push(await runCmd('apt --fix-broken install -y 2>/dev/null || true').catch(() => ''));
+            results.push(await runCmd('dpkg --configure -a 2>/dev/null || true').catch(() => ''));
+            results.push(await runCmd('apt update 2>/dev/null || true').catch(() => ''));
+        } else {
+            results.push(await runCmd('apt-get autoclean -y 2>/dev/null || true').catch(() => ''));
+            results.push(await runCmd('apt-get --fix-broken install -y 2>/dev/null || true').catch(() => ''));
+            results.push(await runCmd('dpkg --configure -a 2>/dev/null || true').catch(() => ''));
+            results.push(await runCmd('apt-get update 2>/dev/null || true').catch(() => ''));
+        }
+
+        res.json({ success: true, output: results.filter(Boolean).join('\n') });
+    } catch(err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Para processos MariaDB
+app.post('/api/mariadb/stop', async (req, res) => {
+    try {
+        await runCmd('pkill -9 mariadbd 2>/dev/null || true').catch(() => '');
+        await runCmd('pkill -9 mysqld 2>/dev/null || true').catch(() => '');
+        await runCmd('pkill -9 mysqld_safe 2>/dev/null || true').catch(() => '');
+        await new Promise(r => setTimeout(r, 2000));
+        res.json({ success: true, message: 'Processos MariaDB encerrados.' });
+    } catch(err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Remove MariaDB completamente
+app.post('/api/mariadb/remove', async (req, res) => {
+    try {
+        const isTermux = systemConfig.is_termux;
+        const prefix   = systemConfig.prefix || process.env.PREFIX || '/data/data/com.termux/files/usr';
+        const mysqlDir = isTermux ? `${prefix}/var/lib/mysql` : '/var/lib/mysql';
+
+        // Para processos
+        await runCmd('pkill -9 mariadbd 2>/dev/null || true').catch(() => '');
+        await runCmd('pkill -9 mysqld 2>/dev/null || true').catch(() => '');
+        await new Promise(r => setTimeout(r, 2000));
+
+        // Remove pacotes — sem pkg autoremove
+        if (isTermux) {
+            await runCmd('apt remove mariadb -y 2>/dev/null || true').catch(() => '');
+            await runCmd('apt purge mariadb -y 2>/dev/null || true').catch(() => '');
+            await runCmd('apt autoremove -y 2>/dev/null || true').catch(() => '');
+        } else {
+            await runCmd('apt-get remove --purge mariadb-server mariadb-client -y 2>/dev/null || true').catch(() => '');
+            await runCmd('apt-get autoremove -y 2>/dev/null || true').catch(() => '');
+        }
+
+        // Limpa dados
+        if (fs.existsSync(mysqlDir)) {
+            fs.rmSync(mysqlDir, { recursive: true, force: true });
+        }
+        const extraPaths = [
+            `${prefix}/etc/my.cnf`,
+            `${prefix}/var/run/mysqld`,
+            `${prefix}/tmp/mysql.sock`,
+        ];
+        extraPaths.forEach(p => { try { fs.rmSync(p, { recursive: true, force: true }); } catch(e) {} });
+
+        res.json({ success: true, message: 'MariaDB removido completamente.' });
+    } catch(err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Instala MariaDB limpo
+app.post('/api/mariadb/install', async (req, res) => {
+    try {
+        const isTermux = systemConfig.is_termux;
+        let output = '';
+        if (isTermux) {
+            output = await runCmd('pkg install mariadb -y 2>&1').catch(e => e.message);
+        } else {
+            output = await runCmd('apt-get install mariadb-server mariadb-client -y 2>&1').catch(e => e.message);
+        }
+        const installed = await runCmd('command -v mariadbd || command -v mysqld').then(r => !!r).catch(() => false);
+        res.json({ success: installed, output });
+    } catch(err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Inicializa estrutura do banco
+app.post('/api/mariadb/init-db', async (req, res) => {
+    try {
+        const prefix   = systemConfig.prefix || process.env.PREFIX || '/data/data/com.termux/files/usr';
+        const mysqlDir = systemConfig.is_termux ? `${prefix}/var/lib/mysql` : '/var/lib/mysql';
+
+        if (fs.existsSync(`${mysqlDir}/mysql`)) {
+            return res.json({ success: true, message: 'Banco já inicializado.' });
+        }
+
+        if (!fs.existsSync(mysqlDir)) {
+            fs.mkdirSync(mysqlDir, { recursive: true });
+        }
+
+        let output = '';
+        const hasMariadbInstall = await runCmd('command -v mariadb-install-db').then(r => !!r).catch(() => false);
+        if (hasMariadbInstall) {
+            output = await runCmd('mariadb-install-db 2>&1').catch(e => e.message);
+        } else {
+            output = await runCmd('mysql_install_db 2>&1').catch(e => e.message);
+        }
+        res.json({ success: true, output });
+    } catch(err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Inicia MariaDB
+app.post('/api/mariadb/start', async (req, res) => {
+    try {
+        const prefix   = systemConfig.prefix || process.env.PREFIX || '/data/data/com.termux/files/usr';
+        const mysqlDir = systemConfig.is_termux ? `${prefix}/var/lib/mysql` : '/var/lib/mysql';
+
+        const hasSafe = await runCmd('command -v mariadbd-safe').then(r => !!r).catch(() => false);
+        const hasMysqldSafe = await runCmd('command -v mysqld_safe').then(r => !!r).catch(() => false);
+
+        if (hasSafe) {
+            exec(`mariadbd-safe --datadir=${mysqlDir} > /dev/null 2>&1 &`);
+        } else if (hasMysqldSafe) {
+            exec(`mysqld_safe --datadir=${mysqlDir} > /dev/null 2>&1 &`);
+        } else {
+            return res.status(400).json({ error: 'Nenhum daemon MariaDB encontrado.' });
+        }
+
+        // Aguarda até 20s
+        let ok = false;
+        for (let i = 0; i < 10; i++) {
+            await new Promise(r => setTimeout(r, 2000));
+            try {
+                const conn = await mysql.createConnection({ host: '127.0.0.1', port: 3306, user: 'root', password: '' });
+                await conn.ping(); await conn.end();
+                ok = true; break;
+            } catch(e) {}
+        }
+
+        mariadbState = ok;
+        res.json({ success: ok, message: ok ? 'MariaDB iniciado!' : 'MariaDB não respondeu a tempo.' });
+    } catch(err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Setup completo: cria usuário, banco e salva config
+app.post('/api/db/setup-full', async (req, res) => {
+    const { user, password, port = 3306, database = 'painel' } = req.body;
+    if (!user || !password) {
+        return res.status(400).json({ error: 'Usuário e senha são obrigatórios.' });
+    }
+
+    try {
+        // Conecta como root sem senha (instalação nova)
+        let rootConn;
+        try {
+            rootConn = await mysql.createConnection({ host: '127.0.0.1', port: parseInt(port), user: 'root', password: '' });
+        } catch(e) {
+            // Tenta com credenciais salvas
+            const cur = getFullDbConfig();
+            rootConn = await mysql.createConnection({ host: '127.0.0.1', port: parseInt(port), user: cur.user, password: cur.password });
+        }
+
+        await rootConn.query(`CREATE DATABASE IF NOT EXISTS \`${database}\``);
+        await rootConn.query(`CREATE USER IF NOT EXISTS ?@'localhost' IDENTIFIED BY ?`, [user, password]);
+        await rootConn.query(`CREATE USER IF NOT EXISTS ?@'127.0.0.1' IDENTIFIED BY ?`, [user, password]);
+        await rootConn.query(`GRANT ALL PRIVILEGES ON *.* TO ?@'localhost' WITH GRANT OPTION`, [user]);
+        await rootConn.query(`GRANT ALL PRIVILEGES ON *.* TO ?@'127.0.0.1' WITH GRANT OPTION`, [user]);
+        await rootConn.query('FLUSH PRIVILEGES');
+        await rootConn.end();
+
+        // Salva config
+        const config = { host: '127.0.0.1', port: parseInt(port), database, user, password };
+        fs.writeFileSync(DB_FULL_FILE, JSON.stringify(config, null, 4));
+        fs.writeFileSync(DB_FILE,      JSON.stringify(config, null, 4));
+
+        res.json({ success: true, message: `Usuário '${user}' e banco '${database}' criados com sucesso.` });
+    } catch(err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Verifica config atual do banco + status de conexão
+app.get('/api/db/config-check', async (req, res) => {
+    try {
+        const config = getFullDbConfig();
+        let connected = false;
+        let error = null;
+        try {
+            const conn = await mysql.createConnection({
+                host: config.host || '127.0.0.1',
+                port: config.port || 3306,
+                user: config.user,
+                password: config.password
+            });
+            await conn.ping();
+            await conn.end();
+            connected = true;
+        } catch(e) {
+            error = e.message;
+        }
+        res.json({ config, connected, error });
+    } catch(err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Repara tabelas corrompidas
+app.post('/api/mariadb/repair-tables', async (req, res) => {
+    try {
+        const cfg = getFullDbConfig();
+        const passArg = cfg.password ? `-p${cfg.password}` : '';
+        const out = await runCmd(`mysqlcheck --all-databases --repair --auto-repair -u ${cfg.user} ${passArg} 2>&1`).catch(e => e.message);
+        res.json({ success: true, output: out });
+    } catch(err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`Painel Termux rodando em:`);
     console.log(`- Local: http://localhost:${PORT}`);
     console.log(`- Rede:  http://0.0.0.0:${PORT}`);
 });
+
 
