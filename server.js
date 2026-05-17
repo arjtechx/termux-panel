@@ -11,6 +11,24 @@ const { Client } = require('ssh2');
 const mysql = require('mysql2/promise');
 const net = require('net');
 const crypto = require('crypto');
+
+// Auto-instala dependências ausentes antes do require principal (evita falhas de deploy no Termux)
+try {
+    require('http-proxy-middleware');
+} catch (e) {
+    if (e.code === 'MODULE_NOT_FOUND') {
+        console.log('[WARN] Biblioteca http-proxy-middleware ausente. Instalando automaticamente...');
+        const { execSync } = require('child_process');
+        try {
+            execSync('npm install http-proxy-middleware --no-save', { stdio: 'inherit' });
+            console.log('[OK] http-proxy-middleware instalado com sucesso!');
+        } catch (err) {
+            console.error('[ERR] Falha ao auto-instalar dependência:', err.message);
+            process.exit(1);
+        }
+    }
+}
+
 const { createProxyMiddleware } = require('http-proxy-middleware');
 const fileBrowserService = require('./services/filebrowser-service');
 const app = express();
