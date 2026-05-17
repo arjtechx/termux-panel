@@ -21,7 +21,8 @@ try {
         const { execSync } = require('child_process');
         try {
             execSync('npm install http-proxy-middleware --no-save', { stdio: 'inherit' });
-            console.log('[OK] http-proxy-middleware instalado com sucesso!');
+            console.log('[OK] http-proxy-middleware instalado com sucesso! Reiniciando servidor para aplicar as alterações...');
+            process.exit(0); // Sai limpo (código 0) e deixa o loop do terminal reiniciar o servidor com o cache do Node limpo!
         } catch (err) {
             console.error('[ERR] Falha ao auto-instalar dependência:', err.message);
             process.exit(1);
