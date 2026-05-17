@@ -125,6 +125,12 @@ ok "Auto-restart ativado — painel reinicia se cair."
 log "Acesse: http://0.0.0.0:$PORT"
 echo ""
 
+# Se tiver root, aplica a imunidade e prioridade de sistema em background
+if command -v su >/dev/null 2>&1; then
+    log "Acesso Root detectado! Aplicando prioridade VIP e imunidade no Low Memory Killer do Android..."
+    bash "$PANEL_DIR/scripts/prioritize.sh" >/dev/null 2>&1 &
+fi
+
 while true; do
     node "$PANEL_DIR/server.js"
     warn "Servidor encerrado. Reiniciando em 3s..."

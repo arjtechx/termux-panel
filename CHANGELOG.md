@@ -2,6 +2,14 @@
 
 ---
 
+## 🏆 MARCO v1.2.7 — 2026-05-17 (Android Ultra Root Prioritizer)
+
+### ✅ Novidades da Versão
+- **Otimizador Ultra Root para Android (`prioritize.sh`):** Desenvolvido um script completo de priorização de sistema para usuários com aparelhos Rootados. Ele desativa permanentemente o limitador de processos fantasmas do Android 12+ (`max_phantom_processes`), adquire travas de processamento (`termux-wake-lock`), e eleva a prioridade de CPU (`renice -n -20`), prioridade de leitura/escrita de disco (`ionice -c 1`) e prioridade de memória para imunidade total contra o Low Memory Killer (`oom_score_adj -1000`) para o Termux, Node.js, Nginx, PHP e MariaDB!
+- **Integração Automática na Inicialização:** O painel agora executa o otimizador root de forma totalmente automatizada em segundo plano no momento da inicialização (`start.sh`), garantindo estabilidade vitalícia sem comandos adicionais.
+
+---
+
 ## 🏆 MARCO v1.2.6 — 2026-05-17 (phpMyAdmin SSO Resiliência & PHP 8.5 Deprecations)
 
 ### ✅ Novidades da Versão
