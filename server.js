@@ -1192,6 +1192,21 @@ app.get('/api/db/status', async (req, res) => {
             ramPct:      ramPct,
         });
     } catch (err) {
+        // Fallback: se a conexão via Driver MySQL falhar (ex: credenciais/Access Denied), mas o processo do banco estiver ativo na porta
+        const isRunning = await isMariaDBRunning();
+        if (isRunning) {
+            return res.json({
+                online:      true,
+                port:        3306,
+                uptime:      'Ativo (Sem login)',
+                connections: '0',
+                queries:     '0',
+                totalSizeMb: 0,
+                dbCount:     0,
+                ramPct:      'N/A',
+                warning:     `Erro de Conexão: ${err.message}`
+            });
+        }
         res.json({ online: false, error: err.message });
     }
 });
