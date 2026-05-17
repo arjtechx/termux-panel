@@ -134,7 +134,7 @@ fi
 # Se não há loop de auto-restart ativo, inicia em background
 sleep 2
 if ! lsof -t -i:8088 > /dev/null 2>&1; then
-    nohup node "$PANEL_DIR/server.js" > /tmp/panel.log 2>&1 &
+    nohup node "$PANEL_DIR/server.js" > "$PANEL_DIR/panel.log" 2>&1 &
     ok "Painel reiniciado em background (PID: $!)."
 fi
 

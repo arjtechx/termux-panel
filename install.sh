@@ -21,7 +21,7 @@ function install_panel() {
     show_banner
     echo -e "\e[1;32m[*] Verificando dependências do sistema...\e[0m"
     
-    DEPS=(nodejs mariadb nginx termux-api coreutils procps zip unzip psmisc)
+    DEPS=(nodejs mariadb nginx termux-api coreutils procps zip unzip psmisc lsof)
     MISSING=()
 
     for dep in "${DEPS[@]}"; do
@@ -96,6 +96,34 @@ function remove_dependencies() {
     sleep 2
 }
 
+function setup_boot_autostart() {
+    show_banner
+    BASHRC="/data/data/com.termux/files/home/.bashrc"
+    touch "$BASHRC"
+    
+    if grep -q "termux-panel/scripts/start.sh" "$BASHRC" 2>/dev/null; then
+        echo -e "\e[1;32m[+] A auto-inicialização já está configurada no seu Termux!\e[0m"
+        echo -e "Toda vez que abrir o aplicativo Termux, o painel e os serviços iniciarão sozinhos."
+        echo ""
+        read -p "Deseja REMOVER a auto-inicialização? (s/n): " REM_OPT
+        if [[ "$REM_OPT" == "s" ]]; then
+            node -e "
+const fs = require('fs');
+const path = '$BASHRC';
+const lines = fs.readFileSync(path, 'utf8').split('\n');
+const clean = lines.filter(l => !l.includes('termux-panel/scripts/start.sh')).join('\n');
+fs.writeFileSync(path, clean);
+" 2>/dev/null
+            echo -e "\e[1;31m[-] Auto-inicialização removida.\e[0m"
+        fi
+    else
+        echo "bash ~/termux-panel/scripts/start.sh" >> "$BASHRC"
+        echo -e "\e[1;32m✅ Auto-inicialização configurada com sucesso!\e[0m"
+        echo -e "Agora, toda vez que você abrir o app Termux, o cPanel e os serviços iniciarão sozinhos."
+    fi
+    sleep 3
+}
+
 while true; do
     show_banner
     echo -e "1) 🚀 Instalar / Reconfigurar"
@@ -104,6 +132,7 @@ while true; do
     echo -e "4) 🗑️  Remover Dependências do Sistema"
     echo -e "5) ▶️  Iniciar Painel (modo básico)"
     echo -e "6) 🔁 Iniciar com Auto-Restart + PHP + NGINX + MariaDB"
+    echo -e "7) ⚙️  Configurar Auto-Início ao abrir o Termux"
     echo -e "0) ❌ Sair"
     echo -en "\nEscolha uma opção: "
     read opt
@@ -115,6 +144,7 @@ while true; do
         4) remove_dependencies ;;
         5) fuser -k 8088/tcp 2>/dev/null; pkill -9 -f "node server.js" 2>/dev/null; sleep 1; node server.js; break ;;
         6) bash scripts/start.sh; break ;;
+        7) setup_boot_autostart ;;
         0) break ;;
         *) echo "Opção inválida" ;;
     esac
