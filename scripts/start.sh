@@ -1,10 +1,12 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # =============================================================
 #  TERMUX cPANEL — Start Script com Auto-Restart
-#  Estratégia: tenta iniciar cada serviço e interpreta a saída
+#  Auto-detecta o diretório do painel
 # =============================================================
 
-PANEL_DIR="/data/data/com.termux/files/home/termux-panel"
+# Auto-detecta a pasta do painel a partir do local deste script
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PANEL_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
 PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 
 GREEN="\033[0;32m"
@@ -18,149 +20,96 @@ ok()   { echo -e "${GREEN}[+]${RESET} $1"; }
 warn() { echo -e "${YELLOW}[!]${RESET} $1"; }
 err()  { echo -e "${RED}[-]${RESET} $1"; }
 
-# -----------------------------------------------------------------
-# 1. INICIAR PHP-FPM
-# Tenta iniciar e detecta se já estava rodando pelo erro de porta
-# -----------------------------------------------------------------
-start_phpfpm() {
-    log "Iniciando PHP-FPM..."
-
-    mkdir -p "$PREFIX/var/run" "$PREFIX/tmp"
-
-    # Captura stdout+stderr juntos para analisar o resultado
-    OUTPUT=$(php-fpm --daemonize 2>&1)
-    EXIT_CODE=$?
-
-    if [ $EXIT_CODE -eq 0 ]; then
-        ok "PHP-FPM iniciado com sucesso."
-        return
-    fi
-
-    # Se o erro é "Address already in use" → PHP-FPM JÁ ESTAVA RODANDO
-    if echo "$OUTPUT" | grep -qi "address already in use\|already running\|already started"; then
-        ok "PHP-FPM já estava rodando (porta ocupada — OK)."
-        return
-    fi
-
-    # Fallback: tenta modo background simples
-    php-fpm 2>/dev/null &
-    sleep 1
-
-    # Testa se php-cli responde (indicativo de que o ambiente PHP existe)
-    if command -v php > /dev/null 2>&1; then
-        warn "PHP-FPM pode não ter iniciado, mas PHP está disponível no sistema."
-    else
-        warn "PHP-FPM e PHP não encontrados. phpMyAdmin funcionará em modo limitado."
-    fi
-}
-
-# -----------------------------------------------------------------
-# 2. INICIAR MARIADB
-# Tenta conectar primeiro, inicia só se necessário
-# -----------------------------------------------------------------
-start_mariadb() {
-    log "Iniciando MariaDB..."
-
-    # Teste rápido de conexão real com mysql client
-    if mysql -u root -e "SELECT 1" > /dev/null 2>&1; then
-        ok "MariaDB já está rodando (conexão testada)."
-        return
-    fi
-
-    # Inicializa o banco se ainda não foi feito
-    if [ ! -d "$PREFIX/var/lib/mysql/mysql" ]; then
-        warn "Banco de dados não inicializado. Rodando mysql_install_db..."
-        mysql_install_db 2>/dev/null
-    fi
-
-    # Inicia em background
-    mysqld_safe --datadir="$PREFIX/var/lib/mysql" > /dev/null 2>&1 &
-    MYSQLD_PID=$!
-
-    # Aguarda até 8 segundos testando conexão
-    for i in 1 2 3 4 5 6 7 8; do
-        sleep 1
-        if mysql -u root -e "SELECT 1" > /dev/null 2>&1; then
-            ok "MariaDB iniciado com sucesso."
-            return
-        fi
-    done
-
-    warn "MariaDB não respondeu a tempo. Gerenciamento de banco pode ser limitado."
-}
-
-# -----------------------------------------------------------------
-# 3. INICIAR NGINX
-# Tenta iniciar, detecta se já rodava pelo erro ou pelo reload
-# -----------------------------------------------------------------
-start_nginx() {
-    log "Iniciando NGINX..."
-
-    OUTPUT=$(nginx 2>&1)
-    EXIT_CODE=$?
-
-    if [ $EXIT_CODE -eq 0 ]; then
-        ok "NGINX iniciado com sucesso."
-        return
-    fi
-
-    # Se o bind falhou → NGINX JÁ ESTAVA RODANDO → tenta reload
-    if echo "$OUTPUT" | grep -qi "address already in use\|bind() to.*failed\|already running"; then
-        nginx -s reload 2>/dev/null && ok "NGINX já estava rodando. Configuração recarregada." || ok "NGINX já estava ativo."
-        return
-    fi
-
-    # Mostra o erro real de configuração para diagnóstico
-    warn "NGINX não pôde iniciar. Erro:"
-    echo "$OUTPUT" | head -5
-    warn "Rode 'nginx -t' no Termux para ver o erro completo."
-}
-
-# -----------------------------------------------------------------
-# 4. INICIAR PAINEL NODE.JS (loop infinito de auto-restart)
-# -----------------------------------------------------------------
-start_panel() {
-    if [ ! -d "$PANEL_DIR" ]; then
-        err "Pasta do painel não encontrada: $PANEL_DIR"
-        exit 1
-    fi
-
-    cd "$PANEL_DIR"
-
-    # Mata qualquer instância anterior na porta 8088
-    OLDPID=$(lsof -t -i:8088 2>/dev/null)
-    if [ -n "$OLDPID" ]; then
-        log "Encerrando instância anterior do painel (PID: $OLDPID)..."
-        kill -9 "$OLDPID" 2>/dev/null
-        sleep 1
-    fi
-
-    ok "Sistema de auto-restart ativado. O painel reinicia automaticamente se cair."
-    log "Painel acessível em: http://0.0.0.0:8088"
-    echo ""
-
-    # Loop infinito de auto-restart do Node.js
-    while true; do
-        log "Iniciando servidor Node.js..."
-        node server.js
-        EXIT_CODE=$?
-        warn "Servidor encerrado (código: $EXIT_CODE). Reiniciando em 3 segundos..."
-        sleep 3
-    done
-}
-
-# -----------------------------------------------------------------
-# MAIN
-# -----------------------------------------------------------------
 echo ""
 echo -e "${BLUE}============================================${RESET}"
 echo -e "${BLUE}   TERMUX cPANEL — Iniciando serviços...   ${RESET}"
 echo -e "${BLUE}============================================${RESET}"
+log "Diretório do painel: $PANEL_DIR"
 echo ""
 
-start_phpfpm
-start_mariadb
-start_nginx
+# -----------------------------------------------------------------
+# Verifica se server.js existe antes de qualquer coisa
+# -----------------------------------------------------------------
+if [ ! -f "$PANEL_DIR/server.js" ]; then
+    err "server.js não encontrado em: $PANEL_DIR"
+    err "Verifique se extraiu o tar.gz corretamente."
+    err "Dica: tar -xzvf termux-panel-dist.tar.gz -C ~/"
+    exit 1
+fi
 
+# -----------------------------------------------------------------
+# 1. PHP-FPM — tenta iniciar e interpreta erro de "já rodando"
+# -----------------------------------------------------------------
+log "Verificando PHP-FPM..."
+mkdir -p "$PREFIX/var/run" "$PREFIX/tmp"
+
+PHPOUT=$(php-fpm --daemonize 2>&1)
+PHPCODE=$?
+if [ $PHPCODE -eq 0 ]; then
+    ok "PHP-FPM iniciado."
+elif echo "$PHPOUT" | grep -qi "already in use\|already running"; then
+    ok "PHP-FPM já está rodando."
+else
+    warn "PHP-FPM: $PHPOUT" | head -1
+fi
+
+# -----------------------------------------------------------------
+# 2. MARIADB — testa conexão real primeiro
+# -----------------------------------------------------------------
+log "Verificando MariaDB..."
+if mysql -u root -e "SELECT 1" > /dev/null 2>&1; then
+    ok "MariaDB já está rodando."
+else
+    # Inicializa se necessário
+    if [ ! -d "$PREFIX/var/lib/mysql/mysql" ]; then
+        warn "Inicializando banco de dados..."
+        mysql_install_db 2>/dev/null
+    fi
+    mysqld_safe --datadir="$PREFIX/var/lib/mysql" > /dev/null 2>&1 &
+    sleep 3
+    if mysql -u root -e "SELECT 1" > /dev/null 2>&1; then
+        ok "MariaDB iniciado."
+    else
+        warn "MariaDB não respondeu. Gerenciamento de banco pode ser limitado."
+    fi
+fi
+
+# -----------------------------------------------------------------
+# 3. NGINX — tenta iniciar, faz reload se já estiver rodando
+# -----------------------------------------------------------------
+log "Verificando NGINX..."
+NGOUT=$(nginx 2>&1)
+NGCODE=$?
+if [ $NGCODE -eq 0 ]; then
+    ok "NGINX iniciado."
+elif echo "$NGOUT" | grep -qi "already in use\|bind() to.*failed\|already running"; then
+    nginx -s reload 2>/dev/null && ok "NGINX já rodando — recarregado." || ok "NGINX já ativo."
+else
+    warn "NGINX: $(echo "$NGOUT" | head -1)"
+fi
+
+# -----------------------------------------------------------------
+# 4. PAINEL NODE.JS — loop infinito de auto-restart
+# -----------------------------------------------------------------
 echo ""
-start_panel
+ok "Todos os serviços verificados! Iniciando painel..."
+
+cd "$PANEL_DIR"
+
+# Mata qualquer instância antiga na porta 8088
+OLDPID=$(lsof -t -i:8088 2>/dev/null)
+if [ -n "$OLDPID" ]; then
+    log "Encerrando instância anterior (PID: $OLDPID)..."
+    kill -9 "$OLDPID" 2>/dev/null
+    sleep 1
+fi
+
+ok "Auto-restart ativado — painel reinicia se cair."
+log "Acesse: http://0.0.0.0:8088"
+echo ""
+
+while true; do
+    node "$PANEL_DIR/server.js"
+    warn "Servidor encerrado. Reiniciando em 3s..."
+    sleep 3
+done
