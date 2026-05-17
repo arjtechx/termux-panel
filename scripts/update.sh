@@ -184,7 +184,8 @@ fi
 sleep 2
 if ! lsof -t -i:$PORT > /dev/null 2>&1; then
     nohup node "$PANEL_DIR/server.js" > "$PANEL_DIR/panel.log" 2>&1 &
-    ok "Painel reiniciado em background. PID: $!"
+    PID_BG=$!
+    ok "Painel reiniciado em background. PID: $PID_BG"
 fi
 
 exit 0
