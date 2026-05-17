@@ -31,16 +31,16 @@ jobs:
 
       - name: Delete existing release (if any)
         run: |
-          gh release delete latest --yes 2>/dev/null || true
-          git push --delete origin latest 2>/dev/null || true
+          gh release delete v${{ steps.version.outputs.version }} --yes 2>/dev/null || true
+          git push --delete origin v${{ steps.version.outputs.version }} 2>/dev/null || true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create GitHub Release with asset
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: latest
-          name: "Termux Panel v${{ steps.version.outputs.version }} (latest)"
+          tag_name: v${{ steps.version.outputs.version }}
+          name: "Termux Panel v${{ steps.version.outputs.version }}"
           body: |
             ## Atualização Automática
             

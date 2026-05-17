@@ -46,19 +46,34 @@ if [ -n "$GITHUB_REPO" ] && [ "$GITHUB_REPO" != "null" ] && [ "$GITHUB_REPO" != 
     if curl -L --fail --progress-bar -o "$TMP_TAR" "$DOWNLOAD_URL"; then
         ok "Download concluído!"
 
-        log "Extraindo arquivos..."
-        # Extrai preservando a pasta config/
-        tar -xzvf "$TMP_TAR" -C "/data/data/com.termux/files/home/" \
-            --strip-components=1 \
-            --exclude="termux-panel/config" \
-            --exclude="termux-panel/node_modules"
+        log "Extraindo arquivos do painel..."
+        TMP_EXTRACT="/data/data/com.termux/files/home/tmp_extract"
+        rm -rf "$TMP_EXTRACT"
+        mkdir -p "$TMP_EXTRACT"
 
+        if tar -xzvf "$TMP_TAR" -C "$TMP_EXTRACT" --strip-components=1; then
+            ok "Extração básica concluída."
+            log "Atualizando arquivos em: $PANEL_DIR"
+
+            # Copia recursivamente mantendo e atualizando os diretórios locais
+            cp -rf "$TMP_EXTRACT/public" "$PANEL_DIR/"
+            cp -rf "$TMP_EXTRACT/scripts" "$PANEL_DIR/"
+            cp -f "$TMP_EXTRACT/server.js" "$PANEL_DIR/"
+            cp -f "$TMP_EXTRACT/install.sh" "$PANEL_DIR/"
+            cp -f "$TMP_EXTRACT/package.json" "$PANEL_DIR/"
+            cp -f "$TMP_EXTRACT/README.md" "$PANEL_DIR/"
+            
+            ok "Arquivos atualizados com sucesso!"
+        else
+            err "Falha ao extrair tarball."
+            exit 1
+        fi
+
+        rm -rf "$TMP_EXTRACT"
         rm -f "$TMP_TAR"
-        ok "Arquivos extraídos com sucesso!"
-
     else
         err "Falha no download de $DOWNLOAD_URL"
-        err "Verifique se o repositório '$GITHUB_REPO' existe e tem releases."
+        err "Verifique se o repositório está público e tem releases geradas."
         exit 1
     fi
 
@@ -80,7 +95,19 @@ else
     TAR_PATH="/data/data/com.termux/files/home/termux-panel-dist.tar.gz"
     if [ -f "$TAR_PATH" ]; then
         warn "Usando tarball local: $TAR_PATH"
-        tar -xzvf "$TAR_PATH" -C "/data/data/com.termux/files/home/" --strip-components=1
+        TMP_EXTRACT="/data/data/com.termux/files/home/tmp_extract"
+        rm -rf "$TMP_EXTRACT"
+        mkdir -p "$TMP_EXTRACT"
+        
+        tar -xzvf "$TAR_PATH" -C "$TMP_EXTRACT" --strip-components=1
+        cp -rf "$TMP_EXTRACT/public" "$PANEL_DIR/"
+        cp -rf "$TMP_EXTRACT/scripts" "$PANEL_DIR/"
+        cp -f "$TMP_EXTRACT/server.js" "$PANEL_DIR/"
+        cp -f "$TMP_EXTRACT/install.sh" "$PANEL_DIR/"
+        cp -f "$TMP_EXTRACT/package.json" "$PANEL_DIR/"
+        cp -f "$TMP_EXTRACT/README.md" "$PANEL_DIR/"
+        
+        rm -rf "$TMP_EXTRACT"
         ok "Extraído do tarball local."
     else
         err "Nenhuma fonte de atualização disponível!"
