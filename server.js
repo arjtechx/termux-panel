@@ -54,26 +54,86 @@ const AUTH_FILE = path.join(__dirname, 'config', 'auth.json');
 const SYSTEM_FILE = path.join(__dirname, 'config', 'system.json');
 const BASE_DIR = process.env.HOME || __dirname;
 
-let systemConfig = { is_termux: true, has_root: false, package_manager: 'pkg', prefix: process.env.PREFIX || '/data/data/com.termux/files/usr' };
-try {
-    if (fs.existsSync(SYSTEM_FILE)) {
-        systemConfig = JSON.parse(fs.readFileSync(SYSTEM_FILE, 'utf8'));
-        if (typeof systemConfig.has_root !== 'boolean') throw new Error('Invalid config');
-    } else {
-        fs.writeFileSync(SYSTEM_FILE, JSON.stringify(systemConfig, null, 4));
-    }
-} catch (e) {
-    systemConfig = { is_termux: true, has_root: false, package_manager: 'pkg', prefix: process.env.PREFIX || '/data/data/com.termux/files/usr' };
-    try { fs.writeFileSync(SYSTEM_FILE, JSON.stringify(systemConfig, null, 4)); } catch(err){}
-}
+// ============================================================
+//  DETECÇÃO DE AMBIENTE UNIVERSAL
+//  Suporta: Termux, WSL, Ubuntu/Debian, Fedora/RHEL, Arch, Alpine, macOS
+// ============================================================
+let systemConfig = {}; // preenchido pela IIFE abaixo
+(function detectEnvironment() {
+    const _plat = process.platform;
 
-// Detecção dinâmica de ambiente: Força o modo WSL/Linux se não estiver em um Termux real
-const isRealTermux = !!(process.env.PREFIX && process.env.PREFIX.includes('com.termux'));
-if (!isRealTermux) {
-    systemConfig.is_termux = false;
-    systemConfig.prefix = '/usr';
-    systemConfig.package_manager = 'apt';
-}
+    // Termux: PREFIX contém 'com.termux'
+    const _isTermux = !!(process.env.PREFIX && process.env.PREFIX.includes('com.termux'));
+
+    // WSL: Linux com /proc/version mencionando microsoft
+    let _isWSL = false;
+    try {
+        if (_plat === 'linux' && fs.existsSync('/proc/version')) {
+            const _pv = fs.readFileSync('/proc/version', 'utf8').toLowerCase();
+            _isWSL = _pv.includes('microsoft') || _pv.includes('wsl');
+        }
+    } catch (_) {}
+
+    const _isMac = _plat === 'darwin';
+
+    // Detecta distro Linux
+    let _pkg = 'apt', _distro = 'debian';
+    if (_plat === 'linux' && !_isTermux) {
+        try {
+            if (fs.existsSync('/etc/os-release')) {
+                const _or = fs.readFileSync('/etc/os-release', 'utf8').toLowerCase();
+                if (_or.includes('arch') || _or.includes('manjaro'))                     { _distro = 'arch';     _pkg = 'pacman'; }
+                else if (_or.includes('fedora') || _or.includes('centos') || _or.includes('rhel')) { _distro = 'fedora';   _pkg = 'dnf';    }
+                else if (_or.includes('alpine'))                                         { _distro = 'alpine';   _pkg = 'apk';    }
+                else if (_or.includes('opensuse'))                                       { _distro = 'opensuse'; _pkg = 'zypper'; }
+                else                                                                     { _distro = 'debian';   _pkg = 'apt';    }
+            }
+        } catch (_) {}
+    }
+
+    const _prefix = _isTermux
+        ? (process.env.PREFIX || '/data/data/com.termux/files/usr')
+        : _isMac ? '/usr/local' : '/usr';
+
+    // Detecta socket PHP-FPM disponível
+    let _phpSock = `${_prefix}/var/run/php-fpm.sock`;
+    if (!_isTermux) {
+        const phpCandidates = [
+            '/run/php/php8.2-fpm.sock', '/run/php/php8.1-fpm.sock', '/run/php/php8.0-fpm.sock',
+            '/var/run/php/php8.1-fpm.sock', '/var/run/php-fpm/php-fpm.sock', '/var/run/php-fpm.sock'
+        ];
+        for (const s of phpCandidates) { if (fs.existsSync(s)) { _phpSock = s; break; } }
+    }
+
+    // Monta systemConfig com base na detecção
+    systemConfig = {
+        type:           _isTermux ? 'termux' : (_isWSL ? 'wsl' : (_isMac ? 'macos' : (_plat === 'linux' ? 'linux' : 'windows'))),
+        is_termux:      _isTermux,
+        is_wsl:         _isWSL,
+        is_macos:       _isMac,
+        is_linux:       _plat === 'linux' && !_isTermux,
+        has_root:       !_isTermux,
+        package_manager: _isTermux ? 'pkg' : (_isMac ? 'brew' : _pkg),
+        distro:         _isTermux ? 'termux' : (_isWSL ? 'wsl' : (_isMac ? 'macos' : _distro)),
+        prefix:         _prefix,
+        storage_path:   _isTermux ? '/data' : '/',
+        nginx_conf_dir: _isTermux ? `${_prefix}/etc/nginx/conf.d` : (_isMac ? '/usr/local/etc/nginx/servers' : '/etc/nginx/conf.d'),
+        mysql_data_dir: _isTermux ? `${_prefix}/var/lib/mysql` : '/var/lib/mysql',
+        php_fpm_sock:   _phpSock,
+    };
+
+    // Preserva has_root do arquivo salvo (configurável pelo usuário)
+    try {
+        if (fs.existsSync(SYSTEM_FILE)) {
+            const _saved = JSON.parse(fs.readFileSync(SYSTEM_FILE, 'utf8'));
+            if (typeof _saved.has_root === 'boolean') systemConfig.has_root = _saved.has_root;
+        }
+        fs.writeFileSync(SYSTEM_FILE, JSON.stringify(systemConfig, null, 4));
+    } catch(_) {}
+
+    console.log(`[ENV] Ambiente detectado: ${systemConfig.type} | Distro: ${systemConfig.distro} | Pkg: ${systemConfig.package_manager} | Prefix: ${systemConfig.prefix}`);
+})();
+
 const BACKUP_DIR = path.join(BASE_DIR, 'backups');
 
 // Initialize config directory
@@ -286,72 +346,93 @@ function checkPortStatus(port) {
 // Routes
 app.get('/api/status', async (req, res) => {
     try {
-        let status = {
-            cpu: '0%',
-            cpuCores: os.cpus().length,
-            cpuSpeed: 'N/A',
-            ram: '0 / 0',
-            storage: '0 / 0',
-            storagePercent: '0',
-            temperature: 'N/A',
-            netDown: '0',
-            netUp: '0',
-            totalDown: '0',
-            totalUp: '0'
+        const status = {
+            cpu: '0%', cpuCores: os.cpus().length, cpuSpeed: 'N/A',
+            ram: '-- / --', storageFree: 'N/A', storageTotal: 'N/A',
+            storagePercent: '0', temperature: 'N/A', totalDown: '0', totalUp: '0'
         };
 
-        // Termux / Linux commands
-        const topOut = await runCmd('top -bn1 | head -n 5');
-        const freeOut = await runCmd('free -m');
-        const dfOut = await runCmd('df -h /data');
-        const batteryOut = await runCmd('termux-battery-status');
-        const netOut = await runCmd('cat /proc/net/dev');
-        const freqOut = await runCmd('cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq');
-
-        // Parse CPU (Very simplistic parse, fallback to os loadavg)
+        // CPU — loadavg funciona em todos os sistemas Unix-like
         status.cpu = `${Math.round(os.loadavg()[0] * 100)}%`;
-        
+
         // CPU Speed
         const speeds = os.cpus().map(c => c.speed).filter(s => s > 0);
         if (speeds.length > 0) {
             status.cpuSpeed = `${(speeds[0] / 1000).toFixed(2)} GHz`;
-        } else if (freqOut && !isNaN(freqOut)) {
-            status.cpuSpeed = `${(parseInt(freqOut) / 1000000).toFixed(2)} GHz`;
+        } else if (systemConfig.is_termux || systemConfig.is_linux || systemConfig.is_wsl) {
+            const freqOut = await runCmd('cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq');
+            if (freqOut && !isNaN(freqOut)) status.cpuSpeed = `${(parseInt(freqOut) / 1000000).toFixed(2)} GHz`;
         }
 
-        // Parse RAM
-        const ramMatch = freeOut.match(/Mem:\s+(\d+)\s+(\d+)/);
-        if (ramMatch) {
-            status.ram = `${ramMatch[2]}MB / ${ramMatch[1]}MB`;
+        // RAM
+        if (systemConfig.is_macos) {
+            try {
+                const totalMem = parseInt(await runCmd('sysctl -n hw.memsize') || '0');
+                const vmStat  = await runCmd('vm_stat');
+                const pages   = parseInt((vmStat.match(/Pages free:\s+(\d+)/) || [])[1] || 0);
+                const totalMB = Math.round(totalMem / 1024 / 1024);
+                const freeMB  = Math.round(pages * 4096 / 1024 / 1024);
+                status.ram = `${totalMB - freeMB}MB / ${totalMB}MB`;
+            } catch(_) {}
+        } else {
+            // Linux / WSL / Termux
+            const freeOut = await runCmd('free -m');
+            const m = freeOut.match(/Mem:\s+(\d+)\s+(\d+)/);
+            if (m) status.ram = `${m[2]}MB / ${m[1]}MB`;
         }
 
-        // Parse Storage
-        const lines = dfOut.split('\n');
-        if (lines.length > 1) {
-            const parts = lines[1].trim().split(/\s+/);
+        // Storage — adapta o path por ambiente
+        const storagePath = systemConfig.storage_path || '/';
+        const dfOut = await runCmd(`df -h "${storagePath}"`);
+        const dfLines = dfOut.split('\n');
+        if (dfLines.length > 1) {
+            const parts = dfLines[1].trim().split(/\s+/);
             if (parts.length >= 5) {
-                // parts[1] = Total, parts[2] = Used, parts[3] = Avail, parts[4] = Use%
-                status.storageFree = parts[3];
-                status.storageTotal = parts[1];
+                status.storageFree    = parts[3];
+                status.storageTotal   = parts[1];
                 status.storagePercent = parts[4].replace('%', '');
             }
         }
 
-        // Parse Temperature
-        try {
-            if (batteryOut) {
-                const batInfo = JSON.parse(batteryOut);
-                if (batInfo.temperature) {
-                    status.temperature = `${batInfo.temperature}°C`;
+        // Temperatura
+        if (systemConfig.is_termux) {
+            try {
+                const bat = JSON.parse(await runCmd('termux-battery-status') || '{}');
+                if (bat.temperature) status.temperature = `${bat.temperature}°C`;
+            } catch(_) {}
+        } else if (systemConfig.is_linux || systemConfig.is_wsl) {
+            try {
+                const t = await runCmd('cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null || echo ""');
+                if (t && !isNaN(parseInt(t))) status.temperature = `${(parseInt(t) / 1000).toFixed(1)}°C`;
+            } catch(_) {}
+        } else if (systemConfig.is_macos) {
+            try {
+                const t = await runCmd('osx-cpu-temp 2>/dev/null || istats cpu temp --value-only 2>/dev/null || echo ""');
+                if (t && !isNaN(parseFloat(t))) status.temperature = `${parseFloat(t).toFixed(1)}°C`;
+            } catch(_) {}
+        }
+
+        // Rede — /proc/net/dev em Linux/WSL/Termux, netstat no macOS
+        if (systemConfig.is_linux || systemConfig.is_wsl || systemConfig.is_termux) {
+            const netOut = await runCmd('cat /proc/net/dev');
+            // Tenta vários nomes de interface em ordem de prioridade
+            for (const iface of ['wlan0', 'eth0', 'ens3', 'ens33', 'enp0s3', 'wlp2s0', 'usb0']) {
+                const m = netOut.match(new RegExp(`\\s*${iface}[^:]*:\\s*(\\d+)(?:\\s+\\d+){7}\\s+(\\d+)`));
+                if (m) {
+                    status.totalDown = `${(parseInt(m[1]) / 1024 / 1024).toFixed(2)} MB`;
+                    status.totalUp   = `${(parseInt(m[2]) / 1024 / 1024).toFixed(2)} MB`;
+                    break;
                 }
             }
-        } catch (e) {}
-
-        // Parse Network
-        const netMatch = netOut.match(/wlan0:\s+(\d+)\s+\d+\s+\d+\s+\d+\s+\d+\s+\d+\s+\d+\s+\d+\s+(\d+)/);
-        if (netMatch) {
-            status.totalDown = `${(parseInt(netMatch[1]) / 1024 / 1024).toFixed(2)} MB`;
-            status.totalUp = `${(parseInt(netMatch[2]) / 1024 / 1024).toFixed(2)} MB`;
+        } else if (systemConfig.is_macos) {
+            const netOut = await runCmd("netstat -ib | grep -E '^en[0-9]' | head -1");
+            if (netOut) {
+                const p = netOut.trim().split(/\s+/);
+                if (p.length >= 10) {
+                    status.totalDown = `${(parseInt(p[6] || 0) / 1024 / 1024).toFixed(2)} MB`;
+                    status.totalUp   = `${(parseInt(p[9] || 0) / 1024 / 1024).toFixed(2)} MB`;
+                }
+            }
         }
 
         res.json(status);
@@ -523,12 +604,33 @@ let mariadbState = false;
 app.post('/api/mariadb/toggle', async (req, res) => {
     try {
         if (!mariadbState) {
-            // Start MariaDB
-            await runCmd(`mariadbd-safe --datadir=${process.env.PREFIX}/var/lib/mysql > /dev/null 2>&1 &`);
+            if (systemConfig.is_termux) {
+                await runCmd(`mariadbd-safe --datadir=${systemConfig.mysql_data_dir} > /dev/null 2>&1 &`);
+            } else if (systemConfig.is_macos) {
+                await runCmd('brew services start mariadb 2>/dev/null || mysql.server start 2>/dev/null || mysqld_safe > /dev/null 2>&1 &');
+            } else {
+                // Linux / WSL: tenta systemctl, depois service, depois mysqld_safe
+                const hasSctl = await runCmd('which systemctl 2>/dev/null');
+                if (hasSctl.trim()) {
+                    await runCmd('systemctl start mariadb 2>/dev/null || systemctl start mysql 2>/dev/null', systemConfig.has_root);
+                } else {
+                    await runCmd('service mariadb start 2>/dev/null || service mysql start 2>/dev/null || mysqld_safe > /dev/null 2>&1 &', systemConfig.has_root);
+                }
+            }
             mariadbState = true;
         } else {
-            // Stop MariaDB
-            await runCmd('pkill mariadbd');
+            if (systemConfig.is_termux) {
+                await runCmd('pkill mariadbd 2>/dev/null || pkill mysqld 2>/dev/null');
+            } else if (systemConfig.is_macos) {
+                await runCmd('brew services stop mariadb 2>/dev/null || mysql.server stop 2>/dev/null');
+            } else {
+                const hasSctl = await runCmd('which systemctl 2>/dev/null');
+                if (hasSctl.trim()) {
+                    await runCmd('systemctl stop mariadb 2>/dev/null || systemctl stop mysql 2>/dev/null', systemConfig.has_root);
+                } else {
+                    await runCmd('service mariadb stop 2>/dev/null || service mysql stop 2>/dev/null', systemConfig.has_root);
+                }
+            }
             mariadbState = false;
         }
         res.json({ success: true, message: `MariaDB ${mariadbState ? 'Iniciado' : 'Parado'}` });
@@ -561,8 +663,8 @@ app.post('/api/cron', async (req, res) => {
 });
 
 // --- Hospedagem (Sites & Apps) Logic ---
-const PREFIX = process.env.PREFIX || '/data/data/com.termux/files/usr';
-const NGINX_CONF_DIR = `${PREFIX}/etc/nginx/conf.d`;
+const PREFIX = systemConfig.prefix;
+const NGINX_CONF_DIR = systemConfig.nginx_conf_dir || `${PREFIX}/etc/nginx/conf.d`;
 const HOSTING_FILE = path.join(__dirname, 'config', 'hosting.json');
 const HOSTING_LOGS_DIR = path.join(__dirname, 'logs');
 

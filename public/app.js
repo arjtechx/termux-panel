@@ -8,6 +8,7 @@ const API_BASE = '/api';
 let socket = null;
 let currentDir = '/';
 let currentFiles = [];
+let bootCompleted = false;
 
 // ============================================================
 //  BOOT SEQUENCE
@@ -30,6 +31,8 @@ function bootProgress(pct, label) {
 }
 
 function bootDone() {
+    if (bootCompleted) return;
+    bootCompleted = true;
     bootProgress(100, 'Pronto!');
     bootLog('Sistema estabilizado. Abrindo dashboard.');
     setTimeout(() => {
@@ -40,6 +43,12 @@ function bootDone() {
 }
 
 async function runBootSequence() {
+    // Failsafe: garante que o boot SEMPRE termina mesmo que alguma API trave
+    const bootFailsafe = setTimeout(() => {
+        bootLog('Aviso: timeout global — forçando abertura do painel.');
+        bootDone();
+    }, 12000);
+
     bootProgress(5,  'Iniciando núcleo...');
     bootLog('Buscando configurações de tema...');
     initTheme();
@@ -67,6 +76,7 @@ async function runBootSequence() {
     bootProgress(88, 'Finalizando interface...');
     bootLog('Renderizando componentes visuais...');
 
+    clearTimeout(bootFailsafe);
     setTimeout(() => {
         bootDone();
         // Inicia polling após o boot
@@ -1934,11 +1944,18 @@ async function toggleMariaDB()  { await safeFetch(`${API_BASE}/mariadb/toggle`, 
 // ============================================================
 //  HELPER: FETCH SEGURO
 // ============================================================
-async function safeFetch(url, method = 'GET', body = null) {
+async function safeFetch(url, method = 'GET', body = null, timeoutMs = 8000) {
     try {
-        const opts = { method, headers: { 'Content-Type': 'application/json' } };
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        const opts = {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            signal: controller.signal
+        };
         if (body) opts.body = JSON.stringify(body);
-        const res  = await fetch(url, opts);
+        const res = await fetch(url, opts);
+        clearTimeout(timer);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return await res.json();
     } catch(e) {
