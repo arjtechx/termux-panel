@@ -842,6 +842,29 @@ app.post('/api/phpmyadmin/validate-token', (req, res) => {
     });
 });
 
+app.get('/api/pma/sso/validate', (req, res) => {
+    const { token } = req.query;
+    if (!token) return res.status(400).json({ success: false, error: 'TOKEN_MISSING' });
+
+    const data = phpMyAdminTokens.get(token);
+    
+    if (!data) return res.status(401).json({ success: false, error: 'TOKEN_INVALID_OR_NOT_FOUND' });
+    if (data.used) return res.status(401).json({ success: false, error: 'TOKEN_ALREADY_USED' });
+    if (Date.now() > data.expiresAt) return res.status(401).json({ success: false, error: 'TOKEN_EXPIRED' });
+    
+    data.used = true;
+    phpMyAdminTokens.delete(token);
+
+    res.json({
+        success: true,
+        user: data.user,
+        password: data.password,
+        database: data.database,
+        host: '127.0.0.1',
+        port: 3306
+    });
+});
+
 // Fallback robusto e retrocompatível para instâncias antigas de autologin.php em cache
 app.get('/api/database/verify-token', (req, res) => {
     const { token } = req.query;
