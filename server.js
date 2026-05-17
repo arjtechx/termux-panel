@@ -11,7 +11,8 @@ const { Client } = require('ssh2');
 const mysql = require('mysql2/promise');
 const net = require('net');
 const crypto = require('crypto');
-
+const { createProxyMiddleware } = require('http-proxy-middleware');
+const fileBrowserService = require('./services/filebrowser-service');
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
@@ -1865,193 +1866,17 @@ app.get('/api/database/verify-token', (req, res) => {
     });
 });
 
-// --- File Manager Logic ---
-app.get('/api/files', async (req, res) => {
-    try {
-        const queryDir = req.query.dir || BASE_DIR;
-        const resolvedDir = path.resolve(queryDir);
-        
-        if (!fs.existsSync(resolvedDir)) {
-            return res.status(404).json({ error: 'Diretório não encontrado' });
-        }
-
-        const files = fs.readdirSync(resolvedDir);
-        const fileList = files.map(file => {
-            const filePath = path.join(resolvedDir, file);
-            try {
-                const stats = fs.statSync(filePath);
-                return {
-                    name: file,
-                    path: filePath,
-                    isDirectory: stats.isDirectory(),
-                    size: stats.size,
-                    mtime: stats.mtime
-                };
-            } catch (e) {
-                return null;
-            }
-        }).filter(f => f !== null);
-
-        res.json({
-            currentDir: resolvedDir,
-            parentDir: path.dirname(resolvedDir),
-            files: fileList
-        });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
+// --- FileBrowser Proxy Seguro ---
+app.use('/__filebrowser', (req, res, next) => {
+    if (!req.session || !req.session.authenticated) {
+        return res.status(401).send('<body style="background:#11111b; color:#cdd6f4; font-family:sans-serif; text-align:center; padding-top:50px;">Acesso negado. Faça login no painel principal.</body>');
     }
-});
-
-app.get('/api/files/read', (req, res) => {
-    try {
-        const filePath = req.query.file;
-        if (!fs.existsSync(filePath)) return res.status(404).send('Arquivo não encontrado');
-        
-        const content = fs.readFileSync(filePath, 'utf8');
-        res.send(content);
-    } catch (err) {
-        res.status(500).send(err.message);
-    }
-});
-
-app.delete('/api/files', (req, res) => {
-    try {
-        const targetPath = req.query.path;
-        if (!fs.existsSync(targetPath)) return res.status(404).json({ error: 'Alvo não encontrado' });
-        const stats = fs.statSync(targetPath);
-        if (stats.isDirectory()) {
-            fs.rmSync(targetPath, { recursive: true, force: true });
-        } else {
-            fs.unlinkSync(targetPath);
-        }
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-app.post('/api/files/upload', express.raw({ type: '*/*', limit: '100mb' }), (req, res) => {
-    const fileName = req.headers['x-file-name'];
-    const targetDir = req.headers['x-target-dir'];
-    try {
-        const targetPath = path.join(targetDir, fileName);
-        fs.writeFileSync(targetPath, req.body);
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// --- Advanced File Operations ---
-
-// Helper for recursive copy
-function copyRecursiveSync(src, dest) {
-    const exists = fs.existsSync(src);
-    const stats = exists && fs.statSync(src);
-    const isDirectory = exists && stats.isDirectory();
-    if (isDirectory) {
-        if (!fs.existsSync(dest)) fs.mkdirSync(dest);
-        fs.readdirSync(src).forEach(childItemName => {
-            copyRecursiveSync(path.join(src, childItemName), path.join(dest, childItemName));
-        });
-    } else {
-        fs.copyFileSync(src, dest);
-    }
-}
-
-app.post('/api/files/mkdir', (req, res) => {
-    const { dir, name } = req.body;
-    try {
-        const newPath = path.join(dir, name);
-        if (!fs.existsSync(newPath)) {
-            fs.mkdirSync(newPath, { recursive: true });
-            res.json({ success: true });
-        } else {
-            res.status(400).json({ error: 'Diretório já existe' });
-        }
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-app.post('/api/files/rename', (req, res) => {
-    const { oldPath, newPath } = req.body;
-    try {
-        fs.renameSync(oldPath, newPath);
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-app.post('/api/files/copy', (req, res) => {
-    const { items, targetDir } = req.body;
-    try {
-        items.forEach(item => {
-            const dest = path.join(targetDir, path.basename(item));
-            copyRecursiveSync(item, dest);
-        });
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-app.post('/api/files/move', (req, res) => {
-    const { items, targetDir } = req.body;
-    try {
-        items.forEach(item => {
-            const dest = path.join(targetDir, path.basename(item));
-            fs.renameSync(item, dest);
-        });
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-app.post('/api/files/compress', async (req, res) => {
-    const { items, archiveName, currentDir } = req.body;
-    try {
-        const itemNames = items.map(i => `"${path.basename(i)}"`).join(' ');
-        if (archiveName.endsWith('.zip')) {
-            await runCmd(`cd "${currentDir}" && zip -r "${archiveName}" ${itemNames}`);
-        } else if (archiveName.endsWith('.tar.gz')) {
-            await runCmd(`cd "${currentDir}" && tar -czvf "${archiveName}" ${itemNames}`);
-        } else {
-            return res.status(400).json({ error: 'Formato não suportado' });
-        }
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-app.post('/api/files/extract', async (req, res) => {
-    const { archivePath, targetDir } = req.body;
-    try {
-        if (archivePath.endsWith('.zip')) {
-            await runCmd(`unzip -o "${archivePath}" -d "${targetDir}"`);
-        } else if (archivePath.endsWith('.tar.gz')) {
-            await runCmd(`tar -xzvf "${archivePath}" -C "${targetDir}"`);
-        } else {
-            return res.status(400).json({ error: 'Formato não suportado' });
-        }
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-app.post('/api/files/save', (req, res) => {
-    const { path: filePath, content } = req.body;
-    try {
-        fs.writeFileSync(filePath, content, 'utf8');
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
+    next();
+}, createProxyMiddleware({
+    target: 'http://127.0.0.1:8095',
+    changeOrigin: true,
+    ws: true
+}));
 
 // --- NO-IP Logic ---
 async function startNoipUpdater() {
@@ -3142,12 +2967,18 @@ app.get('/api/health-check/status', async (req, res) => {
         })(),
     ]);
 
+    const fbBinExists = fs.existsSync(fileBrowserService.binPath);
+    const fbPort = fileBrowserService.getPort();
+    const fbProcessActive = !!(fileBrowserService.process && fileBrowserService.process.pid && !fileBrowserService.process.killed);
+    const port8095 = await checkPort('127.0.0.1', fbPort);
+
     res.json({
         services: {
             nginx:    { installed: hasNginx,    running: nginxRunning,   port80 },
             mariadb:  { installed: hasMariadb,  running: mariadbRunning, port3306 },
             phpfpm:   { installed: hasPHP,      running: phpfpmRunning },
             phpmyadmin: { installed: hasPMA,    port8080 },
+            filebrowser: { installed: fbBinExists, running: fbProcessActive, port: fbPort, webOk: port8095 }
         }
     });
 });
@@ -3908,6 +3739,16 @@ app.get('/api/mariadb/diagnose', async (req, res) => {
         } catch(e) {}
         ssoTokens.delete(testToken);
 
+        // 7. Diagnóstico do FileBrowser
+        const fbBinExists = fs.existsSync(fileBrowserService.binPath);
+        const fbPort = fileBrowserService.getPort();
+        const fbProcessActive = !!(fileBrowserService.process && fileBrowserService.process.pid && !fileBrowserService.process.killed);
+        let fbWebOk = false;
+        try {
+            const fbCheck = await axios.get(`http://127.0.0.1:${fbPort}/`, { timeout: 1000 });
+            fbWebOk = fbCheck.status === 200;
+        } catch(e) {}
+
         res.json({
             success: true,
             diagnostics: {
@@ -3928,9 +3769,31 @@ app.get('/api/mariadb/diagnose', async (req, res) => {
                     pmaVhostExists,
                     pmaVhostFile
                 },
-                sso: { tokenValidationOk }
+                sso: { tokenValidationOk },
+                filebrowser: {
+                    installed: fbBinExists,
+                    port: fbPort,
+                    processActive: fbProcessActive,
+                    webOk: fbWebOk,
+                    dbPath: fileBrowserService.dbPath
+                }
             }
         });
+    } catch(err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// Endpoint de Reinstalação e Fix do FileBrowser
+app.post('/api/filebrowser/reinstall', async (req, res) => {
+    if (!req.session || !req.session.authenticated) {
+        return res.status(401).json({ error: 'Acesso negado' });
+    }
+    try {
+        console.log('[INFO] Reinstalando FileBrowser via Auto-Fix...');
+        await fileBrowserService.installBinary();
+        fileBrowserService.startProcess();
+        res.json({ success: true, message: 'FileBrowser reinstalado e reiniciado com sucesso!' });
     } catch(err) {
         res.status(500).json({ success: false, error: err.message });
     }
@@ -3940,6 +3803,11 @@ server.listen(PORT, '0.0.0.0', () => {
     console.log(`Painel Termux rodando em:`);
     console.log(`- Local: http://localhost:${PORT}`);
     console.log(`- Rede:  http://0.0.0.0:${PORT}`);
+    
+    // Iniciar FileBrowser Service em background
+    fileBrowserService.init().catch(err => {
+        console.error('[ERR] Falha ao iniciar FileBrowser:', err.message);
+    });
 });
 
 

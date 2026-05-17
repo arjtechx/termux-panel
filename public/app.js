@@ -443,177 +443,16 @@ function filePath(name) {
 }
 
 async function loadFiles(dir) {
-    const targetDir = dir || currentDir;
-    const data = await safeFetch(`${API_BASE}/files?dir=${encodeURIComponent(targetDir)}`);
-    if (!data) return;
-    // Servidor retorna: { currentDir, parentDir, files: [{name, path, isDirectory, size, mtime}] }
-    currentDir   = data.currentDir || targetDir;
-    currentFiles = data.files || [];
-
-    const breadcrumb = document.getElementById('file-breadcrumb');
-    if (breadcrumb) breadcrumb.textContent = currentDir;
-
-    renderFileList(currentFiles, data.parentDir);
+    // O FileBrowser embutido autogerencia o carregamento.
 }
 
-function renderFileList(files, parentDir) {
-    const tbody = document.getElementById('file-list');
-    if (!tbody) return;
-    tbody.innerHTML = '';
-
-    // Linha ".." para voltar
-    if (parentDir && parentDir !== currentDir) {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td></td>
-            <td><a href="#" onclick="loadFiles('${parentDir.replace(/'/g, "\\'")}');return false">📁 ..</a></td>
-            <td>--</td><td>--</td><td></td>`;
-        tbody.appendChild(tr);
-    }
-
-    if (!files.length) {
-        tbody.innerHTML += '<tr><td colspan="5" style="color:var(--text-muted);padding:16px">Pasta vazia.</td></tr>';
-        return;
-    }
-
-    // Pastas primeiro, depois arquivos
-    const sorted = [...files].sort((a, b) => {
-        if (a.isDirectory && !b.isDirectory) return -1;
-        if (!a.isDirectory && b.isDirectory) return 1;
-        return a.name.localeCompare(b.name);
-    });
-
-    sorted.forEach(file => {
-        const { name, isDirectory, size, mtime, path: fullPath } = file;
-        const icon = isDirectory ? '📁' : getFileIcon(name);
-        const absPath = fullPath || filePath(name);
-        const clickFn = isDirectory
-            ? `loadFiles('${absPath.replace(/'/g, "\\'")}');return false`
-            : `viewFile('${absPath.replace(/'/g, "\\'")}', '${name.replace(/'/g, "\\'")}');return false`;
-
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td><input type="checkbox" data-path="${absPath}" data-name="${name}"></td>
-            <td><a href="#" onclick="${clickFn}">${icon} ${name}</a></td>
-            <td>${isDirectory ? '--' : formatSize(size)}</td>
-            <td>${formatDate(mtime)}</td>
-            <td style="text-align:right; white-space:nowrap;">
-                ${!isDirectory ? `<button class="btn btn-sm btn-secondary" onclick="viewFile('${absPath.replace(/'/g, "\\'")}','${name.replace(/'/g, "\\'")}')">👁</button>` : ''}
-                <button class="btn btn-sm btn-secondary" onclick="renameItem('${absPath.replace(/'/g, "\\'")}','${name.replace(/'/g, "\\'")}')">✏️</button>
-                <button class="btn btn-sm btn-danger" onclick="deleteFileItem('${absPath.replace(/'/g, "\\'")}','${name.replace(/'/g, "\\'")}')">🗑</button>
-            </td>`;
-        tbody.appendChild(tr);
-    });
-}
-
-function getFileIcon(name) {
-    const ext = name.split('.').pop().toLowerCase();
-    const icons = { js:'🟨', ts:'🔷', json:'📋', html:'🌐', css:'🎨', sh:'⚙️', md:'📝',
-                    py:'🐍', php:'🐘', sql:'🗄️', zip:'🗜️', gz:'🗜️', tar:'🗜️',
-                    jpg:'🖼️', png:'🖼️', gif:'🖼️', mp4:'🎬', pdf:'📕', txt:'📄' };
-    return icons[ext] || '📄';
-}
-
-function toggleSelectAllFiles() {
-    const master = document.getElementById('selectAllFiles');
-    document.querySelectorAll('#file-list input[type=checkbox]').forEach(cb => cb.checked = master?.checked);
-}
-
-// VIEW — servidor retorna texto puro em GET /api/files/read?file=PATH
-async function viewFile(absPath, name) {
-    // Usa fetch direto pois a resposta é texto puro, não JSON
-    try {
-        const resp = await fetch(`${API_BASE}/files/read?file=${encodeURIComponent(absPath)}`);
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const content = await resp.text();
-        const nameEl    = document.getElementById('modalFileName');
-        const contentEl = document.getElementById('fileContentArea');
-        const modal     = document.getElementById('fileViewerModal');
-        if (nameEl)    nameEl.textContent    = name || absPath.split('/').pop();
-        if (contentEl) contentEl.textContent = content;
-        if (modal)     modal.classList.remove('hidden');
-        // Armazena para edição
-        window._editingFilePath = absPath;
-    } catch(e) {
-        alert(`Não foi possível abrir o arquivo: ${e.message}`);
+function fbNavigate(path) {
+    const iframe = document.getElementById('iframe-filebrowser');
+    if (iframe) {
+        // FileBrowser navega nas pastas mudando o caminho da URL
+        iframe.src = `/__filebrowser/files${path}`;
     }
 }
-
-function closeFileViewer() {
-    document.getElementById('fileViewerModal')?.classList.add('hidden');
-    window._editingFilePath = null;
-}
-
-async function saveFileContent() {
-    if (!window._editingFilePath) return;
-    const content = document.getElementById('fileContentArea')?.textContent;
-    const result  = await safeFetch(`${API_BASE}/files/save`, 'POST', { path: window._editingFilePath, content });
-    if (result?.success) alert('✅ Arquivo salvo!');
-}
-
-// CRIAR PASTA — servidor espera {dir, name}
-async function createNewFolder() {
-    const name = prompt('Nome da nova pasta:');
-    if (!name) return;
-    const result = await safeFetch(`${API_BASE}/files/mkdir`, 'POST', { dir: currentDir, name });
-    if (result?.success) loadFiles();
-}
-
-// DELETE — servidor usa DELETE /api/files?path=
-async function deleteFileItem(absPath, name) {
-    if (!confirm(`Deletar "${name}"? Esta ação é irreversível.`)) return;
-    const result = await fetch(`${API_BASE}/files?path=${encodeURIComponent(absPath)}`, { method: 'DELETE' });
-    if (result.ok) loadFiles();
-    else alert('Erro ao deletar o arquivo.');
-}
-
-// RENOMEAR — servidor usa POST /api/files/rename com {oldPath, newPath}
-async function renameItem(absPath, oldName) {
-    const newName = prompt('Novo nome:', oldName);
-    if (!newName || newName === oldName) return;
-    const newPath = absPath.replace(/(\/)[^/]+$/, `$1${newName}`);
-    const result  = await safeFetch(`${API_BASE}/files/rename`, 'POST', { oldPath: absPath, newPath });
-    if (result?.success) loadFiles();
-}
-
-// UPLOAD — servidor usa raw body com headers x-file-name e x-target-dir
-async function handleUpload(event) {
-    const files = Array.from(event.target.files);
-    if (!files.length) return;
-
-    for (const file of files) {
-        try {
-            await fetch(`${API_BASE}/files/upload`, {
-                method: 'POST',
-                headers: {
-                    'x-file-name':   file.name,
-                    'x-target-dir':  currentDir,
-                    'Content-Type':  file.type || 'application/octet-stream',
-                },
-                body: file,
-            });
-        } catch(e) {
-            console.error('Upload falhou para', file.name, e);
-        }
-    }
-    event.target.value = '';
-    loadFiles();
-}
-
-// COMPRIMIR — servidor usa POST /api/files/compress com {items[], archiveName, currentDir}
-async function zipSelected() {
-    const checkboxes = [...document.querySelectorAll('#file-list input[type=checkbox]:checked')];
-    if (!checkboxes.length) { alert('Selecione arquivos para comprimir.'); return; }
-
-    const archiveName = prompt('Nome do arquivo comprimido:', 'arquivo.tar.gz');
-    if (!archiveName) return;
-
-    const items = checkboxes.map(cb => cb.dataset.path);
-    const result = await safeFetch(`${API_BASE}/files/compress`, 'POST', { items, archiveName, currentDir });
-    if (result?.success) { alert('✅ Arquivo comprimido!'); loadFiles(); }
-}
-
-
 // ============================================================
 //  BANCO DE DADOS — Módulo Completo
 // ============================================================
@@ -1680,7 +1519,25 @@ async function checkHealthStatus() {
             <strong>${s.phpmyadmin.installed ? 'Instalado' : 'Não Instalado'}</strong>
             <small>Porta 8080: ${s.phpmyadmin.port8080 ? 'Aberta' : 'Fechada'}</small>
         </div>
+        <div class="stat-card" style="border-left: 4px solid ${s.filebrowser && s.filebrowser.installed ? 'var(--success)' : 'var(--danger)'}">
+            <span class="card-label">FileBrowser</span>
+            <strong>${s.filebrowser && s.filebrowser.installed ? (s.filebrowser.running ? 'Rodando' : 'Parado') : 'Não Instalado'}</strong>
+            <small>Porta ${s.filebrowser ? s.filebrowser.port : '8095'}: ${s.filebrowser && s.filebrowser.webOk ? 'Aberta' : 'Fechada'}</small>
+            ${s.filebrowser && (!s.filebrowser.installed || !s.filebrowser.running) ? `<button class="btn btn-sm btn-danger" style="margin-top: 8px; width: 100%; font-size:0.75rem; padding:4px;" onclick="reinstallFileBrowser()">🔧 Reinstalar</button>` : ''}
+        </div>
     `;
+}
+
+async function reinstallFileBrowser() {
+    if (!confirm('Deseja reinstalar e corrigir o binário e serviço do FileBrowser?')) return;
+    const btn = document.querySelector('.fb-sidebar button'); // desabilita algo temporário
+    const resp = await safeFetch(`${API_BASE}/filebrowser/reinstall`, 'POST');
+    if (resp && resp.success) {
+        alert('✅ FileBrowser reinstalado e reiniciado com sucesso!');
+        checkHealthStatus();
+    } else {
+        alert('❌ Falha ao reinstalar: ' + (resp ? resp.error : 'Erro desconhecido'));
+    }
 }
 
 function runHealthCheck() {

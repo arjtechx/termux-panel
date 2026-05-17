@@ -1,0 +1,20 @@
+# Dependências
+node_modules/
+package-lock.json
+
+# Binários Dinâmicos
+bin/
+
+# Dados Dinâmicos e Bancos de Dados SQLite
+data/
+
+# Configurações Locais Sensíveis e Credenciais (Não subir!)
+config/auth.json
+config/hosting.json
+config/system.json
+config/update-cache.json
+
+# Diretórios temporários de desenvolvimento
+scratch/
+.tempmediaStorage/
+.gemini/
