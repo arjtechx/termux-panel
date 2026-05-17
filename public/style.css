@@ -934,31 +934,77 @@ input:focus, textarea:focus { outline: none; border-color: var(--primary); }
 /* ============================================================
    DRAWER RIGHT PANEL FOR ADVANCED DATABASE MANAGER
 ============================================================ */
-.modal-card.drawer-right {
-    position: fixed;
-    top: 0;
-    right: 0;
-    height: 100vh;
-    max-width: 580px;
-    width: 100%;
-    border-radius: 0;
-    border-left: 1px solid var(--border);
-    border-top: none;
-    border-bottom: none;
-    max-height: 100vh;
-    animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-    display: flex;
-    flex-direction: column;
+.drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.55);
+  z-index: 9999;
+  display: flex;
+  justify-content: flex-end;
 }
 
-@keyframes slideInRight {
-    from { transform: translateX(100%); }
-    to { transform: translateX(0); }
+.drawer-overlay.hidden {
+  display: none;
 }
 
-.drawer-body {
-    flex: 1;
-    overflow-y: auto;
-    padding-bottom: 30px;
+.drawer-panel {
+  width: min(520px, 96vw);
+  height: 100vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  padding: 20px;
+  box-shadow: -10px 0 30px rgba(0,0,0,.35);
+}
+
+.drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.drawer-section {
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 14px;
+}
+
+.action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.action-grid button {
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.action-grid button:disabled,
+.disabled {
+  opacity: .45;
+  pointer-events: none;
+}
+
+.danger-zone {
+  border-color: var(--danger);
+  background: rgba(239,68,68,.08);
+}
+
+.alert-warning {
+  padding: 10px;
+  border: 1px solid var(--warning);
+  border-radius: 10px;
+  background: rgba(245,158,11,.12);
+  color: var(--warning);
+  margin-bottom: 12px;
 }
 

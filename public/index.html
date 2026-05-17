@@ -444,7 +444,7 @@
                     <div class="table-card">
                         <table>
                             <thead>
-                                <tr><th>Nome</th><th>Tamanho</th><th>Ações</th></tr>
+                                <tr><th>Nome</th><th>Tamanho</th><th>Tipo</th><th>Ações</th></tr>
                             </thead>
                             <tbody id="db-list-body"></tbody>
                         </table>
@@ -936,144 +936,71 @@
 <!-- ============================================================
      DRAWER: GERENCIADOR DE BANCO DE DADOS DETALHADO (v0.0.2)
 ============================================================ -->
-<div id="dbManagerDrawer" class="modal-overlay hidden">
-    <div class="modal-card modal-lg drawer-right">
-        <div class="modal-header">
-            <div style="display:flex; align-items:center; gap:10px;">
-                <span class="badge badge-success" style="font-size:1.1rem; padding:6px 12px;" id="drawer-db-icon">🗄</span>
-                <h2 id="drawer-db-title" style="margin:0;">Gerenciar Banco</h2>
-            </div>
-            <button class="btn-icon-ghost" onclick="closeDbManagerDrawer()">✕</button>
-        </div>
-
-        <div class="drawer-body" style="overflow-y:auto; padding:10px; display:flex; flex-direction:column; gap:20px;">
-            
-            <!-- AVISO DE BANCO DO SISTEMA PROTEGIDO -->
-            <div id="drawer-system-db-warning" class="hidden" style="padding:12px; background:rgba(239,68,68,0.1); border:1px solid var(--danger); border-radius:8px; color:var(--danger); display:flex; align-items:center; gap:8px;">
-                <span style="font-size:0.85rem; font-weight:600;">⚠️ Banco de dados de sistema protegido. Ações destrutivas e administrativas estão bloqueadas.</span>
-            </div>
-
-            <!-- CARD INFORMATIVO (METADADOS) -->
-            <div class="card" style="padding:16px;">
-                <h4 style="margin:0 0 12px 0; color:var(--primary); font-size:0.9rem; text-transform:uppercase; letter-spacing:0.5px;">📋 Informações Gerais</h4>
-                <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px;">
-                    <div style="background:var(--surface2); padding:10px; border-radius:6px; text-align:center;">
-                        <small style="color:var(--text-muted); font-size:0.75rem;">Tamanho Total</small>
-                        <strong style="display:block; font-size:1.1rem; margin-top:4px;" id="drawer-meta-size">-- MB</strong>
-                    </div>
-                    <div style="background:var(--surface2); padding:10px; border-radius:6px; text-align:center;">
-                        <small style="color:var(--text-muted); font-size:0.75rem;">Qtd Tabelas</small>
-                        <strong style="display:block; font-size:1.1rem; margin-top:4px;" id="drawer-meta-tables">--</strong>
-                    </div>
-                    <div style="background:var(--surface2); padding:10px; border-radius:6px; text-align:center;">
-                        <small style="color:var(--text-muted); font-size:0.75rem;">Total Registros</small>
-                        <strong style="display:block; font-size:1.1rem; margin-top:4px;" id="drawer-meta-rows">--</strong>
-                    </div>
-                    <div style="background:var(--surface2); padding:10px; border-radius:6px; text-align:center;">
-                        <small style="color:var(--text-muted); font-size:0.75rem;">Storage Engine</small>
-                        <strong style="display:block; font-size:1.1rem; margin-top:4px;" id="drawer-meta-engine">--</strong>
-                    </div>
-                    <div style="background:var(--surface2); padding:10px; border-radius:6px; text-align:center;">
-                        <small style="color:var(--text-muted); font-size:0.75rem;">Collation</small>
-                        <strong style="display:block; font-size:0.8rem; margin-top:4px; overflow:hidden; text-overflow:ellipsis;" id="drawer-meta-collation">--</strong>
-                    </div>
-                    <div style="background:var(--surface2); padding:10px; border-radius:6px; text-align:center;">
-                        <small style="color:var(--text-muted); font-size:0.75rem;">Maior Tabela</small>
-                        <strong style="display:block; font-size:0.8rem; margin-top:4px; overflow:hidden; text-overflow:ellipsis;" id="drawer-meta-largest">--</strong>
-                    </div>
-                </div>
-            </div>
-
-            <!-- SEÇÃO 1: ACESSO E DIAGNÓSTICO -->
-            <div class="card" style="padding:16px;">
-                <h4 style="margin:0 0 12px 0; color:var(--primary); font-size:0.9rem; text-transform:uppercase; letter-spacing:0.5px;">🚀 Ações Rápidas</h4>
-                <div style="display:flex; gap:10px; flex-wrap:wrap;">
-                    <button class="btn btn-primary" id="drawer-btn-pma" style="flex:1; min-width:140px;">Abrir phpMyAdmin</button>
-                    <button class="btn btn-secondary" id="drawer-btn-tables" style="flex:1; min-width:140px;">Ver Estrutura</button>
-                    <button class="btn btn-secondary user-action-btn" id="drawer-btn-optimize" style="flex:1; min-width:140px;">🧹 Otimizar Banco</button>
-                    <button class="btn btn-secondary user-action-btn" id="drawer-btn-repair" style="flex:1; min-width:140px;">🛠 Reparar Tabelas</button>
-                </div>
-                <div id="drawer-op-output" class="terminal-box hidden" style="margin-top:12px; height:120px; font-size:0.8rem;"></div>
-            </div>
-
-            <!-- SEÇÃO 2: BACKUP & RESTAURAÇÃO -->
-            <div class="card" style="padding:16px;">
-                <h4 style="margin:0 0 12px 0; color:var(--primary); font-size:0.9rem; text-transform:uppercase; letter-spacing:0.5px;">💾 Backup e Restauração</h4>
-                <div style="display:flex; flex-direction:column; gap:10px;">
-                    <div style="display:flex; gap:10px;">
-                        <button class="btn btn-primary" id="drawer-btn-backup" style="flex:1;">Gerar Dump SQL</button>
-                    </div>
-                    <div style="border-top:1px solid var(--border-color); padding-top:10px; margin-top:4px;" class="user-action-btn">
-                        <label class="form-label" style="font-size:0.8rem;">Restaurar a partir de Backup:</label>
-                        <div style="display:flex; gap:8px; align-items:center;">
-                            <select id="drawer-restore-select" style="flex:1; padding:6px; font-size:0.85rem; border-radius:4px; background:var(--bg-lighter); color:var(--text-color); border:1px solid var(--border);">
-                                <option value="">Selecione o arquivo...</option>
-                            </select>
-                            <button class="btn btn-warning btn-sm" id="drawer-btn-restore" style="background:var(--warning); color:white;">🔁 Restaurar</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- SEÇÃO 3: USUÁRIOS E SEGURANÇA -->
-            <div class="card user-action-btn" style="padding:16px;">
-                <h4 style="margin:0 0 12px 0; color:var(--primary); font-size:0.9rem; text-transform:uppercase; letter-spacing:0.5px;">👤 Usuários e Credenciais</h4>
-                
-                <div style="margin-bottom:12px;">
-                    <label class="form-label" style="font-size:0.8rem;">Usuários Vinculados a este Banco:</label>
-                    <div id="drawer-db-users-list" style="display:flex; flex-direction:column; gap:6px; margin-top:4px;"></div>
-                </div>
-
-                <div style="border-top:1px solid var(--border-color); padding-top:12px; margin-top:8px;">
-                    <label class="form-label" style="font-size:0.8rem;">Alterar Senha / Atualizar Arquivos Config:</label>
-                    <div style="display:flex; flex-direction:column; gap:8px; margin-top:6px;">
-                        <div style="display:flex; gap:8px;">
-                            <select id="drawer-reset-user-select" style="flex:1; padding:6px; font-size:0.85rem;">
-                                <option value="">Selecione o usuário...</option>
-                            </select>
-                            <button class="btn btn-secondary btn-sm" onclick="generateStrongPasswordForDrawer()">🔑 Gerar Senha</button>
-                        </div>
-                        <input type="text" id="drawer-new-password" placeholder="Nova Senha Forte" style="font-family:monospace; font-size:0.85rem;">
-                        <label style="display:flex; align-items:center; gap:6px; font-size:0.78rem; cursor:pointer;">
-                            <input type="checkbox" id="drawer-alter-configs" checked> Atualizar .env e wp-config.php (com backup)
-                        </label>
-                        <button class="btn btn-success btn-sm" id="drawer-btn-reset-pw-preview" style="width:100%;">🔍 Buscar e Visualizar Previews de Configurações</button>
-                    </div>
-
-                    <!-- Previews Box -->
-                    <div id="drawer-preview-box" class="hidden" style="margin-top:10px; padding:10px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; max-height:160px; overflow-y:auto;">
-                        <h5 style="margin:0 0 6px 0; font-size:0.78rem;">Arquivos de configuração que serão modificados:</h5>
-                        <div id="drawer-preview-list" style="display:flex; flex-direction:column; gap:6px;"></div>
-                        <button class="btn btn-warning btn-sm" id="drawer-btn-reset-pw" style="width:100%; margin-top:8px;">Confirmar Redefinição e Aplicar</button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- SEÇÃO 4: RENOMEAR BANCO -->
-            <div class="card user-action-btn" style="padding:16px;">
-                <h4 style="margin:0 0 12px 0; color:var(--primary); font-size:0.9rem; text-transform:uppercase; letter-spacing:0.5px;">✏️ Renomear Banco (Seguro)</h4>
-                <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:8px;">Cria uma duplicata do banco, importa todas as tabelas e dados, valida integridade estrutural e de tamanho e faz backup preventivo.</p>
-                <div style="display:flex; flex-direction:column; gap:8px;">
-                    <input type="text" id="drawer-rename-newname" placeholder="novo_nome_banco" style="font-size:0.85rem;">
-                    <label style="display:flex; align-items:center; gap:6px; font-size:0.78rem; cursor:pointer;">
-                        <input type="checkbox" id="drawer-rename-deleteold"> Excluir banco antigo automaticamente após duplicação bem-sucedida?
-                    </label>
-                    <button class="btn btn-warning btn-sm" id="drawer-btn-rename">✏️ Iniciar Duplicação / Renomeação</button>
-                </div>
-            </div>
-
-            <!-- SEÇÃO 5: ZONA DE PERIGO (DROP) -->
-            <div class="card user-action-btn" style="padding:16px; border:1px solid var(--danger); background:rgba(239,68,68,0.02);">
-                <h4 style="margin:0 0 8px 0; color:var(--danger); font-size:0.9rem; text-transform:uppercase; letter-spacing:0.5px;">⚠️ Zona de Perigo</h4>
-                <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:10px;">Esta ação é irreversível. Para deletar este banco definitivamente, digite exatamente o nome dele abaixo:</p>
-                <div style="display:flex; flex-direction:column; gap:8px;">
-                    <input type="text" id="drawer-drop-confirm-name" placeholder="Digite o nome do banco para confirmar" style="border-color:var(--danger); font-size:0.85rem;" oninput="validateDrawerDropButton()">
-                    <button class="btn btn-danger" id="drawer-btn-drop" disabled style="width:100%;">🗑 Deletar Banco Permanentemente</button>
-                </div>
-            </div>
-
-        </div>
+<div id="dbManagerDrawer" class="drawer-overlay hidden">
+  <div class="drawer-panel">
+    <div class="drawer-header">
+      <div>
+        <h2 id="dbDrawerTitle">Banco</h2>
+        <span id="dbDrawerBadge" class="badge"></span>
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="closeDbManagerDrawer()">✕</button>
     </div>
+
+    <div id="dbDrawerSystemWarning" class="alert alert-warning hidden">
+      Banco do sistema protegido. Ações perigosas foram desativadas.
+    </div>
+
+    <div class="drawer-section">
+      <h3>📊 Detalhes</h3>
+      <div class="stats-grid compact">
+        <div class="stat-card"><small>Tabelas</small><strong id="dbDetailTables">--</strong></div>
+        <div class="stat-card"><small>Tamanho</small><strong id="dbDetailSize">--</strong></div>
+        <div class="stat-card"><small>Engine</small><strong id="dbDetailEngine">--</strong></div>
+        <div class="stat-card"><small>Collation</small><strong id="dbDetailCollation">--</strong></div>
+      </div>
+    </div>
+
+    <div class="drawer-section">
+      <h3>⚡ Ações rápidas</h3>
+      <div class="action-grid">
+        <button onclick="dbDrawerOpenPhpMyAdmin()">↗ phpMyAdmin</button>
+        <button onclick="dbDrawerOpenTables()">📊 Tabelas</button>
+        <button onclick="dbDrawerBackup()">⬇ Backup</button>
+        <button class="db-danger-action" onclick="dbDrawerRestore()">🔁 Restaurar</button>
+      </div>
+    </div>
+
+    <div class="drawer-section">
+      <h3>🛠 Manutenção</h3>
+      <div class="action-grid">
+        <button onclick="dbDrawerOptimize()">🧹 Otimizar</button>
+        <button class="db-danger-action" onclick="dbDrawerRepair()">🛠 Reparar</button>
+      </div>
+    </div>
+
+    <div class="drawer-section">
+      <h3>👤 Usuários e permissões</h3>
+      <div class="action-grid">
+        <button class="db-danger-action" onclick="dbDrawerUsers()">👤 Ver usuários</button>
+        <button class="db-danger-action" onclick="dbDrawerCreateUser()">➕ Criar usuário</button>
+        <button class="db-danger-action" onclick="dbDrawerResetPassword()">🔐 Redefinir senha</button>
+        <button class="db-danger-action" onclick="dbDrawerPrivileges()">🔑 Permissões</button>
+      </div>
+    </div>
+
+    <div class="drawer-section">
+      <h3>✏️ Renomear banco</h3>
+      <input id="dbRenameNewName" placeholder="novo_nome_do_banco">
+      <button class="btn btn-warning db-danger-action" onclick="dbDrawerRename()">Renomear com backup</button>
+    </div>
+
+    <div class="drawer-section danger-zone">
+      <h3>🗑 Zona de perigo</h3>
+      <p>Digite exatamente o nome do banco para apagar.</p>
+      <input id="dbDropConfirmInput" oninput="validateDbDropConfirm()" placeholder="nome do banco">
+      <button id="dbDropButton" class="btn btn-danger" disabled onclick="dbDrawerDrop()">Apagar banco</button>
+    </div>
+  </div>
 </div>
 
 <script src="/socket.io/socket.io.js"></script>

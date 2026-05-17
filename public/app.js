@@ -637,389 +637,306 @@ async function fetchDatabases() {
 }
 
 // Global state for drawer management
-window.currentManagedDb = null;
-window.scannedPasswordMatches = [];
+let currentDbManager = null;
+
+function isSystemDatabase(db) {
+  if (!db) return false;
+  return ['information_schema', 'mysql', 'performance_schema', 'sys'].includes(db.toLowerCase());
+}
 
 async function openDbManagerDrawer(dbName) {
-    window.currentManagedDb = dbName;
-    const isSystem = ['information_schema','performance_schema','mysql','sys'].includes(dbName.toLowerCase());
+  currentDbManager = dbName;
 
-    // Reset drawer state
-    setEl('drawer-db-title', dbName);
-    document.getElementById('drawer-rename-newname').value = '';
-    document.getElementById('drawer-rename-deleteold').checked = false;
-    document.getElementById('drawer-drop-confirm-name').value = '';
-    document.getElementById('drawer-new-password').value = '';
-    document.getElementById('drawer-alter-configs').checked = true;
-    document.getElementById('drawer-btn-drop').disabled = true;
-    
-    const outputBox = document.getElementById('drawer-op-output');
-    outputBox.classList.add('hidden');
-    outputBox.innerText = '';
+  const drawer = document.getElementById('dbManagerDrawer');
+  if (!drawer) return;
+  drawer.classList.remove('hidden');
 
-    const previewBox = document.getElementById('drawer-preview-box');
-    previewBox.classList.add('hidden');
-    document.getElementById('drawer-preview-list').innerHTML = '';
-    window.scannedPasswordMatches = [];
+  const titleEl = document.getElementById('dbDrawerTitle');
+  if (titleEl) titleEl.textContent = dbName;
 
-    // System DB Blocking Banner
-    const warningBanner = document.getElementById('drawer-system-db-warning');
-    const userActionBtns = document.querySelectorAll('.user-action-btn');
+  const system = isSystemDatabase(dbName);
+  const badge = document.getElementById('dbDrawerBadge');
+  if (badge) {
+    badge.textContent = system ? 'Sistema' : 'Usuário';
+    badge.className = system ? 'badge badge-danger' : 'badge badge-success';
+  }
 
-    if (isSystem) {
-        warningBanner.classList.remove('hidden');
-        userActionBtns.forEach(el => el.classList.add('hidden'));
-    } else {
-        warningBanner.classList.add('hidden');
-        userActionBtns.forEach(el => el.classList.remove('hidden'));
-    }
+  const warningEl = document.getElementById('dbDrawerSystemWarning');
+  if (warningEl) warningEl.classList.toggle('hidden', !system);
 
-    // Show Drawer
-    document.getElementById('dbManagerDrawer').classList.remove('hidden');
+  document.querySelectorAll('.db-danger-action').forEach(btn => {
+    btn.disabled = system;
+    btn.classList.toggle('disabled', system);
+  });
 
-    // Populate Details
-    setEl('drawer-meta-size', '-- MB');
-    setEl('drawer-meta-tables', '--');
-    setEl('drawer-meta-rows', '--');
-    setEl('drawer-meta-engine', '--');
-    setEl('drawer-meta-collation', '--');
-    setEl('drawer-meta-largest', '--');
+  const confirmInput = document.getElementById('dbDropConfirmInput');
+  if (confirmInput) confirmInput.value = '';
+  
+  const dropBtn = document.getElementById('dbDropButton');
+  if (dropBtn) {
+    dropBtn.disabled = true;
+    dropBtn.style.display = system ? 'none' : 'inline-flex';
+  }
 
-    try {
-        const details = await safeFetch(`${API_BASE}/db/details?db=${dbName}`);
-        if (details && details.success) {
-            setEl('drawer-meta-size', `${details.totalSizeMb || 0} MB`);
-            setEl('drawer-meta-tables', details.tablesCount || 0);
-            setEl('drawer-meta-rows', details.totalRows || 0);
-            setEl('drawer-meta-engine', details.engine || 'InnoDB');
-            setEl('drawer-meta-collation', details.collation || '--');
-            setEl('drawer-meta-largest', details.largestTable || 'N/A');
-        }
-    } catch (e) {
-        console.error('Erro ao buscar detalhes do banco:', e);
-    }
-
-    // Populate Users & Privileges
-    await refreshDrawerUsers();
-
-    // Setup Actions Event Handlers
-    document.getElementById('drawer-btn-pma').onclick = () => openPhpMyAdmin(dbName);
-    document.getElementById('drawer-btn-tables').onclick = () => openPhpMyAdmin(dbName, 'tbl_structure.php');
-    
-    document.getElementById('drawer-btn-optimize').onclick = () => runDrawerDbTool('optimize');
-    document.getElementById('drawer-btn-repair').onclick = () => runDrawerDbTool('repair');
-
-    document.getElementById('drawer-btn-backup').onclick = () => runDrawerBackup();
-    document.getElementById('drawer-btn-restore').onclick = () => runDrawerRestore();
-
-    document.getElementById('drawer-btn-reset-pw-preview').onclick = () => previewPasswordResetConfigs();
-    document.getElementById('drawer-btn-reset-pw').onclick = () => runPasswordReset();
-
-    document.getElementById('drawer-btn-rename').onclick = () => runDrawerRename();
-    document.getElementById('drawer-btn-drop').onclick = () => runDrawerDrop();
+  await loadDbManagerDetails(dbName);
 }
 
 function closeDbManagerDrawer() {
-    document.getElementById('dbManagerDrawer').classList.add('hidden');
-    window.currentManagedDb = null;
+  const drawer = document.getElementById('dbManagerDrawer');
+  if (drawer) drawer.classList.add('hidden');
+  currentDbManager = null;
 }
 
-async function refreshDrawerUsers() {
-    const dbName = window.currentManagedDb;
-    if (!dbName) return;
+async function loadDbManagerDetails(dbName) {
+  try {
+    const res = await fetch(`/api/db/details?db=${encodeURIComponent(dbName)}`);
+    const data = await res.json();
 
-    const userListDiv = document.getElementById('drawer-db-users-list');
-    const userSelect = document.getElementById('drawer-reset-user-select');
+    const tablesEl = document.getElementById('dbDetailTables');
+    if (tablesEl) tablesEl.textContent = data.tablesCount ?? '--';
     
-    userListDiv.innerHTML = '<span style="color:var(--text-muted);font-size:0.8rem;">Buscando usuários...</span>';
-    userSelect.innerHTML = '<option value="">Selecione o usuário...</option>';
-
-    try {
-        const res = await safeFetch(`${API_BASE}/db/users?db=${dbName}`);
-        if (res && res.success) {
-            // Render db specific users
-            if (res.dbUsers.length === 0) {
-                userListDiv.innerHTML = '<span style="color:var(--text-muted);font-size:0.8rem;">Nenhum usuário com acesso direto.</span>';
-            } else {
-                userListDiv.innerHTML = res.dbUsers.map(u => `
-                    <div style="display:flex; justify-content:space-between; align-items:center; background:var(--surface2); padding:6px 10px; border-radius:6px; border:1px solid var(--border);">
-                        <span style="font-family:monospace; font-size:0.85rem; font-weight:600;">👤 ${u.user}@${u.host}</span>
-                        <button class="btn btn-sm btn-danger" style="padding:2px 8px; font-size:0.75rem;" onclick="revokeUserDrawer('${u.user}')">Revogar</button>
-                    </div>
-                `).join('');
-            }
-
-            // Populate users dropdown
-            res.allUsers.forEach(u => {
-                const opt = document.createElement('option');
-                opt.value = u.user;
-                opt.textContent = `${u.user}@${u.host}`;
-                userSelect.appendChild(opt);
-            });
-        } else {
-            userListDiv.innerHTML = '<span style="color:var(--danger);font-size:0.8rem;">Erro ao obter lista de privilégios.</span>';
-        }
-    } catch(e) {
-        userListDiv.innerHTML = '<span style="color:var(--danger);font-size:0.8rem;">Falha de comunicação.</span>';
-    }
+    const sizeEl = document.getElementById('dbDetailSize');
+    if (sizeEl) sizeEl.textContent = data.totalSizeMb ? `${data.totalSizeMb} MB` : '--';
+    
+    const engineEl = document.getElementById('dbDetailEngine');
+    if (engineEl) engineEl.textContent = data.engine ?? '--';
+    
+    const collationEl = document.getElementById('dbDetailCollation');
+    if (collationEl) collationEl.textContent = data.collation ?? '--';
+  } catch (err) {
+    console.error('Erro ao carregar detalhes do banco:', err);
+  }
 }
 
-async function revokeUserDrawer(username) {
-    if (!confirm(`Revogar TODOS os privilégios do usuário "${username}" neste banco de dados?`)) return;
-    const dbName = window.currentManagedDb;
-    const res = await safeFetch(`${API_BASE}/db/user/privileges`, 'POST', {
-        username,
-        database: dbName,
-        action: 'revoke'
+function validateDbDropConfirm() {
+  const input = document.getElementById('dbDropConfirmInput').value;
+  const btn = document.getElementById('dbDropButton');
+  if (btn) btn.disabled = (input !== currentDbManager);
+}
+
+function dbDrawerOpenPhpMyAdmin() {
+  openPhpMyAdmin(currentDbManager);
+}
+
+function dbDrawerOpenTables() {
+  openPhpMyAdmin(currentDbManager, 'tbl_structure.php');
+}
+
+function dbDrawerBackup() {
+  const backupInput = document.getElementById('dbBackupName');
+  if (backupInput) backupInput.value = currentDbManager;
+  createDbBackup();
+}
+
+async function dbDrawerOptimize() {
+  try {
+    const res = await fetch('/api/db/optimize', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ database: currentDbManager })
     });
-    if (res?.success) {
-        alert('✅ Privilégios revogados com sucesso!');
-        await refreshDrawerUsers();
-    }
-}
-
-function generateStrongPasswordForDrawer() {
-    const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%&*()';
-    let pw = '';
-    for (let i = 0; i < 16; i++) {
-        pw += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    document.getElementById('drawer-new-password').value = pw;
-}
-
-function validateDrawerDropButton() {
-    const val = document.getElementById('drawer-drop-confirm-name').value;
-    const btn = document.getElementById('drawer-btn-drop');
-    btn.disabled = (val !== window.currentManagedDb);
-}
-
-async function runDrawerDbTool(tool) {
-    const dbName = window.currentManagedDb;
-    const outputBox = document.getElementById('drawer-op-output');
-    outputBox.classList.remove('hidden');
-    outputBox.innerText = `Executando ${tool === 'optimize' ? 'mysqlcheck -o' : 'mysqlcheck -r'}...`;
-
-    try {
-        const res = await safeFetch(`${API_BASE}/db/${tool}`, 'POST', { database: dbName });
-        if (res && res.success) {
-            outputBox.innerText = `✅ Sucesso!\n\n${res.output || 'Tabelas otimizadas/reparadas.'}`;
-        } else {
-            outputBox.innerText = `❌ Falha: ${res?.error || 'Erro desconhecido.'}`;
-        }
-    } catch(e) {
-        outputBox.innerText = `❌ Erro de rede: ${e.message}`;
-    }
-}
-
-async function runDrawerBackup() {
-    const dbName = window.currentManagedDb;
-    alert(`Gerando Backup do Banco: ${dbName}... Aguarde.`);
-    const result = await safeFetch(`${API_BASE}/db/backup`, 'POST', { dbName });
-    if (result && result.success) {
-        alert(`✅ Backup gerado com sucesso!\nSalvo em: ${result.filename}`);
-        await loadDbBackups();
-        // Atualiza select de restauração do drawer
-        await loadDrawerBackupsSelector();
+    const data = await res.json();
+    if (data.success) {
+      alert('✅ Otimização concluída com sucesso!');
     } else {
-        alert(`❌ Falha ao gerar backup: ${result?.error || 'Erro interno.'}`);
+      alert(`❌ Erro: ${data.error || 'Falha ao otimizar.'}`);
     }
+  } catch(err) {
+    alert('❌ Erro de rede ao otimizar.');
+  }
 }
 
-async function loadDrawerBackupsSelector() {
-    const select = document.getElementById('drawer-restore-select');
-    if (!select) return;
-    select.innerHTML = '<option value="">Selecione o backup...</option>';
-
-    try {
-        const data = await safeFetch(`${API_BASE}/db/backups`);
-        if (data && data.backups) {
-            data.backups.forEach(f => {
-                const opt = document.createElement('option');
-                opt.value = f.name;
-                opt.textContent = `${f.name} (${f.size})`;
-                select.appendChild(opt);
-            });
-        }
-    } catch(e) {
-        console.error('Erro ao buscar backups para o drawer:', e);
-    }
-}
-
-// Preenche select de restauração do drawer ao abrir
-document.getElementById('dbManagerDrawer').addEventListener('click', async (e) => {
-    if (e.target.id === 'dbManagerDrawer') closeDbManagerDrawer();
-});
-
-async function runDrawerRestore() {
-    const dbName = window.currentManagedDb;
-    const file = document.getElementById('drawer-restore-select').value;
-    if (!file) return alert('Selecione um arquivo de backup para restaurar.');
-
-    if (!confirm(`⚠️ ATENÇÃO!\n\nRestaurar o backup "${file}" no banco "${dbName}"?\n\nTODOS os dados atuais do banco serão SOBRESCRITOS!`)) return;
-
-    alert(`Restaurando backup no banco ${dbName}... Por favor aguarde.`);
-    const res = await safeFetch(`${API_BASE}/db/restore`, 'POST', {
-        file,
-        dbTarget: dbName
+async function dbDrawerRepair() {
+  try {
+    const res = await fetch('/api/db/repair', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ database: currentDbManager })
     });
-    if (res?.success) {
-        alert('✅ Restauração efetuada com sucesso!');
-        openDbManagerDrawer(dbName);
+    const data = await res.json();
+    if (data.success) {
+      alert('✅ Reparação concluída com sucesso!');
     } else {
-        alert(`❌ Erro na restauração: ${res?.error || 'Falha desconhecida.'}`);
+      alert(`❌ Erro: ${data.error || 'Falha ao reparar.'}`);
     }
+  } catch(err) {
+    alert('❌ Erro de rede ao reparar.');
+  }
 }
 
-async function previewPasswordResetConfigs() {
-    const username = document.getElementById('drawer-reset-user-select').value;
-    const dbName = window.currentManagedDb;
-    
-    if (!username) return alert('Selecione o usuário.');
+async function dbDrawerDrop() {
+  if (document.getElementById('dbDropConfirmInput').value !== currentDbManager) return;
 
-    const previewList = document.getElementById('drawer-preview-list');
-    const previewBox = document.getElementById('drawer-preview-box');
-    
-    previewList.innerHTML = '<span style="color:var(--text-muted);font-size:0.8rem;">Buscando configurações correspondentes...</span>';
-    previewBox.classList.remove('hidden');
+  if (!confirm(`⚠️ ATENÇÃO!\n\nExcluir o banco "${currentDbManager}" permanentemente?\n\nEsta ação é totalmente IRREVERSÍVEL!`)) return;
 
-    try {
-        const res = await safeFetch(`${API_BASE}/db/user/reset-password/preview`, 'POST', {
-            username,
-            database: dbName
-        });
-
-        if (res && res.success) {
-            window.scannedPasswordMatches = res.matches || [];
-            if (res.matches.length === 0) {
-                previewList.innerHTML = '<span style="color:var(--text-muted);font-size:0.8rem;">Nenhum arquivo .env ou wp-config.php dependente desse usuário foi detectado na home. A senha será atualizada apenas no banco MariaDB.</span>';
-            } else {
-                previewList.innerHTML = res.matches.map(m => `
-                    <div style="background:var(--surface); border:1px solid var(--border); padding:8px; border-radius:6px;">
-                        <span style="font-size:0.75rem; font-weight:600; color:var(--primary); word-break:break-all;">📂 ${m.relativePath}</span>
-                        <pre style="margin:4px 0 0 0; padding:6px; font-family:monospace; font-size:0.7rem; background:#000; color:#f87171; overflow-x:auto;">${m.preview}</pre>
-                    </div>
-                `).join('');
-            }
-        } else {
-            previewList.innerHTML = `<span style="color:var(--danger);font-size:0.8rem;">Erro: ${res?.error || 'Falha no preview.'}</span>`;
-        }
-    } catch(e) {
-        previewList.innerHTML = `<span style="color:var(--danger);font-size:0.8rem;">Erro de rede: ${e.message}</span>`;
-    }
-}
-
-async function runPasswordReset() {
-    const username = document.getElementById('drawer-reset-user-select').value;
-    const password = document.getElementById('drawer-new-password').value;
-    const alterConfigs = document.getElementById('drawer-alter-configs').checked;
-    const dbName = window.currentManagedDb;
-
-    if (!username || !password) return alert('Usuário e nova senha são obrigatórios.');
-
-    if (!confirm(`Confirmar a redefinição de senha para "${username}"?`)) return;
-
-    alert('Efetuando redefinição segura... Aguarde.');
-    try {
-        const res = await safeFetch(`${API_BASE}/db/user/reset-password`, 'POST', {
-            username,
-            password,
-            database: dbName,
-            alterConfigs
-        });
-
-        if (res && res.success) {
-            let msg = `✅ Senha alterada no MariaDB com sucesso!\n`;
-            if (res.updatedFiles && res.updatedFiles.length > 0) {
-                msg += `\nArquivos atualizados e salvos com backup preventivo:\n`;
-                res.updatedFiles.forEach(f => {
-                    const relative = f.file.split(/[\\/]/).pop();
-                    msg += `- ${relative} (Backup: ${f.backup.split(/[\\/]/).pop()})\n`;
-                });
-            }
-            alert(msg);
-            // Hide preview boxes
-            document.getElementById('drawer-preview-box').classList.add('hidden');
-            document.getElementById('drawer-new-password').value = '';
-        } else {
-            alert(`❌ Falha: ${res?.error || 'Erro desconhecido.'}`);
-        }
-    } catch(e) {
-        alert(`❌ Erro de rede: ${e.message}`);
-    }
-}
-
-async function runDrawerRename() {
-    const oldName = window.currentManagedDb;
-    const newName = document.getElementById('drawer-rename-newname').value.trim();
-    const deleteOld = document.getElementById('drawer-rename-deleteold').checked;
-
-    if (!newName) return alert('Digite o novo nome do banco.');
-    if (newName === oldName) return alert('O novo nome deve ser diferente do atual.');
-
-    // Sanitization match
-    if (!newName.match(/^[a-zA-Z0-9_]+$/)) {
-        return alert('Nome de banco inválido. Use apenas letras, números e underline.');
-    }
-
-    let warningMsg = `⚠️ INICIAR DUPLICAÇÃO E RENOMEAÇÃO SEGURA?\n\n`;
-    warningMsg += `Origem: ${oldName}\n`;
-    warningMsg += `Destino: ${newName}\n\n`;
-    warningMsg += `1. Um backup pré-duplicação automático será criado.\n`;
-    warningMsg += `2. O novo banco será criado e importado.\n`;
-    warningMsg += `3. A contagem de tabelas e tamanhos aproximados serão validados.\n`;
-    
-    if (deleteOld) {
-        warningMsg += `\n⚠️ ATENÇÃO: O banco original "${oldName}" será excluído automaticamente após a cópia validada!`;
+  try {
+    const res = await fetch(`${API_BASE}/db/${currentDbManager}`, {
+      method: 'DELETE'
+    });
+    const data = await res.json();
+    if (data.success) {
+      alert('✅ Banco deletado permanentemente com sucesso!');
+      closeDbManagerDrawer();
+      fetchDatabases();
     } else {
-        warningMsg += `\nO banco original "${oldName}" NÃO será excluído.`;
+      alert(`❌ Erro: ${data.error || 'Falha ao deletar banco.'}`);
     }
-
-    if (!confirm(warningMsg)) return;
-
-    alert('Duplicando e validando banco... Esta operação pode levar alguns minutos se o banco for grande. Aguarde.');
-
-    try {
-        const res = await safeFetch(`${API_BASE}/db/rename`, 'POST', {
-            oldName,
-            newName,
-            deleteOld
-        });
-
-        if (res && res.success) {
-            alert(`✅ Sucesso!\n\n${res.message}\nBackup de segurança criado: ${res.backupFile}`);
-            closeDbManagerDrawer();
-            fetchDatabases();
-        } else {
-            alert(`❌ Falha ao renomear: ${res?.error || 'Erro interno.'}`);
-        }
-    } catch(e) {
-        alert(`❌ Erro de rede: ${e.message}`);
-    }
+  } catch(err) {
+    alert('❌ Erro de rede ao deletar.');
+  }
 }
 
-async function runDrawerDrop() {
-    const dbName = window.currentManagedDb;
-    const confirmName = document.getElementById('drawer-drop-confirm-name').value;
-    
-    if (confirmName !== dbName) {
-        return alert('Nome de confirmação incorreto.');
+async function dbDrawerUsers() {
+  try {
+    const res = await fetch(`/api/db/users?db=${encodeURIComponent(currentDbManager)}`);
+    const data = await res.json();
+    if (data.success) {
+      const list = data.dbUsers.map(u => `👤 ${u.user}@${u.host}`).join('\n') || 'Nenhum usuário com acesso direto.';
+      alert(`Usuários com privilégios em "${currentDbManager}":\n\n${list}`);
+    } else {
+      alert('Erro ao obter lista de usuários.');
     }
+  } catch (err) {
+    alert('Erro de rede ao obter usuários.');
+  }
+}
 
-    if (!confirm(`⚠️ ÚLTIMO AVISO!\n\nDeletar o banco "${dbName}" permanentemente?\n\nTODOS os dados e tabelas serão completamente EXCLUÍDOS de forma IRREVERSÍVEL!`)) return;
-
-    alert(`Deletando banco ${dbName}... Aguarde.`);
-    try {
-        const res = await safeFetch(`${API_BASE}/db/${dbName}`, 'DELETE');
-        if (res && res.success) {
-            alert('✅ Banco deletado permanentemente com sucesso!');
-            closeDbManagerDrawer();
-            fetchDatabases();
-        } else {
-            alert(`❌ Erro ao deletar banco: ${res?.error || 'Falha interna.'}`);
-        }
-    } catch(e) {
-        alert(`❌ Erro de rede: ${e.message}`);
+async function dbDrawerCreateUser() {
+  const username = prompt('Nome de usuário a criar:');
+  if (!username) return;
+  const password = prompt('Senha para o novo usuário:');
+  if (!password) return;
+  
+  try {
+    const res = await fetch('/api/db/user/create', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ username, password })
+    });
+    const data = await res.json();
+    if (data.success) {
+      // Conceder permissões
+      await fetch('/api/db/user/privileges', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ username, database: currentDbManager, action: 'grant' })
+      });
+      alert(`✅ Usuário "${username}" criado com sucesso e permissões concedidas no banco "${currentDbManager}"!`);
+    } else {
+      alert(`❌ Falha: ${data.error || 'Erro ao criar usuário.'}`);
     }
+  } catch(err) {
+    alert('❌ Erro de rede ao criar usuário.');
+  }
+}
+
+async function dbDrawerResetPassword() {
+  const username = prompt('Qual usuário deseja redefinir a senha?');
+  if (!username) return;
+  const password = prompt('Digite a nova senha para o usuário:');
+  if (!password) return;
+  const alterConfigs = confirm('Deseja buscar e redefinir a senha em arquivos de projeto (.env / wp-config.php) na pasta home?');
+
+  try {
+    const res = await fetch('/api/db/user/reset-password', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ username, password, alterConfigs })
+    });
+    const data = await res.json();
+    if (data.success) {
+      let msg = `✅ Senha alterada no MariaDB para "${username}" com sucesso!\n`;
+      if (data.updatedFiles && data.updatedFiles.length > 0) {
+        msg += `\nArquivos de configuração atualizados:\n`;
+        data.updatedFiles.forEach(f => {
+          msg += `- ${f.file.split(/[\\/]/).pop()} (Backup: ${f.backup.split(/[\\/]/).pop()})\n`;
+        });
+      }
+      alert(msg);
+    } else {
+      alert(`❌ Erro: ${data.error || 'Falha ao redefinir senha.'}`);
+    }
+  } catch(err) {
+    alert('❌ Erro de rede ao redefinir.');
+  }
+}
+
+async function dbDrawerPrivileges() {
+  const username = prompt('Nome de usuário:');
+  if (!username) return;
+  const action = confirm('Clique em OK para CONCEDER permissão total ou CANCELAR para REVOGAR permissão:') ? 'grant' : 'revoke';
+
+  try {
+    const res = await fetch('/api/db/user/privileges', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ username, database: currentDbManager, action })
+    });
+    const data = await res.json();
+    if (data.success) {
+      alert(`✅ Permissões do usuário "${username}" no banco "${currentDbManager}" foram atualizadas para: ${action.toUpperCase()}!`);
+    } else {
+      alert(`❌ Erro: ${data.error || 'Falha ao ajustar privilégios.'}`);
+    }
+  } catch(err) {
+    alert('❌ Erro de rede ao ajustar privilégios.');
+  }
+}
+
+async function dbDrawerRename() {
+  const newName = document.getElementById('dbRenameNewName').value.trim();
+  if (!newName) return alert('Digite o novo nome do banco.');
+  if (newName === currentDbManager) return alert('O novo nome deve ser diferente do atual.');
+
+  if (!newName.match(/^[a-zA-Z0-9_]+$/)) {
+    return alert('Nome de banco inválido. Use apenas letras, números e underline.');
+  }
+
+  const deleteOld = confirm(`Excluir banco antigo "${currentDbManager}" após a duplicação e validação corretas?\n\n(Clique em Cancelar para manter o banco antigo)`);
+
+  try {
+    alert('Iniciando cópia segura e validação estrutural... Aguarde.');
+    const res = await fetch('/api/db/rename', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ oldName: currentDbManager, newName, deleteOld })
+    });
+    const data = await res.json();
+    if (data.success) {
+      alert(`✅ Sucesso!\n\n${data.message}\nBackup pré-rename automático criado: ${data.backupFile}`);
+      closeDbManagerDrawer();
+      fetchDatabases();
+    } else {
+      alert(`❌ Erro ao renomear: ${data.error || 'Falha interna.'}`);
+    }
+  } catch(err) {
+    alert('❌ Erro de rede ao renomear.');
+  }
+}
+
+async function dbDrawerRestore() {
+  const file = prompt('Digite o nome do arquivo SQL do backup localizado no diretório de backups para restaurar:');
+  if (!file) return;
+
+  if (!confirm(`⚠️ ATENÇÃO!\n\nRestaurar backup "${file}" no banco "${currentDbManager}"?\n\nTODOS os dados atuais serão completamente SOBRESCRITOS!`)) return;
+
+  try {
+    alert('Restaurando banco... Aguarde.');
+    const res = await fetch('/api/db/restore', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ file, dbTarget: currentDbManager })
+    });
+    const data = await res.json();
+    if (data.success) {
+      alert('✅ Backup restaurado com sucesso!');
+      loadDbManagerDetails(currentDbManager);
+    } else {
+      alert(`❌ Falha na restauração: ${data.error || 'Erro desconhecido.'}`);
+    }
+  } catch(err) {
+    alert('❌ Erro de rede ao restaurar.');
+  }
 }
 
 async function createDatabase(e) {
