@@ -2,6 +2,62 @@
 
 ---
 
+## 🚧 v0.0.1-unstable — 2026-05-17 (Instalador Inteligente MariaDB)
+
+**Git Tag:** `v0.0.1-unstable`
+**Status:** Instável / Em desenvolvimento ativo
+
+### ✅ Novidades desta versão
+
+#### install.sh — Reescrito do zero (v3.0)
+- **Detecção automática de MariaDB antigo** via binário, `dpkg -l`, `pkg list-installed` e diretório de dados (`/var/lib/mysql`)
+- **Menu interativo no primeiro boot:** `[1] Reutilizar` ou `[2] Reinstalar do zero`
+- **Remoção completa e limpa:** `apt remove/purge/autoremove` — **sem `pkg autoremove`** (não existe no Termux)
+- **Limpeza total de dados antigos:** `$PREFIX/var/lib/mysql`, `my.cnf`, sockets, `.my.cnf`
+- **RepairPackages():** `pkg clean → apt autoclean → apt --fix-broken install → dpkg --configure -a → apt update`
+- **Corrige o erro `pkgProblemResolver::Resolve generated breaks`** antes de instalar
+- **Inicialização correta:** `mariadb-install-db` com fallback automático para `mysql_install_db`
+- **Start inteligente:** `mariadbd-safe → mysqld_safe`, aguarda até 20s testando conexão real
+- **Tela de configuração de banco no 1º boot:** usuário, senha, porta e nome do banco
+- **Salva credenciais** em `config/database.json` e `config/db.json` (compatibilidade)
+- **Teste de conexão** após setup com opção de reconfigurar se falhar
+- **Geração automática de `config.inc.php`** para phpMyAdmin
+- **Recovery completo do MariaDB (opção 8):** Reparar tabelas / Reinstalar / Restaurar backup
+- **Reparar APT/DPKG (opção 9)** disponível no menu principal
+
+#### scripts/start.sh — Atualizado
+- Lê credenciais automaticamente de `config/database.json`
+- Testa MariaDB com usuário salvo antes de iniciar o daemon
+- Cascata de fallbacks: `mariadbd-safe → mysqld_safe → mariadbd → mysqld`
+- **Sem:** `systemctl`, `sudo`, `service`, `pkg autoremove`, `ufw`
+
+#### server.js — Novas rotas API
+| Rota | Descrição |
+|------|-----------|
+| `GET  /api/mariadb/detect`         | Detecta instalação existente |
+| `POST /api/mariadb/stop`           | Para processos MariaDB |
+| `POST /api/mariadb/remove`         | Remove completamente |
+| `POST /api/mariadb/install`        | Instala do zero via pkg/apt |
+| `POST /api/mariadb/init-db`        | Inicializa estrutura de dados |
+| `POST /api/mariadb/start`          | Sobe o daemon com auto-wait |
+| `POST /api/mariadb/repair-packages`| Repara APT/DPKG quebrados |
+| `POST /api/mariadb/repair-tables`  | Repara tabelas corrompidas |
+| `POST /api/db/setup-full`          | Cria usuário + banco + salva config |
+| `GET  /api/db/config-check`        | Verifica config + testa conexão |
+
+#### config/database.json — Criado
+- Estrutura completa com `host`, `port`, `database`, `user`, `password`
+
+### 🐛 Bugs corrigidos
+- `Unknown command: 'autoremove'` — removido `pkg autoremove` em todos os scripts
+- `pkgProblemResolver::Resolve generated breaks` — corrigido com `repair_packages()` antes de instalar
+- MariaDB antigo em conflito — detecção + remoção completa antes de reinstalar
+- Banco corrompido — recovery com reparo de tabelas via `mysqlcheck`
+- Senha/root inconsistente — setup interativo garante credenciais válidas antes de continuar
+- Instalação parcial quebrando dependências — `dpkg --configure -a` e `apt --fix-broken install`
+
+---
+
 ## 🏆 MARCO v1.2.7 — 2026-05-17 (Android Ultra Root Prioritizer)
 
 ### ✅ Novidades da Versão
