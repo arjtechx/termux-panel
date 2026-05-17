@@ -19,25 +19,49 @@ warn() { echo -e "${YELLOW}[!]${RESET} $1"; }
 err()  { echo -e "${RED}[-]${RESET} $1"; }
 
 # -----------------------------------------------------------------
+# Utilitários de detecção
+# -----------------------------------------------------------------
+
+# Detecta processo por nome parcial (mais robusto que pgrep -x)
+is_running() {
+    pgrep -f "$1" > /dev/null 2>&1
+}
+
+# Detecta se uma porta TCP está em uso (serviço respondendo)
+port_in_use() {
+    local port=$1
+    (echo >/dev/tcp/127.0.0.1/$port) 2>/dev/null && return 0 || return 1
+}
+
+# -----------------------------------------------------------------
 # 1. INICIAR PHP-FPM
 # -----------------------------------------------------------------
 start_phpfpm() {
-    # Verifica se já está rodando
-    if pgrep -x php-fpm > /dev/null 2>&1; then
+    # Verifica por nome parcial (cobre php-fpm, php-fpm8.2, php-fpm8.3...)
+    if is_running "php-fpm"; then
         ok "PHP-FPM já está rodando."
+        return
+    fi
+
+    # Verifica se a porta 9000 já está ocupada (pode ser outro processo)
+    if port_in_use 9000; then
+        ok "Porta 9000 já em uso — PHP-FPM está ativo."
         return
     fi
 
     log "Iniciando PHP-FPM..."
 
-    # Garante que o diretório de run existe
-    mkdir -p "$PREFIX/var/run"
-    mkdir -p "$PREFIX/tmp"
+    # Garante que os diretórios necessários existem
+    mkdir -p "$PREFIX/var/run" "$PREFIX/tmp"
 
-    php-fpm --daemonize 2>/dev/null || php-fpm -D 2>/dev/null || php-fpm &
+    # Tenta iniciar em modo daemon, fallback para background
+    php-fpm --daemonize 2>/dev/null \
+        || php-fpm -D 2>/dev/null \
+        || { php-fpm > /dev/null 2>&1 & sleep 1; }
 
     sleep 1
-    if pgrep -x php-fpm > /dev/null 2>&1; then
+
+    if is_running "php-fpm" || port_in_use 9000; then
         ok "PHP-FPM iniciado com sucesso."
     else
         warn "PHP-FPM não pôde iniciar (phpMyAdmin funcionará sem PHP dinâmico)."
@@ -48,14 +72,21 @@ start_phpfpm() {
 # 2. INICIAR MARIADB
 # -----------------------------------------------------------------
 start_mariadb() {
-    if pgrep -x mysqld > /dev/null 2>&1 || pgrep -x mariadbd > /dev/null 2>&1; then
+    # Verifica por nome parcial (cobre mysqld, mariadbd)
+    if is_running "mysqld" || is_running "mariadbd"; then
         ok "MariaDB já está rodando."
+        return
+    fi
+
+    # Verifica porta 3306
+    if port_in_use 3306; then
+        ok "Porta 3306 já em uso — MariaDB está ativo."
         return
     fi
 
     log "Iniciando MariaDB..."
 
-    # Inicializa o banco se ainda não foi inicializado
+    # Inicializa o banco se ainda não foi feito
     if [ ! -d "$PREFIX/var/lib/mysql/mysql" ]; then
         warn "Banco de dados não inicializado. Rodando mysql_install_db..."
         mysql_install_db 2>/dev/null
@@ -63,11 +94,12 @@ start_mariadb() {
 
     mysqld_safe --datadir="$PREFIX/var/lib/mysql" > /dev/null 2>&1 &
 
-    sleep 2
-    if pgrep -x mysqld > /dev/null 2>&1 || pgrep -x mariadbd > /dev/null 2>&1; then
+    sleep 3
+
+    if is_running "mysqld" || is_running "mariadbd" || port_in_use 3306; then
         ok "MariaDB iniciado com sucesso."
     else
-        warn "MariaDB não está rodando (gerenciamento de banco pode ser limitado)."
+        warn "MariaDB não está respondendo (gerenciamento de banco pode ser limitado)."
     fi
 }
 
@@ -75,8 +107,15 @@ start_mariadb() {
 # 3. INICIAR NGINX
 # -----------------------------------------------------------------
 start_nginx() {
-    if pgrep -x nginx > /dev/null 2>&1; then
+    # Verifica por nome parcial
+    if is_running "nginx"; then
         ok "NGINX já está rodando."
+        return
+    fi
+
+    # Verifica porta 80 ou 8080
+    if port_in_use 80 || port_in_use 8080; then
+        ok "NGINX já está ativo (porta 80 ou 8080 em uso)."
         return
     fi
 
@@ -84,15 +123,19 @@ start_nginx() {
     nginx 2>/dev/null
 
     sleep 1
-    if pgrep -x nginx > /dev/null 2>&1; then
+
+    if is_running "nginx" || port_in_use 8080; then
         ok "NGINX iniciado com sucesso."
     else
-        warn "NGINX não pôde iniciar (sites estáticos e phpMyAdmin via porta 8080 indisponível)."
+        # Testa o config antes de reportar erro
+        CONFIG_ERR=$(nginx -t 2>&1)
+        warn "NGINX não pôde iniciar."
+        warn "Erro de configuração: $CONFIG_ERR"
     fi
 }
 
 # -----------------------------------------------------------------
-# 4. INICIAR PAINEL NODE.JS (com auto-restart infinito)
+# 4. INICIAR PAINEL NODE.JS (com loop infinito de auto-restart)
 # -----------------------------------------------------------------
 start_panel() {
     if [ ! -d "$PANEL_DIR" ]; then
