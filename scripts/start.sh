@@ -102,6 +102,11 @@ if [ -n "$OLDPID" ]; then
     log "Encerrando instância anterior (PID: $OLDPID)..."
     kill -9 "$OLDPID" 2>/dev/null
     sleep 1
+else
+    # Fallback robusto usando fuser e pkill caso lsof não esteja disponível
+    fuser -k 8088/tcp >/dev/null 2>&1
+    pkill -9 -f "node.*server.js" 2>/dev/null || true
+    sleep 1
 fi
 
 ok "Auto-restart ativado — painel reinicia se cair."
