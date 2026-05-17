@@ -2,6 +2,13 @@
 
 ---
 
+## 🏆 MARCO v1.2.3 — 2026-05-17 (Nginx Conf.d Auto-inclusion Fix)
+
+### ✅ Novidades da Versão
+- **Auto-correção de inclusão do `conf.d/*.conf` no Nginx:** Adicionado um validador proativo no script `health-check.sh`. Caso o arquivo principal `nginx.conf` esteja ativo mas falte a instrução de inclusão de sub-configurações (`include ... conf.d/*.conf;`), o script realiza o backup automático e reescreve a estrutura padrão do Nginx, garantindo que todas as hospedagens criadas pelo painel subam instantaneamente.
+
+---
+
 ## 🏆 MARCO v1.2.2 — 2026-05-17 (Hospedagem Estabilizada & Nginx Wildcards)
 
 ### ✅ Novidades da Versão

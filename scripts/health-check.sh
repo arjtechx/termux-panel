@@ -202,6 +202,34 @@ if [ -f "$NGINX_MAIN" ]; then
     # Testa sintaxe
     if nginx -t 2>/dev/null; then
         log_ok "Sintaxe do nginx.conf é válida"
+        
+        # Garante que o nginx.conf carregue a pasta conf.d/*.conf
+        if ! grep -q "conf.d/\*\.conf" "$NGINX_MAIN"; then
+            log_warn "nginx.conf encontrado, mas NÃO contém o include para conf.d/*.conf!"
+            cp "$NGINX_MAIN" "$NGINX_MAIN.bak.$(date +%s)"
+            log_fix "Backup criado, reescrevendo nginx.conf com suporte a conf.d..."
+            
+            cat > "$NGINX_MAIN" << 'NGINX_CONF'
+worker_processes  auto;
+error_log  /data/data/com.termux/files/usr/var/log/nginx/error.log warn;
+pid        /data/data/com.termux/files/usr/var/run/nginx.pid;
+
+events {
+    worker_connections  256;
+}
+
+http {
+    include       mime.types;
+    default_type  application/octet-stream;
+    sendfile      on;
+    keepalive_timeout  65;
+    client_max_body_size 100m;
+
+    include /data/data/com.termux/files/usr/etc/nginx/conf.d/*.conf;
+}
+NGINX_CONF
+            log_ok "nginx.conf atualizado com sucesso"
+        fi
     else
         log_err "Erro de sintaxe no nginx.conf"
         # Backup e recria
