@@ -71,6 +71,7 @@ if [ -n "$GITHUB_REPO" ] && [ "$GITHUB_REPO" != "null" ] && [ "$GITHUB_REPO" != 
             # Copia recursivamente mantendo e atualizando os diretórios locais
             cp -rf "$TMP_EXTRACT/public" "$PANEL_DIR/"
             cp -rf "$TMP_EXTRACT/scripts" "$PANEL_DIR/"
+            cp -rf "$TMP_EXTRACT/services" "$PANEL_DIR/"
             cp -f "$TMP_EXTRACT/server.js" "$PANEL_DIR/"
             cp -f "$TMP_EXTRACT/install.sh" "$PANEL_DIR/"
             cp -f "$TMP_EXTRACT/package.json" "$PANEL_DIR/"
@@ -115,6 +116,7 @@ else
         tar -xzvf "$TAR_PATH" -C "$TMP_EXTRACT" --strip-components=1
         cp -rf "$TMP_EXTRACT/public" "$PANEL_DIR/"
         cp -rf "$TMP_EXTRACT/scripts" "$PANEL_DIR/"
+        cp -rf "$TMP_EXTRACT/services" "$PANEL_DIR/"
         cp -f "$TMP_EXTRACT/server.js" "$PANEL_DIR/"
         cp -f "$TMP_EXTRACT/install.sh" "$PANEL_DIR/"
         cp -f "$TMP_EXTRACT/package.json" "$PANEL_DIR/"

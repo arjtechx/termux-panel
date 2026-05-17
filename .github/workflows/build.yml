@@ -22,7 +22,7 @@ jobs:
       - name: Build distribution package
         run: |
           mkdir -p dist_build/termux-panel
-          cp -r public scripts install.sh package.json README.md server.js dist_build/termux-panel/
+          cp -r public scripts services install.sh package.json README.md server.js dist_build/termux-panel/
           # Remove node_modules se existir
           rm -rf dist_build/termux-panel/node_modules
           tar -czvf termux-panel-dist.tar.gz -C dist_build termux-panel
