@@ -931,3 +931,34 @@ input:focus, textarea:focus { outline: none; border-color: var(--primary); }
     border: 1px solid rgba(236, 72, 153, 0.3);
 }
 
+/* ============================================================
+   DRAWER RIGHT PANEL FOR ADVANCED DATABASE MANAGER
+============================================================ */
+.modal-card.drawer-right {
+    position: fixed;
+    top: 0;
+    right: 0;
+    height: 100vh;
+    max-width: 580px;
+    width: 100%;
+    border-radius: 0;
+    border-left: 1px solid var(--border);
+    border-top: none;
+    border-bottom: none;
+    max-height: 100vh;
+    animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    display: flex;
+    flex-direction: column;
+}
+
+@keyframes slideInRight {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+}
+
+.drawer-body {
+    flex: 1;
+    overflow-y: auto;
+    padding-bottom: 30px;
+}
+

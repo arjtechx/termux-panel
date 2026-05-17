@@ -1287,6 +1287,474 @@ app.get('/api/db/backups', (req, res) => {
 });
 
 
+// ─── ADVANCED DATABASE MANAGER LAYER ──────────────────────────────
+const LOGS_DIR = path.join(__dirname, 'logs');
+const DB_ACTIONS_LOG = path.join(LOGS_DIR, 'database-actions.log');
+
+// Logger helper
+function logDbAction(action, db, user, status, error = '') {
+    try {
+        if (!fs.existsSync(LOGS_DIR)) fs.mkdirSync(LOGS_DIR, { recursive: true });
+        const ts = new Date().toISOString().replace('T', ' ').substring(0, 19);
+        const line = `[${ts}] [USER: ${user || 'admin'}] [ACTION: ${action}] [DB: ${db}] [STATUS: ${status}] ${error ? '[ERROR: ' + error + ']' : ''}\n`;
+        fs.appendFileSync(DB_ACTIONS_LOG, line, 'utf8');
+        chownToUser([DB_ACTIONS_LOG]).catch(() => {});
+    } catch(e) {
+        console.error('Falha ao gravar log de banco:', e.message);
+    }
+}
+
+// Protected System Databases
+const PROTECTED_SYSTEM_DBS = ['information_schema', 'mysql', 'performance_schema', 'sys'];
+
+function isSystemDb(dbName) {
+    if (!dbName) return false;
+    return PROTECTED_SYSTEM_DBS.includes(dbName.toLowerCase());
+}
+
+// Input Sanitization
+function sanitizeDbName(name) {
+    if (!name) return '';
+    return name.replace(/[^a-zA-Z0-9_]/g, '');
+}
+
+function sanitizeUsername(name) {
+    if (!name) return '';
+    return name.replace(/[^a-zA-Z0-9_-]/g, '');
+}
+
+// API: Database details (size, engine, collations, tables count, total rows, mtime)
+app.get('/api/db/details', async (req, res) => {
+    const dbName = sanitizeDbName(req.query.db);
+    if (!dbName) return res.status(400).json({ error: 'Nome do banco é obrigatório.' });
+
+    try {
+        const conn = await getDbConn();
+        
+        // Count tables & rows
+        const [tables] = await conn.query(`
+            SELECT 
+                table_name AS name,
+                engine,
+                table_rows AS rows_count,
+                ROUND((data_length + index_length) / 1024 / 1024, 2) AS size_mb,
+                table_collation AS collation,
+                create_time AS created_at
+            FROM information_schema.tables
+            WHERE table_schema = ?
+        `, [dbName]);
+
+        await conn.end();
+
+        if (tables.length === 0) {
+            return res.json({
+                success: true,
+                tablesCount: 0,
+                totalRows: 0,
+                totalSizeMb: 0,
+                engine: 'InnoDB',
+                collation: 'utf8mb4_general_ci',
+                largestTable: 'N/A',
+                tables: []
+            });
+        }
+
+        let totalRows = 0;
+        let totalSize = 0;
+        let largestTable = '';
+        let largestSize = -1;
+        let engine = tables[0].engine || 'InnoDB';
+        let collation = tables[0].collation || 'utf8mb4_general_ci';
+
+        tables.forEach(t => {
+            totalRows += (t.rows_count || 0);
+            totalSize += (t.size_mb || 0);
+            if (t.size_mb > largestSize) {
+                largestSize = t.size_mb;
+                largestTable = `${t.name} (${t.size_mb} MB)`;
+            }
+        });
+
+        res.json({
+            success: true,
+            tablesCount: tables.length,
+            totalRows,
+            totalSizeMb: totalSize.toFixed(2),
+            engine,
+            collation,
+            largestTable,
+            tables: tables.slice(0, 50)
+        });
+    } catch(err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// API: Safe Rename Database (Backup -> Create -> Copy tables -> Compare table count and size -> drop old database ONLY if deleteOld=true)
+app.post('/api/db/rename', async (req, res) => {
+    const oldName = sanitizeDbName(req.body.oldName);
+    const newName = sanitizeDbName(req.body.newName);
+    const deleteOld = req.body.deleteOld === true;
+
+    if (!oldName || !newName) {
+        return res.status(400).json({ error: 'Nomes de banco de origem e destino são obrigatórios.' });
+    }
+
+    if (isSystemDb(oldName) || isSystemDb(newName)) {
+        logDbAction('RENAME', oldName, req.session.adminUser, 'FAILED', 'Tentativa de renomear banco de sistema protegido.');
+        return res.status(403).json({ error: 'Operação proibida em bancos de dados de sistema protegidos.' });
+    }
+
+    try {
+        const config = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+        const passArg = config.password ? `-p${config.password}` : '';
+        const ts = new Date().toISOString().replace(/[:.]/g, '-');
+        
+        // 1. Efetua backup automático pré-rename
+        if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
+        const backupFile = `db-RENAME-AUTO-${oldName}-${ts}.sql`;
+        const backupPath = path.join(BACKUP_DIR, backupFile);
+        await runCmd(`mysqldump -u ${config.user} ${passArg} \`${oldName}\` > "${backupPath}"`);
+
+        // 2. Cria novo banco
+        const conn = await getDbConn();
+        await conn.query(`CREATE DATABASE IF NOT EXISTS \`${newName}\``);
+        
+        // 3. Importa backup para o novo banco
+        await runCmd(`mysql -u ${config.user} ${passArg} \`${newName}\` < "${backupPath}"`);
+
+        // 4. Validação: Contagem de tabelas & Tamanho
+        const [[{ count: oldTables }]] = await conn.query('SELECT COUNT(*) AS count FROM information_schema.tables WHERE table_schema = ?', [oldName]);
+        const [[{ count: newTables }]] = await conn.query('SELECT COUNT(*) AS count FROM information_schema.tables WHERE table_schema = ?', [newName]);
+
+        const [[{ size: oldSize }]] = await conn.query('SELECT SUM(data_length + index_length) AS size FROM information_schema.tables WHERE table_schema = ?', [oldName]);
+        const [[{ size: newSize }]] = await conn.query('SELECT SUM(data_length + index_length) AS size FROM information_schema.tables WHERE table_schema = ?', [newName]);
+
+        await conn.end();
+
+        if (oldTables !== newTables) {
+            logDbAction('RENAME', oldName, req.session.adminUser, 'FAILED', `Inconsistência de tabelas: ${oldTables} vs ${newTables}`);
+            return res.status(500).json({ error: 'A cópia de tabelas falhou. Contagem de tabelas destino não bate com a de origem.' });
+        }
+
+        let deletedOldDb = false;
+        if (deleteOld) {
+            const dropConn = await getDbConn();
+            await dropConn.query(`DROP DATABASE IF EXISTS \`${oldName}\``);
+            await dropConn.end();
+            deletedOldDb = true;
+        }
+
+        logDbAction('RENAME', `${oldName} -> ${newName}`, req.session.adminUser, 'SUCCESS');
+        res.json({
+            success: true,
+            message: `Banco duplicado com sucesso! Cópia validada (${newTables} tabelas).`,
+            deletedOld: deletedOldDb,
+            backupFile
+        });
+    } catch(err) {
+        logDbAction('RENAME', oldName, req.session.adminUser, 'FAILED', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// API: List Database Users and general MySQL users
+app.get('/api/db/users', async (req, res) => {
+    const dbName = sanitizeDbName(req.query.db);
+    try {
+        const conn = await getDbConn();
+        
+        // List users having privileges on this db
+        const [dbPrivRows] = await conn.query(`
+            SELECT DISTINCT User, Host FROM mysql.db WHERE Db = ? OR Db = '*'
+        `, [dbName]);
+
+        // List all MySQL users
+        const [allUserRows] = await conn.query('SELECT User, Host FROM mysql.user');
+        await conn.end();
+
+        res.json({
+            success: true,
+            dbUsers: dbPrivRows.map(r => ({ user: r.User, host: r.Host })),
+            allUsers: allUserRows.map(r => ({ user: r.User, host: r.Host }))
+        });
+    } catch(err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// API: Create DB user (forced to localhost for safety)
+app.post('/api/db/user/create', async (req, res) => {
+    const username = sanitizeUsername(req.body.username);
+    const password = req.body.password;
+    const host = 'localhost';
+
+    if (!username || !password) {
+        return res.status(400).json({ error: 'Usuário e senha são obrigatórios.' });
+    }
+
+    try {
+        const conn = await getDbConn();
+        await conn.query(`CREATE USER IF NOT EXISTS ?@? IDENTIFIED BY ?`, [username, host, password]);
+        await conn.query('FLUSH PRIVILEGES');
+        await conn.end();
+
+        logDbAction('CREATE_USER', `user: ${username}`, req.session.adminUser, 'SUCCESS');
+        res.json({ success: true, message: `Usuário '${username}'@'${host}' criado com sucesso.` });
+    } catch(err) {
+        logDbAction('CREATE_USER', `user: ${username}`, req.session.adminUser, 'FAILED', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// API: Delete DB User
+app.post('/api/db/user/delete', async (req, res) => {
+    const username = sanitizeUsername(req.body.username);
+    const host = 'localhost';
+
+    if (!username) return res.status(400).json({ error: 'Usuário é obrigatório.' });
+
+    try {
+        const conn = await getDbConn();
+        await conn.query(`DROP USER ?@?`, [username, host]);
+        await conn.query('FLUSH PRIVILEGES');
+        await conn.end();
+
+        logDbAction('DROP_USER', `user: ${username}`, req.session.adminUser, 'SUCCESS');
+        res.json({ success: true, message: `Usuário '${username}'@'${host}' removido.` });
+    } catch(err) {
+        logDbAction('DROP_USER', `user: ${username}`, req.session.adminUser, 'FAILED', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// API: Grant/Revoke privileges on a database
+app.post('/api/db/user/privileges', async (req, res) => {
+    const username = sanitizeUsername(req.body.username);
+    const dbName = sanitizeDbName(req.body.database);
+    const action = req.body.action;
+    const host = 'localhost';
+
+    if (!username || !dbName || !['grant', 'revoke'].includes(action)) {
+        return res.status(400).json({ error: 'Parâmetros inválidos para privilégios.' });
+    }
+
+    if (isSystemDb(dbName)) {
+        return res.status(403).json({ error: 'Alterações de permissões bloqueadas em bancos do sistema.' });
+    }
+
+    try {
+        const conn = await getDbConn();
+        if (action === 'grant') {
+            await conn.query(`GRANT ALL PRIVILEGES ON \`${dbName}\`.* TO ?@?`, [username, host]);
+        } else {
+            await conn.query(`REVOKE ALL PRIVILEGES ON \`${dbName}\`.* FROM ?@?`, [username, host]);
+        }
+        await conn.query('FLUSH PRIVILEGES');
+        await conn.end();
+
+        logDbAction(`PRIVILEGE_${action.toUpperCase()}`, `db: ${dbName}, user: ${username}`, req.session.adminUser, 'SUCCESS');
+        res.json({ success: true, message: `Permissões do usuário '${username}' no banco '${dbName}' atualizadas.` });
+    } catch(err) {
+        logDbAction(`PRIVILEGE_${action.toUpperCase()}`, `db: ${dbName}, user: ${username}`, req.session.adminUser, 'FAILED', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Helper para buscar wp-config.php e .env
+function scanConfigFiles(basePath) {
+    const found = [];
+    const queue = [basePath];
+
+    while (queue.length > 0) {
+        const current = queue.shift();
+        let stats;
+        try { stats = fs.statSync(current); } catch(e) { continue; }
+
+        if (stats.isDirectory()) {
+            const baseName = path.basename(current);
+            if (['node_modules', '.git', 'vendor', 'cache', '.tmp'].includes(baseName)) continue;
+
+            let files;
+            try { files = fs.readdirSync(current); } catch(e) { continue; }
+            files.forEach(f => queue.push(path.join(current, f)));
+        } else if (stats.isFile()) {
+            const baseName = path.basename(current);
+            if (baseName === '.env' || baseName === 'wp-config.php') {
+                found.push(current);
+            }
+        }
+    }
+    return found;
+}
+
+// API: Preview of config files to change password
+app.post('/api/db/user/reset-password/preview', async (req, res) => {
+    const username = sanitizeUsername(req.body.username);
+    const dbName = sanitizeDbName(req.body.database);
+
+    if (!username) return res.status(400).json({ error: 'Usuário é obrigatório.' });
+
+    try {
+        const homeDir = os.homedir();
+        const allConfigs = scanConfigFiles(homeDir);
+        const matches = [];
+
+        allConfigs.forEach(filePath => {
+            const content = fs.readFileSync(filePath, 'utf8');
+            let isMatch = false;
+            let preview = '';
+
+            const baseName = path.basename(filePath);
+            if (baseName === '.env') {
+                const lines = content.split('\n');
+                lines.forEach(line => {
+                    if (line.match(/^(DB_PASSWORD|DATABASE_PASSWORD|MYSQL_PASSWORD)\s*=/i)) {
+                        isMatch = true;
+                        preview += line + '\n';
+                    }
+                });
+            } else if (baseName === 'wp-config.php') {
+                const match = content.match(/define\s*\(\s*['"]DB_PASSWORD['"]\s*,\s*['"](.*?)['"]\s*\)/i);
+                if (match) {
+                    isMatch = true;
+                    preview += match[0] + '\n';
+                }
+            }
+
+            if (isMatch) {
+                matches.push({
+                    file: filePath,
+                    relativePath: path.relative(homeDir, filePath),
+                    type: baseName,
+                    preview: preview.trim()
+                });
+            }
+        });
+
+        res.json({ success: true, matches });
+    } catch(err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// API: Reset DB User Password + Safe Auto-Update Config Files (with Backups)
+app.post('/api/db/user/reset-password', async (req, res) => {
+    const username = sanitizeUsername(req.body.username);
+    const newPassword = req.body.password;
+    const alterConfigs = req.body.alterConfigs === true;
+    const host = 'localhost';
+
+    if (!username || !newPassword) {
+        return res.status(400).json({ error: 'Usuário e nova senha são obrigatórios.' });
+    }
+
+    try {
+        // 1. ALTER USER
+        const conn = await getDbConn();
+        await conn.query(`ALTER USER ?@? IDENTIFIED BY ?`, [username, host, newPassword]);
+        await conn.query('FLUSH PRIVILEGES');
+        await conn.end();
+
+        // 2. Atualizar arquivos de configuração
+        const updatedFiles = [];
+        if (alterConfigs) {
+            const homeDir = os.homedir();
+            const allConfigs = scanConfigFiles(homeDir);
+            const ts = new Date().toISOString().replace(/[-:T.]/g, '').substring(0, 12);
+
+            allConfigs.forEach(filePath => {
+                let content = fs.readFileSync(filePath, 'utf8');
+                let modified = false;
+                const baseName = path.basename(filePath);
+
+                if (baseName === '.env') {
+                    const lines = content.split('\n');
+                    const newLines = lines.map(line => {
+                        if (line.match(/^(DB_PASSWORD|DATABASE_PASSWORD|MYSQL_PASSWORD)\s*=/i)) {
+                            modified = true;
+                            const key = line.split('=')[0].trim();
+                            return `${key}=${newPassword}`;
+                        }
+                        return line;
+                    });
+                    if (modified) {
+                        content = newLines.join('\n');
+                    }
+                } else if (baseName === 'wp-config.php') {
+                    const pattern = /define\s*\(\s*['"]DB_PASSWORD['"]\s*,\s*['"](.*?)['"]\s*\)/i;
+                    if (pattern.test(content)) {
+                        modified = true;
+                        content = content.replace(pattern, `define('DB_PASSWORD', '${newPassword}')`);
+                    }
+                }
+
+                if (modified) {
+                    const backupPath = `${filePath}.bak-${ts}`;
+                    fs.writeFileSync(backupPath, fs.readFileSync(filePath));
+                    fs.writeFileSync(filePath, content, 'utf8');
+                    updatedFiles.push({ file: filePath, backup: backupPath });
+                }
+            });
+        }
+
+        logDbAction('RESET_PASS', `user: ${username}`, req.session.adminUser, 'SUCCESS');
+        res.json({
+            success: true,
+            message: `Senha redefinida com sucesso para ${username}@${host}!`,
+            updatedFiles
+        });
+    } catch(err) {
+        logDbAction('RESET_PASS', `user: ${username}`, req.session.adminUser, 'FAILED', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// API: Optimize database tables
+app.post('/api/db/optimize', async (req, res) => {
+    const dbName = sanitizeDbName(req.body.database);
+    if (!dbName) return res.status(400).json({ error: 'Nome do banco é obrigatório.' });
+
+    if (isSystemDb(dbName)) {
+        return res.status(403).json({ error: 'Otimização direta bloqueada em bancos de sistema.' });
+    }
+
+    try {
+        const config = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+        const passArg = config.password ? `-p${config.password}` : '';
+        const raw = await runCmd(`mysqlcheck -o -u ${config.user} ${passArg} \`${dbName}\` 2>&1`).catch(e => e.message);
+        
+        logDbAction('OPTIMIZE', dbName, req.session.adminUser, 'SUCCESS');
+        res.json({ success: true, output: raw });
+    } catch(err) {
+        logDbAction('OPTIMIZE', dbName, req.session.adminUser, 'FAILED', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// API: Repair database tables
+app.post('/api/db/repair', async (req, res) => {
+    const dbName = sanitizeDbName(req.body.database);
+    if (!dbName) return res.status(400).json({ error: 'Nome do banco é obrigatório.' });
+
+    if (isSystemDb(dbName)) {
+        return res.status(403).json({ error: 'Reparação direta bloqueada em bancos de sistema.' });
+    }
+
+    try {
+        const config = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+        const passArg = config.password ? `-p${config.password}` : '';
+        const raw = await runCmd(`mysqlcheck -r -u ${config.user} ${passArg} \`${dbName}\` 2>&1`).catch(e => e.message);
+
+        logDbAction('REPAIR', dbName, req.session.adminUser, 'SUCCESS');
+        res.json({ success: true, output: raw });
+    } catch(err) {
+        logDbAction('REPAIR', dbName, req.session.adminUser, 'FAILED', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+
 // --- phpMyAdmin SSO Logic ---
 const phpMyAdminTokens = new Map();
 
