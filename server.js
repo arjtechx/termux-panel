@@ -489,6 +489,424 @@ app.post('/api/cron', async (req, res) => {
     }
 });
 
+// --- Hospedagem (Sites & Apps) Logic ---
+const HOSTING_FILE = path.join(__dirname, 'config', 'hosting.json');
+const HOSTING_LOGS_DIR = path.join(__dirname, 'logs');
+
+if (!fs.existsSync(HOSTING_FILE)) {
+    fs.writeFileSync(HOSTING_FILE, '[]');
+}
+if (!fs.existsSync(HOSTING_LOGS_DIR)) {
+    fs.mkdirSync(HOSTING_LOGS_DIR, { recursive: true });
+}
+
+// Utility to check if port is currently in use
+function isPortInUse(port) {
+    return new Promise((resolve) => {
+        const tester = net.createServer()
+            .once('error', (err) => {
+                if (err.code === 'EADDRINUSE') resolve(true);
+                else resolve(false);
+            })
+            .once('listening', () => {
+                tester.once('close', () => resolve(false)).close();
+            })
+            .listen(port, '0.0.0.0');
+    });
+}
+
+// GET list of hosting services with real-time status checking
+app.get('/api/hosting', async (req, res) => {
+    try {
+        const services = JSON.parse(fs.readFileSync(HOSTING_FILE, 'utf8'));
+        const enriched = await Promise.all(services.map(async (svc) => {
+            if (svc.type === 'node' || svc.type === 'python') {
+                let processAlive = false;
+                if (svc.pid) {
+                    try {
+                        process.kill(svc.pid, 0);
+                        processAlive = true;
+                    } catch (e) {
+                        processAlive = false;
+                    }
+                }
+                
+                let portListening = false;
+                if (svc.targetPort) {
+                    portListening = await isPortInUse(svc.targetPort);
+                }
+                
+                if (processAlive && portListening) {
+                    svc.status = 'online';
+                } else if (svc.status === 'online') {
+                    svc.status = 'offline';
+                }
+            } else {
+                const portListening = await isPortInUse(svc.listenPort);
+                svc.status = portListening ? 'online' : 'offline';
+            }
+            return svc;
+        }));
+        fs.writeFileSync(HOSTING_FILE, JSON.stringify(enriched, null, 2));
+        res.json({ success: true, services: enriched });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST create a new hosting service with validations and auto Nginx config generation
+app.post('/api/hosting', async (req, res) => {
+    const { name, domain, type, listenPort, targetPort, path: sitePath, startCmd, autoRestart, createIndex } = req.body;
+    
+    const id = Date.now().toString();
+    const parsedListenPort = parseInt(listenPort);
+    const parsedTargetPort = targetPort ? parseInt(targetPort) : null;
+    
+    try {
+        if (await isPortInUse(parsedListenPort)) {
+            return res.status(400).json({ error: `A porta pública ${parsedListenPort} já está em uso por outro serviço.` });
+        }
+        
+        if (parsedTargetPort && (type === 'node' || type === 'python' || type === 'proxy')) {
+            if (await isPortInUse(parsedTargetPort)) {
+                return res.status(400).json({ error: `A porta interna ${parsedTargetPort} já está em uso por outra aplicação.` });
+            }
+        }
+        
+        const cleanName = name.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+        const nginxConf = `hosting-${cleanName}-${id}.conf`;
+        const confPath = path.join(NGINX_CONF_DIR, nginxConf);
+        const logFile = `logs/hosting-${cleanName}-${id}.log`;
+        const errorLog = `logs/hosting-${cleanName}-${id}-error.log`;
+        const publicUrl = `http://${domain || '127.0.0.1'}:${parsedListenPort}`;
+        
+        let resolvedPath = sitePath ? path.resolve(sitePath.trim()) : '';
+        if (resolvedPath && (type === 'php' || type === 'static' || type === 'node' || type === 'python')) {
+            if (!fs.existsSync(resolvedPath)) {
+                fs.mkdirSync(resolvedPath, { recursive: true });
+            }
+            
+            if (createIndex) {
+                if (type === 'php') {
+                    const phpWelcome = `<?php\nheader('Content-Type: text/html; charset=utf-8');\n?>\n<!DOCTYPE html>\n<html>\n<head><title>Bem-vindo ao ${name}</title><style>body{font-family:sans-serif;background:#1e1e2e;color:#cdd6f4;text-align:center;padding:50px;}h1{color:#a6e3a1;}</style></head>\n<body><h1>🚀 Website PHP rodando com sucesso no Termux!</h1><p>Pasta: <code>${resolvedPath}</code></p><p><?php echo "Versão do PHP: " . phpversion(); ?></p></body>\n</html>`;
+                    fs.writeFileSync(path.join(resolvedPath, 'index.php'), phpWelcome);
+                } else if (type === 'static') {
+                    const htmlWelcome = `<!DOCTYPE html>\n<html>\n<head><title>Bem-vindo ao ${name}</title><style>body{font-family:sans-serif;background:#1e1e2e;color:#cdd6f4;text-align:center;padding:50px;}h1{color:#89b4fa;}</style></head>\n<body><h1>🌐 Website Estático rodando com sucesso no NGINX!</h1><p>Pasta: <code>${resolvedPath}</code></p></body>\n</html>`;
+                    fs.writeFileSync(path.join(resolvedPath, 'index.html'), htmlWelcome);
+                }
+            }
+        }
+        
+        let content = '';
+        const fullLogPath = path.join(__dirname, 'logs', `hosting-${cleanName}-${id}.log`);
+        const fullErrorLogPath = path.join(__dirname, 'logs', `hosting-${cleanName}-${id}-error.log`);
+        
+        if (type === 'php' || type === 'static') {
+            content = `server {
+    listen 0.0.0.0:${parsedListenPort};
+    server_name ${domain || '_'};
+    root ${resolvedPath};
+    index index.php index.html index.htm;
+    access_log ${fullLogPath};
+    error_log ${fullErrorLogPath};
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location ~ \\.php$ {
+        include fastcgi_params;
+        fastcgi_pass 127.0.0.1:9000;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+    }
+}`;
+        } else {
+            const proxyPort = parsedTargetPort;
+            content = `server {
+    listen 0.0.0.0:${parsedListenPort};
+    server_name ${domain || '_'};
+    access_log ${fullLogPath};
+    error_log ${fullErrorLogPath};
+
+    location / {
+        proxy_pass http://127.0.0.1:${proxyPort};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}`;
+        }
+        
+        if (!fs.existsSync(NGINX_CONF_DIR)) {
+            fs.mkdirSync(NGINX_CONF_DIR, { recursive: true });
+        }
+        fs.writeFileSync(confPath, content);
+        
+        let isNginxOk = true;
+        let nginxError = '';
+        await new Promise((resolve) => {
+            exec('nginx -t', (error, stdout, stderr) => {
+                if (error) {
+                    isNginxOk = false;
+                    nginxError = stderr || stdout || error.message;
+                }
+                resolve();
+            });
+        });
+        
+        if (!isNginxOk) {
+            if (fs.existsSync(confPath)) {
+                fs.unlinkSync(confPath);
+            }
+            return res.status(400).json({ error: `Erro na sintaxe do NGINX:\n${nginxError}` });
+        }
+        
+        await runCmd('nginx -s reload');
+        
+        let pid = null;
+        let activeStatus = 'stopped';
+        
+        if (type === 'node' || type === 'python') {
+            const logStream = fs.createWriteStream(fullLogPath, { flags: 'a' });
+            const parts = startCmd.trim().split(/\s+/);
+            const cmd = parts[0];
+            const args = parts.slice(1);
+            
+            const child = spawn(cmd, args, {
+                cwd: resolvedPath,
+                env: { ...process.env, PORT: parsedTargetPort.toString() },
+                detached: true,
+                stdio: ['ignore', 'pipe', 'pipe']
+            });
+            
+            child.stdout.pipe(logStream);
+            child.stderr.pipe(logStream);
+            child.unref();
+            
+            pid = child.pid;
+            activeStatus = 'online';
+        } else {
+            activeStatus = 'online';
+        }
+        
+        const services = JSON.parse(fs.readFileSync(HOSTING_FILE, 'utf8'));
+        const newService = {
+            id,
+            name: name.trim(),
+            domain: domain ? domain.trim() : '_',
+            type,
+            listenPort: parsedListenPort,
+            targetPort: parsedTargetPort,
+            path: resolvedPath,
+            startCmd: startCmd ? startCmd.trim() : '',
+            autoRestart: !!autoRestart,
+            pid,
+            status: activeStatus,
+            publicUrl,
+            bindHost: '0.0.0.0',
+            nginxConf,
+            logFile,
+            errorLog,
+            createdAt: new Date().toISOString()
+        };
+        
+        services.push(newService);
+        fs.writeFileSync(HOSTING_FILE, JSON.stringify(services, null, 2));
+        
+        res.json({ success: true, service: newService });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// DELETE a hosting service
+app.delete('/api/hosting/:id', async (req, res) => {
+    try {
+        const services = JSON.parse(fs.readFileSync(HOSTING_FILE, 'utf8'));
+        const svc = services.find(s => s.id === req.params.id);
+        
+        if (!svc) {
+            return res.status(404).json({ error: 'Serviço não encontrado' });
+        }
+        
+        if (svc.pid) {
+            try {
+                process.kill(svc.pid, 'SIGKILL');
+            } catch (e) {}
+        }
+        
+        const confPath = path.join(NGINX_CONF_DIR, svc.nginxConf);
+        if (fs.existsSync(confPath)) {
+            fs.unlinkSync(confPath);
+        }
+        
+        await runCmd('nginx -s reload');
+        
+        const fullLogPath = path.join(__dirname, svc.logFile);
+        const fullErrorLogPath = path.join(__dirname, svc.errorLog);
+        if (fs.existsSync(fullLogPath)) fs.unlinkSync(fullLogPath);
+        if (fs.existsSync(fullErrorLogPath)) fs.unlinkSync(fullErrorLogPath);
+        
+        const filtered = services.filter(s => s.id !== req.params.id);
+        fs.writeFileSync(HOSTING_FILE, JSON.stringify(filtered, null, 2));
+        
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST toggle app process active status
+app.post('/api/hosting/:id/toggle', async (req, res) => {
+    const { active } = req.body;
+    try {
+        const services = JSON.parse(fs.readFileSync(HOSTING_FILE, 'utf8'));
+        const index = services.findIndex(s => s.id === req.params.id);
+        if (index === -1) {
+            return res.status(404).json({ error: 'Serviço não encontrado' });
+        }
+        
+        const svc = services[index];
+        
+        if (active) {
+            if (svc.type !== 'node' && svc.type !== 'python') {
+                return res.status(400).json({ error: 'Este tipo de serviço não possui processos associados.' });
+            }
+            
+            if (svc.targetPort && await isPortInUse(svc.targetPort)) {
+                return res.status(400).json({ error: `A porta interna ${svc.targetPort} já está ocupada.` });
+            }
+            
+            const fullLogPath = path.join(__dirname, svc.logFile);
+            const logStream = fs.createWriteStream(fullLogPath, { flags: 'a' });
+            const parts = svc.startCmd.trim().split(/\s+/);
+            const cmd = parts[0];
+            const args = parts.slice(1);
+            
+            const child = spawn(cmd, args, {
+                cwd: svc.path,
+                env: { ...process.env, PORT: svc.targetPort.toString() },
+                detached: true,
+                stdio: ['ignore', 'pipe', 'pipe']
+            });
+            
+            child.stdout.pipe(logStream);
+            child.stderr.pipe(logStream);
+            child.unref();
+            
+            services[index].pid = child.pid;
+            services[index].status = 'online';
+        } else {
+            if (svc.pid) {
+                try {
+                    process.kill(svc.pid, 'SIGKILL');
+                } catch (e) {}
+            }
+            services[index].pid = null;
+            services[index].status = 'stopped';
+        }
+        
+        fs.writeFileSync(HOSTING_FILE, JSON.stringify(services, null, 2));
+        res.json({ success: true, service: services[index] });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET real-time process logs
+app.get('/api/hosting/:id/logs', (req, res) => {
+    try {
+        const services = JSON.parse(fs.readFileSync(HOSTING_FILE, 'utf8'));
+        const svc = services.find(s => s.id === req.params.id);
+        if (!svc) {
+            return res.status(404).json({ error: 'Serviço não encontrado' });
+        }
+        
+        const fullLogPath = path.join(__dirname, svc.logFile);
+        if (!fs.existsSync(fullLogPath)) {
+            return res.send('Nenhum log gravado ainda.');
+        }
+        
+        const logContent = fs.readFileSync(fullLogPath, 'utf8');
+        const lines = logContent.split('\n');
+        const lastLines = lines.slice(-150).join('\n');
+        res.send(lastLines);
+    } catch (err) {
+        res.status(500).send(`Erro ao ler logs: ${err.message}`);
+    }
+});
+
+// Interval Auto-Restart Daemon (every 15 seconds)
+setInterval(async () => {
+    try {
+        if (!fs.existsSync(HOSTING_FILE)) return;
+        const services = JSON.parse(fs.readFileSync(HOSTING_FILE, 'utf8'));
+        let modified = false;
+        
+        for (let i = 0; i < services.length; i++) {
+            const svc = services[i];
+            if ((svc.type === 'node' || svc.type === 'python') && svc.autoRestart && svc.status === 'online') {
+                let processAlive = false;
+                if (svc.pid) {
+                    try {
+                        process.kill(svc.pid, 0);
+                        processAlive = true;
+                    } catch (e) {
+                        processAlive = false;
+                    }
+                }
+                
+                let portListening = false;
+                if (svc.targetPort) {
+                    portListening = await isPortInUse(svc.targetPort);
+                }
+                
+                if (!processAlive || !portListening) {
+                    console.log(`[Daemon] Detectada queda do serviço ${svc.name} (PID: ${svc.pid}, Porta: ${svc.targetPort}). Reiniciando...`);
+                    
+                    if (svc.pid) {
+                        try { process.kill(svc.pid, 'SIGKILL'); } catch(e) {}
+                    }
+                    
+                    try {
+                        const fullLogPath = path.join(__dirname, svc.logFile);
+                        const logStream = fs.createWriteStream(fullLogPath, { flags: 'a' });
+                        const parts = svc.startCmd.trim().split(/\s+/);
+                        const cmd = parts[0];
+                        const args = parts.slice(1);
+                        
+                        const child = spawn(cmd, args, {
+                            cwd: svc.path,
+                            env: { ...process.env, PORT: svc.targetPort.toString() },
+                            detached: true,
+                            stdio: ['ignore', 'pipe', 'pipe']
+                        });
+                        
+                        child.stdout.pipe(logStream);
+                        child.stderr.pipe(logStream);
+                        child.unref();
+                        
+                        services[i].pid = child.pid;
+                        modified = true;
+                    } catch (err) {
+                        console.error(`[Daemon] Falha ao auto-reiniciar ${svc.name}:`, err.message);
+                    }
+                }
+            }
+        }
+        
+        if (modified) {
+            fs.writeFileSync(HOSTING_FILE, JSON.stringify(services, null, 2));
+        }
+    } catch (e) {
+        console.error('[Daemon Auto-Restart] Erro:', e.message);
+    }
+}, 15000);
+
 // --- NGINX Manager Logic ---
 const PREFIX = process.env.PREFIX || '/data/data/com.termux/files/usr';
 const NGINX_CONF_DIR = `${PREFIX}/etc/nginx/conf.d`;
@@ -1227,7 +1645,13 @@ app.get('/api/system/update/run', (req, res) => {
 
     const send = (data) => res.write(`data: ${JSON.stringify({ line: data })}\n\n`);
 
-    const proc = spawn('bash', [UPDATE_SCRIPT], {
+    const tag = req.query.tag || '';
+    const args = [];
+    if (tag && tag.trim() !== '') {
+        args.push(tag.trim());
+    }
+
+    const proc = spawn('bash', [UPDATE_SCRIPT, ...args], {
         env: { ...process.env, TERM: 'xterm' },
     });
 
@@ -1472,6 +1896,66 @@ app.get('/api/system/update/check', async (req, res) => {
             releaseNotes: releaseNotes.substring(0, 500)
         });
     } catch(err) {
+        res.status(500).json({ error: err.message });
+});
+
+
+app.get('/api/system/update/versions', async (req, res) => {
+    try {
+        const config = getUpdateConfig();
+        const pjson = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+        const currentVersion = pjson.version || '1.0.0';
+
+        if (!config.github_repo || !config.github_repo.includes('/')) {
+            return res.json({ success: true, currentVersion, versions: [] });
+        }
+
+        const apiUrl = `https://api.github.com/repos/${config.github_repo}/releases`;
+        const resp = await axios.get(apiUrl, {
+            headers: { 'User-Agent': 'termux-panel' },
+            timeout: 5000
+        });
+
+        const releases = resp.data || [];
+        const versions = releases.map(rel => {
+            const tag = rel.tag_name || '';
+            const tagClean = tag.replace(/^v/, '');
+            
+            // Lógica inteligente de retrocompatibilidade
+            let compatStatus = 'compatible';
+            let compatMessage = 'Upgrade/Reinstalação 100% seguro.';
+
+            if (tagClean === currentVersion) {
+                compatStatus = 'compatible';
+                compatMessage = 'Esta é a sua versão ativa atual.';
+            } else {
+                // Compara as versões de forma simples (ex: 1.2.0 vs 1.1.3)
+                const cmp = tagClean.localeCompare(currentVersion, undefined, { numeric: true, sensitivity: 'base' });
+                if (cmp < 0) {
+                    compatStatus = 'breaking';
+                    compatMessage = 'Aviso: Downgrade. Recursos novos da v1.2.0 (Hospedagem) ficarão inativos.';
+                } else {
+                    compatStatus = 'compatible';
+                    compatMessage = 'Upgrade compatível e recomendado.';
+                }
+            }
+
+            return {
+                tag,
+                name: rel.name || tag,
+                publishedAt: rel.published_at,
+                body: rel.body || '',
+                compatStatus,
+                compatMessage
+            };
+        });
+
+        res.json({
+            success: true,
+            currentVersion,
+            versions
+        });
+    } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });

@@ -98,8 +98,8 @@
                 <a href="#" class="nav-link" data-target="tab-database">
                     <i data-lucide="database"></i> Banco de Dados
                 </a>
-                <a href="#" class="nav-link" data-target="tab-nginx">
-                    <i data-lucide="globe"></i> NGINX
+                <a href="#" class="nav-link" data-target="tab-hosting">
+                    <i data-lucide="server"></i> Hospedagem
                 </a>
                 <a href="#" class="nav-link" data-target="tab-cron">
                     <i data-lucide="calendar"></i> Cronjobs
@@ -502,66 +502,124 @@
                 </div>
             </div>
 
-            <!-- === TAB: NGINX === -->
-            <div id="tab-nginx" class="tab-pane">
+            <!-- === TAB: HOSPEDAGEM === -->
+            <div id="tab-hosting" class="tab-pane">
                 <div class="page-header">
-                    <h1>Virtual Hosts (NGINX)</h1>
+                    <div>
+                        <h1>Hospedagem</h1>
+                        <p style="color:var(--text-muted); font-size:0.875rem; margin-top:2px;">Sites, Apps, APIs e Proxies</p>
+                    </div>
                     <div class="toolbar-group">
-                        <button class="btn btn-secondary btn-sm" onclick="fetchNginxSites()">
+                        <button class="btn btn-primary btn-sm" onclick="openHostingModal()">
+                            <i data-lucide="plus"></i> Novo Serviço
+                        </button>
+                        <button class="btn btn-secondary btn-sm" onclick="fetchHostingServices()">
                             <i data-lucide="refresh-cw"></i> Atualizar
                         </button>
                         <button class="btn btn-warning btn-sm" onclick="actionNginx('restart')">
-                            <i data-lucide="rotate-cw"></i> Reiniciar NGINX
-                        </button>
-                        <button class="btn btn-danger btn-sm" onclick="actionNginx('stop')">
-                            <i data-lucide="square"></i> Parar NGINX
+                            <i data-lucide="rotate-cw"></i> NGINX
                         </button>
                     </div>
                 </div>
-                <div class="two-col">
-                    <div class="card">
-                        <h3 class="card-title">Novo Site / Proxy</h3>
-                        <form onsubmit="createNginxSite(event)">
-                            <div class="form-stack">
-                                <div>
+
+                <!-- Hosting Filters -->
+                <div class="hosting-filters-wrap" style="margin-bottom:20px;">
+                    <div class="filter-tabs">
+                        <button class="filter-tab active" data-filter="all" onclick="filterHosting('all', this)">Todos</button>
+                        <button class="filter-tab" data-filter="php" onclick="filterHosting('php', this)">Websites PHP</button>
+                        <button class="filter-tab" data-filter="static" onclick="filterHosting('static', this)">Websites HTML</button>
+                        <button class="filter-tab" data-filter="node" onclick="filterHosting('node', this)">Apps Node.js</button>
+                        <button class="filter-tab" data-filter="python" onclick="filterHosting('python', this)">Apps Python</button>
+                        <button class="filter-tab" data-filter="proxy" onclick="filterHosting('proxy', this)">Proxies Reversos</button>
+                    </div>
+                </div>
+
+                <!-- Grid of Services -->
+                <div class="hosting-grid" id="hostingGrid">
+                    <!-- Dynamic Service Cards Rendered by JS -->
+                </div>
+            </div>
+
+            <!-- === MODAL: NOVO SERVIÇO === -->
+            <div id="hostingModal" class="modal-overlay hidden">
+                <div class="modal-card">
+                    <div class="modal-header">
+                        <h2>🚀 Criar Novo Serviço</h2>
+                        <button class="btn-icon-ghost" type="button" onclick="closeHostingModal()"><i data-lucide="x"></i></button>
+                    </div>
+                    <form onsubmit="createHostingService(event)">
+                        <div class="form-stack">
+                            <div>
+                                <label class="form-label">Tipo de Hospedagem</label>
+                                <select id="hsType" onchange="toggleHostingFormFields()" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-lighter); color:var(--text-color);">
+                                    <option value="php">🌐 Website PHP</option>
+                                    <option value="static">📄 Website Estático (HTML)</option>
+                                    <option value="node">⚡ App Node.js</option>
+                                    <option value="python">🐍 App Python</option>
+                                    <option value="proxy">🔄 Proxy Reverso</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label class="form-label">Nome do Serviço</label>
+                                <input type="text" id="hsName" placeholder="ex: wordpress" required>
+                            </div>
+
+                            <div style="display:flex; gap:10px;">
+                                <div style="flex:1;">
                                     <label class="form-label">Domínio / Host</label>
-                                    <input type="text" id="ngDomain" placeholder="ex: meusite.com" required>
+                                    <input type="text" id="hsDomain" placeholder="ex: meusite.com" required>
                                 </div>
-                                <div style="display:flex; gap:10px;">
-                                    <div style="flex:1;">
-                                        <label class="form-label">Tipo</label>
-                                        <select id="ngType" onchange="toggleNginxType()" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-lighter); color:var(--text-color);">
-                                            <option value="proxy">Proxy Reverso</option>
-                                            <option value="static">Site em Pasta (HTML/PHP)</option>
-                                        </select>
-                                    </div>
-                                    <div style="flex:1;">
-                                        <label class="form-label">Porta Externa (Listen)</label>
-                                        <input type="number" id="ngListenPort" placeholder="ex: 8080" value="8080" required>
-                                    </div>
-                                </div>
-                                <div id="ngProxyGroup">
-                                    <label class="form-label">Porta Local (Alvo do Proxy)</label>
-                                    <input type="number" id="ngPort" placeholder="ex: 3000">
-                                </div>
-                                <div id="ngPathGroup" class="hidden">
-                                    <label class="form-label">Caminho da Pasta Absoluto</label>
-                                    <input type="text" id="ngPath" placeholder="ex: /data/data/com.termux/files/home/meusite">
+                                <div style="flex:1;">
+                                    <label class="form-label">Porta Pública</label>
+                                    <input type="number" id="hsListenPort" placeholder="ex: 8080" required>
                                 </div>
                             </div>
-                            <button type="submit" class="btn btn-success btn-sm" style="margin-top:12px; width:100%;">
-                                <i data-lucide="plus"></i> Criar Configuração
-                            </button>
-                        </form>
-                    </div>
-                    <div class="card">
-                        <h3 class="card-title">Sites Ativos</h3>
-                        <div class="table-card" style="margin-top:12px">
-                            <table>
-                                <thead><tr><th>Domínio</th><th>Porta</th><th>Ação</th></tr></thead>
-                                <tbody id="nginxTableBody"></tbody>
-                            </table>
+
+                            <!-- Dynamic fields -->
+                            <div id="hsPathGroup">
+                                <label class="form-label">Caminho da Pasta Absoluto</label>
+                                <input type="text" id="hsPath" placeholder="ex: /data/data/com.termux/files/home/www/projeto">
+                            </div>
+
+                            <div id="hsTargetPortGroup" class="hidden">
+                                <label class="form-label">Porta Interna (Alvo)</label>
+                                <input type="number" id="hsTargetPort" placeholder="ex: 3000">
+                            </div>
+
+                            <div id="hsStartCmdGroup" class="hidden">
+                                <label class="form-label">Comando de Inicialização</label>
+                                <input type="text" id="hsStartCmd" placeholder="ex: node server.js ou npm start">
+                            </div>
+
+                            <div id="hsCheckboxesGroup" style="display:flex; flex-direction:column; gap:8px; margin-top:8px;">
+                                <label style="display:flex; align-items:center; gap:8px; font-size:0.85rem;" id="hsAutoRestartLabel">
+                                    <input type="checkbox" id="hsAutoRestart" checked> Auto-Restart (Manter vivo se cair)
+                                </label>
+                                <label style="display:flex; align-items:center; gap:8px; font-size:0.85rem;" id="hsCreateIndexLabel">
+                                    <input type="checkbox" id="hsCreateIndex" checked> Criar arquivo inicial de cortesia (index.html / index.php)
+                                </label>
+                            </div>
                         </div>
+
+                        <div class="modal-actions" style="margin-top:20px; display:flex; justify-content:flex-end; gap:10px;">
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="closeHostingModal()">Cancelar</button>
+                            <button type="submit" class="btn btn-success btn-sm">Criar Serviço</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- === MODAL: LOGS DO SERVIÇO === -->
+            <div id="hostingLogsModal" class="modal-overlay hidden">
+                <div class="modal-card modal-lg">
+                    <div class="modal-header">
+                        <h2 id="logModalTitle">📜 Logs do Serviço</h2>
+                        <button class="btn-icon-ghost" type="button" onclick="closeHostingLogsModal()"><i data-lucide="x"></i></button>
+                    </div>
+                    <div id="hostingLogsBody" class="terminal-box" style="height:400px; font-family:var(--font-mono); margin-top:12px; white-space:pre-wrap; overflow-y:auto;">Carregando logs...</div>
+                    <div class="modal-actions" style="margin-top:20px; display:flex; justify-content:flex-end; gap:10px;">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="closeHostingLogsModal()">Fechar</button>
                     </div>
                 </div>
             </div>
@@ -693,8 +751,25 @@
                         </p>
                     </div>
 
+                    <!-- Seleção Manual de Versão (Downgrade/Upgrade) -->
+                    <div id="manual-version-selector-wrapper" class="hidden" style="background:var(--bg-secondary); border-radius:8px; padding:14px; margin-bottom:14px;">
+                        <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:8px;">
+                            <i data-lucide="git-branch" style="width:14px;height:14px;vertical-align:middle;margin-right:4px;"></i>
+                            Instalar Versão Específica (Upgrade/Downgrade/Rollback):
+                        </p>
+                        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                            <select id="github-versions-select" style="flex:1; min-width:220px; padding:8px 12px; font-size:0.875rem;" onchange="onVersionSelected()">
+                                <option value="">Buscando versões disponíveis...</option>
+                            </select>
+                            <button class="btn btn-warning btn-sm" id="btn-run-manual-update" onclick="runManualSystemUpdate()">
+                                <i data-lucide="download-cloud"></i> Instalar Versão
+                            </button>
+                        </div>
+                        <div id="version-compatibility-info" style="font-size:0.78rem; font-weight:600; margin-top:8px; display:flex; align-items:center; gap:6px;"></div>
+                    </div>
+
                     <!-- Notas de release -->
-                    <div id="update-release-notes-wrapper" class="hidden" style="background:var(--bg-secondary); border-radius:8px; padding:14px; margin-bottom:14px; font-size:0.82rem; color:var(--text-muted); white-space:pre-wrap; max-height:120px; overflow-y:auto;" id="update-release-notes"></div>
+                    <div id="update-release-notes-wrapper" class="hidden" style="background:var(--bg-secondary); border-radius:8px; padding:14px; margin-bottom:14px; font-size:0.82rem; color:var(--text-muted); white-space:pre-wrap; max-height:120px; overflow-y:auto;"></div>
 
                     <!-- Terminal de atualização -->
                     <div id="update-terminal-wrapper" class="hidden">

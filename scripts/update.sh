@@ -39,10 +39,20 @@ echo ""
 # MÉTODO 1: GitHub Releases (se repositório configurado)
 # -----------------------------------------------------------------
 if [ -n "$GITHUB_REPO" ] && [ "$GITHUB_REPO" != "null" ] && [ "$GITHUB_REPO" != "" ]; then
-    log "Baixando atualização do GitHub: $GITHUB_REPO"
+    TAG="latest"
+    if [ -n "$1" ]; then
+        TAG="$1"
+        log "Versão manual solicitada via Bash: $TAG"
+    else
+        log "Buscando última versão (latest) do GitHub..."
+    fi
 
-    DOWNLOAD_URL="https://github.com/$GITHUB_REPO/releases/latest/download/termux-panel-dist.tar.gz"
-    TMP_TAR="/data/data/com.termux/files/home/termux-panel-latest.tar.gz"
+    if [ "$TAG" = "latest" ]; then
+        DOWNLOAD_URL="https://github.com/$GITHUB_REPO/releases/latest/download/termux-panel-dist.tar.gz"
+    else
+        DOWNLOAD_URL="https://github.com/$GITHUB_REPO/releases/download/$TAG/termux-panel-dist.tar.gz"
+    fi
+    TMP_TAR="/data/data/com.termux/files/home/termux-panel-$TAG.tar.gz"
 
     log "URL: $DOWNLOAD_URL"
 

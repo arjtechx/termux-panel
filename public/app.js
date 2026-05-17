@@ -149,7 +149,7 @@ function switchTab(targetId) {
     }
     if (targetId === 'tab-files')    loadFiles();
     if (targetId === 'tab-database') fetchDatabases();
-    if (targetId === 'tab-nginx')    fetchNginxSites();
+    if (targetId === 'tab-hosting')   fetchHostingServices();
     if (targetId === 'tab-cron')     fetchCron();
     if (targetId === 'tab-noip')     fetchNoipStatus();
     if (targetId === 'tab-docs')     loadDocumentation();
@@ -1036,7 +1036,144 @@ async function checkSystemUpdates() {
     // Repo não configurado
     if (!data.githubRepo && data.updateMethod === 'manual') {
         if (statusText) statusText.innerHTML = '<span style="color:var(--warning)">⚠️ Configure o repositório GitHub abaixo para atualizações automáticas</span>';
+    } else if (cfg?.github_repo) {
+        // Busca lista de versões históricas disponíveis
+        fetchAvailableVersions();
     }
+}
+
+async function fetchAvailableVersions() {
+    const wrapper = document.getElementById('manual-version-selector-wrapper');
+    const select = document.getElementById('github-versions-select');
+    if (!wrapper || !select) return;
+
+    try {
+        const res = await safeFetch(`${API_BASE}/system/update/versions`);
+        if (res?.success && res.versions && res.versions.length > 0) {
+            window.availableVersions = res.versions;
+            select.innerHTML = res.versions.map(rel => {
+                const date = new Date(rel.publishedAt).toLocaleDateString();
+                const prefix = rel.compatStatus === 'breaking' ? '⚠️ ' : '✅ ';
+                return `<option value="${rel.tag}">${prefix}${rel.tag} (${date})</option>`;
+            }).join('');
+            
+            wrapper.classList.remove('hidden');
+            onVersionSelected(); // Inicializa o texto de compatibilidade
+        } else {
+            wrapper.classList.add('hidden');
+        }
+    } catch (err) {
+        console.error('Falha ao obter lista de versões:', err);
+    }
+}
+
+function onVersionSelected() {
+    const select = document.getElementById('github-versions-select');
+    const info = document.getElementById('version-compatibility-info');
+    if (!select || !info || !window.availableVersions) return;
+
+    const selectedTag = select.value;
+    const release = window.availableVersions.find(r => r.tag === selectedTag);
+    if (!release) {
+        info.innerHTML = '';
+        return;
+    }
+
+    const isBreaking = release.compatStatus === 'breaking';
+    const color = isBreaking ? 'var(--warning)' : 'var(--success)';
+    const icon = isBreaking ? 'alert-triangle' : 'check-circle';
+    
+    info.innerHTML = `
+        <span style="color:${color}; display:flex; align-items:center; gap:4px;">
+            <i data-lucide="${icon}" style="width:14px; height:14px; display:inline-block;"></i>
+            ${release.compatMessage}
+        </span>
+    `;
+    lucide.createIcons();
+}
+
+async function runManualSystemUpdate() {
+    const select = document.getElementById('github-versions-select');
+    const tag = select?.value;
+    if (!tag) {
+        alert('❌ Selecione uma versão válida!');
+        return;
+    }
+
+    const isBreaking = window.availableVersions?.find(r => r.tag === tag)?.compatStatus === 'breaking';
+    const warnMsg = isBreaking 
+        ? `\n\n⚠️ ATENÇÃO: Esta é uma versão antiga (Downgrade). Recursos mais novos serão desativados. Certifique-se de que possui backup!` 
+        : ``;
+
+    if (!confirm(`Deseja realmente instalar e aplicar a versão "${tag}" no seu cPanel?${warnMsg}\n\nO painel será reiniciado ao final do processo.`)) {
+        return;
+    }
+
+    const termWrapper = document.getElementById('update-terminal-wrapper');
+    const term        = document.getElementById('update-terminal');
+    const btnRun      = document.getElementById('btn-run-update');
+    const btnCheck    = document.getElementById('btn-check-update');
+    const btnManual   = document.getElementById('btn-run-manual-update');
+
+    if (termWrapper) termWrapper.classList.remove('hidden');
+    if (term) term.innerHTML = `<span style="color:var(--primary)">Iniciando instalação manual para a versão ${tag} via GitHub Releases...</span>\n\n`;
+    
+    if (btnRun)    btnRun.disabled    = true;
+    if (btnCheck)  btnCheck.disabled  = true;
+    if (btnManual) btnManual.disabled = true;
+
+    // Conecta passando a query string com a tag selecionada!
+    const evtSource = new EventSource(`${API_BASE}/system/update/run?tag=${tag}`);
+
+    evtSource.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            const line = data.line;
+
+            if (line.startsWith('__DONE__:')) {
+                evtSource.close();
+                const code = line.split(':')[1];
+                term.innerHTML += `\n<span style="color:${code == 0 ? 'var(--success)' : 'var(--warning)'}">Processo finalizado com código ${code}.</span>\n`;
+                if (code == 0) {
+                    term.innerHTML += `<span style="color:var(--success)">✅ Versão ${tag} instalada com sucesso! Recarregando em 5s...</span>\n`;
+                    setTimeout(() => location.reload(), 5000);
+                } else {
+                    term.innerHTML += `<span style="color:var(--danger)">❌ Erro na instalação. Verifique a saída acima.</span>\n`;
+                }
+                
+                if (btnRun)    btnRun.disabled    = false;
+                if (btnCheck)  btnCheck.disabled  = false;
+                if (btnManual) btnManual.disabled = false;
+                checkSystemUpdates();
+                return;
+            }
+
+            let htmlLine = line
+                .replace(/\033\[0;31m/g, '<span style="color:var(--danger)">')
+                .replace(/\033\[0;32m/g, '<span style="color:var(--success)">')
+                .replace(/\033\[1;33m/g, '<span style="color:var(--warning)">')
+                .replace(/\033\[0;34m/g, '<span style="color:#58a6ff">')
+                .replace(/\033\[0;36m/g, '<span style="color:#39c5bb">')
+                .replace(/\033\[1m/g,    '<strong>')
+                .replace(/\033\[0m/g,    '</span>');
+
+            term.innerHTML += htmlLine + '\n';
+            term.scrollTop = term.scrollHeight;
+        } catch(e) {
+            console.error('Erro na linha de atualização', e);
+        }
+    };
+
+    evtSource.onerror = () => {
+        term.innerHTML += '\n<span style="color:var(--warning)">Servidor desconectado — reiniciando para concluir instalação...</span>\n';
+        evtSource.close();
+        setTimeout(() => {
+            if (btnRun)    btnRun.disabled    = false;
+            if (btnCheck)  btnCheck.disabled  = false;
+            if (btnManual) btnManual.disabled = false;
+            location.reload();
+        }, 5000);
+    };
 }
 
 async function saveGithubRepo() {
@@ -1326,6 +1463,331 @@ async function savePanelAuth() {
     } else {
         alert(`❌ Erro: ${res?.error || 'Não foi possível salvar as credenciais.'}`);
     }
+}
+
+// ============================================================
+//  HOSPEDAGEM (SITES & APPS) FRONTEND CONTROLLER
+// ============================================================
+window.hostingServices = [];
+window.logInterval = null;
+window.activeFilterType = 'all';
+
+function openHostingModal() {
+    // Reset form fields
+    document.getElementById('hsName').value = '';
+    document.getElementById('hsDomain').value = window.location.hostname || '192.168.1.103';
+    document.getElementById('hsListenPort').value = '8080';
+    document.getElementById('hsPath').value = '/data/data/com.termux/files/home/www/meu-projeto';
+    document.getElementById('hsTargetPort').value = '';
+    document.getElementById('hsStartCmd').value = '';
+    document.getElementById('hsType').value = 'php';
+    document.getElementById('hsAutoRestart').checked = true;
+    document.getElementById('hsCreateIndex').checked = true;
+
+    // Trigger dynamic visible fields logic
+    toggleHostingFormFields();
+
+    // Open Modal overlay
+    const modal = document.getElementById('hostingModal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        lucide.createIcons();
+    }
+}
+
+function closeHostingModal() {
+    const modal = document.getElementById('hostingModal');
+    if (modal) modal.classList.add('hidden');
+}
+
+function toggleHostingFormFields() {
+    const type = document.getElementById('hsType').value;
+    
+    const pathGroup = document.getElementById('hsPathGroup');
+    const targetPortGroup = document.getElementById('hsTargetPortGroup');
+    const startCmdGroup = document.getElementById('hsStartCmdGroup');
+    const autoRestartLabel = document.getElementById('hsAutoRestartLabel');
+    const createIndexLabel = document.getElementById('hsCreateIndexLabel');
+
+    // Default setups
+    pathGroup.classList.remove('hidden');
+    targetPortGroup.classList.add('hidden');
+    startCmdGroup.classList.add('hidden');
+    autoRestartLabel.classList.add('hidden');
+    createIndexLabel.classList.add('hidden');
+
+    if (type === 'php') {
+        createIndexLabel.classList.remove('hidden');
+        document.getElementById('hsPath').placeholder = 'ex: /data/data/com.termux/files/home/www/php-site';
+    } else if (type === 'static') {
+        createIndexLabel.classList.remove('hidden');
+        document.getElementById('hsPath').placeholder = 'ex: /data/data/com.termux/files/home/www/html-site';
+    } else if (type === 'node') {
+        targetPortGroup.classList.remove('hidden');
+        startCmdGroup.classList.remove('hidden');
+        autoRestartLabel.classList.remove('hidden');
+        createIndexLabel.classList.remove('hidden');
+        document.getElementById('hsTargetPort').value = '3000';
+        document.getElementById('hsStartCmd').value = 'node server.js';
+        document.getElementById('hsPath').placeholder = 'ex: /data/data/com.termux/files/home/www/node-app';
+    } else if (type === 'python') {
+        targetPortGroup.classList.remove('hidden');
+        startCmdGroup.classList.remove('hidden');
+        autoRestartLabel.classList.remove('hidden');
+        createIndexLabel.classList.remove('hidden');
+        document.getElementById('hsTargetPort').value = '5000';
+        document.getElementById('hsStartCmd').value = 'python main.py';
+        document.getElementById('hsPath').placeholder = 'ex: /data/data/com.termux/files/home/www/python-app';
+    } else if (type === 'proxy') {
+        pathGroup.classList.add('hidden');
+        targetPortGroup.classList.remove('hidden');
+        document.getElementById('hsTargetPort').value = '3000';
+        document.getElementById('hsPath').value = '';
+    }
+}
+
+async function fetchHostingServices() {
+    try {
+        const res = await safeFetch(`${API_BASE}/hosting`);
+        if (res?.success) {
+            window.hostingServices = res.services || [];
+            renderHostingGrid(window.activeFilterType);
+        } else {
+            console.error('Falha ao obter lista de serviços de hospedagem:', res?.error);
+        }
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+function renderHostingGrid(filterType = 'all') {
+    window.activeFilterType = filterType;
+    const grid = document.getElementById('hostingGrid');
+    if (!grid) return;
+
+    // Filter services list
+    const filtered = window.hostingServices.filter(svc => {
+        if (filterType === 'all') return true;
+        return svc.type === filterType;
+    });
+
+    if (filtered.length === 0) {
+        grid.innerHTML = `
+            <div class="card" style="grid-column: 1 / -1; text-align:center; padding:50px; color:var(--text-muted);">
+                <i data-lucide="folder-open" style="width:48px; height:48px; margin:0 auto 16px; display:block; opacity: 0.6;"></i>
+                <h3 style="font-weight:600; color:var(--text)">Nenhum serviço criado</h3>
+                <p style="margin-top:8px; font-size:0.875rem;">Clique em "+ Novo Serviço" para colocar o seu primeiro projeto no ar!</p>
+            </div>
+        `;
+        lucide.createIcons();
+        return;
+    }
+
+    grid.innerHTML = filtered.map(svc => {
+        const isApp = svc.type === 'node' || svc.type === 'python';
+        const isOnline = svc.status === 'online';
+        
+        let typeLabel = '';
+        let typeClass = '';
+        switch (svc.type) {
+            case 'php': typeLabel = 'PHP-FPM'; typeClass = 'badge-type-php'; break;
+            case 'static': typeLabel = 'Estático'; typeClass = 'badge-type-static'; break;
+            case 'node': typeLabel = 'Node.js'; typeClass = 'badge-type-node'; break;
+            case 'python': typeLabel = 'Python'; typeClass = 'badge-type-python'; break;
+            case 'proxy': typeLabel = 'Proxy'; typeClass = 'badge-type-proxy'; break;
+        }
+
+        const statusBadge = isOnline 
+            ? `<span class="badge badge-success"><i data-lucide="play" style="width:10px; height:10px; display:inline-block; vertical-align:middle; margin-right:4px;"></i>Online</span>`
+            : svc.status === 'stopped'
+                ? `<span class="badge badge-warning"><i data-lucide="square" style="width:10px; height:10px; display:inline-block; vertical-align:middle; margin-right:4px;"></i>Parado</span>`
+                : `<span class="badge badge-danger"><i data-lucide="alert-circle" style="width:10px; height:10px; display:inline-block; vertical-align:middle; margin-right:4px;"></i>Offline</span>`;
+
+        return `
+            <div class="hosting-card">
+                <div class="hosting-card-header">
+                    <div>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <span class="badge-type ${typeClass}">${typeLabel}</span>
+                            <h3 class="hosting-card-title">${svc.name}</h3>
+                        </div>
+                        <div class="hosting-card-meta">Criado em: ${new Date(svc.createdAt).toLocaleDateString()}</div>
+                    </div>
+                    ${statusBadge}
+                </div>
+
+                <div class="hosting-card-body">
+                    <div class="hosting-card-info-item">
+                        <span class="hosting-card-info-label">Porta Pública</span>
+                        <span class="hosting-card-info-value" style="font-family:var(--font-mono); font-weight:600; color:var(--primary);">${svc.listenPort}</span>
+                    </div>
+                    <div class="hosting-card-info-item">
+                        <span class="hosting-card-info-label">Host/Domínio</span>
+                        <span class="hosting-card-info-value" style="font-family:var(--font-mono);">${svc.domain}</span>
+                    </div>
+                    ${svc.path ? `
+                    <div class="hosting-card-info-item">
+                        <span class="hosting-card-info-label">Pasta do App</span>
+                        <span class="hosting-card-info-value" style="font-size:0.75rem; text-overflow:ellipsis; overflow:hidden;" title="${svc.path}">${svc.path}</span>
+                    </div>
+                    ` : ''}
+                    ${svc.targetPort ? `
+                    <div class="hosting-card-info-item">
+                        <span class="hosting-card-info-label">Porta Interna</span>
+                        <span class="hosting-card-info-value" style="font-family:var(--font-mono);">${svc.targetPort}</span>
+                    </div>
+                    ` : ''}
+                    ${svc.pid ? `
+                    <div class="hosting-card-info-item">
+                        <span class="hosting-card-info-label">PID Ativo</span>
+                        <span class="hosting-card-info-value" style="font-family:var(--font-mono); color:var(--success); font-weight:600;">${svc.pid}</span>
+                    </div>
+                    ` : ''}
+                </div>
+
+                <div class="hosting-card-actions">
+                    <a href="${svc.publicUrl}" target="_blank" class="btn btn-secondary btn-sm" style="flex:1; justify-content:center; text-decoration:none; padding:8px 0;">
+                        <i data-lucide="external-link"></i> Abrir
+                    </a>
+                    
+                    ${isApp ? `
+                        <button class="btn btn-sm ${isOnline ? 'btn-warning' : 'btn-success'}" onclick="toggleHostingProcess('${svc.id}', ${!isOnline})" style="padding:8px 12px;" title="${isOnline ? 'Parar processo' : 'Iniciar processo'}">
+                            <i data-lucide="${isOnline ? 'square' : 'play'}"></i>
+                        </button>
+                        <button class="btn btn-secondary btn-sm" onclick="viewHostingLogs('${svc.id}', '${svc.name}')" style="padding:8px 12px;" title="Ver Logs">
+                            <i data-lucide="terminal"></i>
+                        </button>
+                    ` : ''}
+                    
+                    <button class="btn btn-danger btn-sm" onclick="deleteHostingService('${svc.id}', '${svc.name}')" style="padding:8px 12px;" title="Remover Serviço">
+                        <i data-lucide="trash-2"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    lucide.createIcons();
+}
+
+function filterHosting(type, btn) {
+    document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    renderHostingGrid(type);
+}
+
+async function createHostingService(e) {
+    e.preventDefault();
+    
+    const name = document.getElementById('hsName').value.trim();
+    const domain = document.getElementById('hsDomain').value.trim();
+    const type = document.getElementById('hsType').value;
+    const listenPort = document.getElementById('hsListenPort').value;
+    const targetPort = document.getElementById('hsTargetPort').value;
+    const path = document.getElementById('hsPath').value.trim();
+    const startCmd = document.getElementById('hsStartCmd').value.trim();
+    const autoRestart = document.getElementById('hsAutoRestart').checked;
+    const createIndex = document.getElementById('hsCreateIndex').checked;
+
+    if (!name || !listenPort) {
+        alert('❌ Nome e Porta Pública são obrigatórios!');
+        return;
+    }
+
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    const originalText = submitBtn.innerHTML;
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i data-lucide="loader" class="spin"></i> Criando...';
+    lucide.createIcons();
+
+    try {
+        const payload = { name, domain, type, listenPort, targetPort, path, startCmd, autoRestart, createIndex };
+        const res = await safeFetch(`${API_BASE}/hosting`, 'POST', payload);
+        
+        if (res?.success) {
+            alert('✅ Serviço de Hospedagem criado com sucesso!');
+            closeHostingModal();
+            fetchHostingServices();
+        } else {
+            alert(`❌ Falha ao criar serviço:\n\n${res?.error || 'Erro desconhecido.'}`);
+        }
+    } catch (err) {
+        alert(`❌ Falha de rede: ${err.message}`);
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalText;
+        lucide.createIcons();
+    }
+}
+
+async function toggleHostingProcess(id, start) {
+    try {
+        const res = await safeFetch(`${API_BASE}/hosting/${id}/toggle`, 'POST', { active: start });
+        if (res?.success) {
+            fetchHostingServices();
+        } else {
+            alert(`❌ Falha ao alterar estado do processo:\n\n${res?.error || 'Erro interno.'}`);
+        }
+    } catch (err) {
+        alert(`❌ Erro de rede: ${err.message}`);
+    }
+}
+
+async function deleteHostingService(id, name) {
+    if (!confirm(`⚠️ Atenção: Você tem certeza que deseja EXCLUIR o serviço "${name}"?\n\nEsta ação irá remover permanentemente a configuração do NGINX, apagar os arquivos de log e encerrar qualquer processo ativo associado.`)) {
+        return;
+    }
+
+    try {
+        const res = await safeFetch(`${API_BASE}/hosting/${id}`, 'DELETE');
+        if (res?.success) {
+            alert('✅ Serviço excluído com sucesso!');
+            fetchHostingServices();
+        } else {
+            alert(`❌ Falha ao excluir serviço:\n\n${res?.error || 'Erro interno.'}`);
+        }
+    } catch (err) {
+        alert(`❌ Erro de rede: ${err.message}`);
+    }
+}
+
+function viewHostingLogs(id, name) {
+    document.getElementById('logModalTitle').innerHTML = `📜 Logs em Tempo Real — ${name}`;
+    const logsBody = document.getElementById('hostingLogsBody');
+    logsBody.textContent = 'Buscando logs...';
+    
+    const logsModal = document.getElementById('hostingLogsModal');
+    logsModal.classList.remove('hidden');
+    lucide.createIcons();
+
+    if (window.logInterval) clearInterval(window.logInterval);
+
+    // Initial load
+    fetch(`${API_BASE}/hosting/${id}/logs`)
+        .then(r => r.text())
+        .then(text => {
+            logsBody.textContent = text;
+            logsBody.scrollTop = logsBody.scrollHeight;
+        });
+
+    // Auto refresh logs every 3 seconds
+    window.logInterval = setInterval(() => {
+        fetch(`${API_BASE}/hosting/${id}/logs`)
+            .then(r => r.text())
+            .then(text => {
+                logsBody.textContent = text;
+                logsBody.scrollTop = logsBody.scrollHeight;
+            });
+    }, 3000);
+}
+
+function closeHostingLogsModal() {
+    if (window.logInterval) {
+        clearInterval(window.logInterval);
+        window.logInterval = null;
+    }
+    const logsModal = document.getElementById('hostingLogsModal');
+    if (logsModal) logsModal.classList.add('hidden');
 }
 
 // ============================================================

@@ -2,6 +2,21 @@
 
 ---
 
+## 🏆 MARCO v1.2.0 — 2026-05-17 (Hospedagem Unificada)
+
+**Nova aba premium unificando Websites (PHP/HTML), Apps (Node.js/Python) e Proxies Reversos!**
+
+### ✅ Novidades da Versão
+- **Aba Hospedagem ("Sites & Apps"):** Nova aba premium completa, substituindo a antiga "NGINX" do menu lateral.
+- **Visual Curado & Responsivo:** Layout de grid de cards com filtros rápidos, badges coloridos, monitoramento integrado e animações fluidas.
+- **Portas & Segurança (Regras do NGINX):** Escuta automática das portas públicas sob o endereço genérico `0.0.0.0` para permitir acesso instantâneo de outros aparelhos na rede local (ex: `192.168.1.103`), eliminando erros de amarração com `127.0.0.1`.
+- **Validação com `nginx -t` preventiva:** Todas as configurações de servidores virtuais são validadas sintaticamente antes de serem gravadas no cPanel. Em caso de erro, o painel descarta o arquivo inválido automaticamente (rollback) e exibe o erro claro para o usuário.
+- **App Daemon & Process Checker:** Novo monitor inteligente de aplicativos que valida se um serviço Node/Python está realmente "online" com base no PID e na escuta ativa de sua porta interna (`targetPort`).
+- **Auto-Restart Background Loop:** Processo de background que monitora a saúde das aplicações a cada 15 segundos e restabelece serviços com falha automaticamente de forma totalmente autônoma.
+- **Visualizador de Logs integrado:** Acompanhamento em tempo real das saídas padrão (`stdout`) e de erro (`stderr`) dos servidores e apps diretamente no painel.
+
+---
+
 ## 🏆 MARCO v1.0 — 2026-05-16
 
 **Git Tag:** `v1.0-marco`
