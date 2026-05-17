@@ -3911,16 +3911,7 @@ server.on('error', (e) => {
             }
             console.log(`[OK] Porta ${PORT} liberada com sucesso! Reiniciando escuta do servidor em 1.5s...`);
             setTimeout(() => {
-                server.listen(PORT, '0.0.0.0', () => {
-                    console.log(`Painel Termux rodando em:`);
-                    console.log(`- Local: http://localhost:${PORT}`);
-                    console.log(`- Rede:  http://0.0.0.0:${PORT}`);
-                    
-                    // Iniciar FileBrowser Service em background
-                    fileBrowserService.init().catch(err => {
-                        console.error('[ERR] Falha ao iniciar FileBrowser:', err.message);
-                    });
-                });
+                server.listen(PORT, '0.0.0.0');
             }, 1500);
         } catch (err) {
             console.error('[ERR] Erro crítico ao tentar liberar a porta:', err.message);
@@ -3931,7 +3922,7 @@ server.on('error', (e) => {
     }
 });
 
-server.listen(PORT, '0.0.0.0', () => {
+server.once('listening', () => {
     console.log(`Painel Termux rodando em:`);
     console.log(`- Local: http://localhost:${PORT}`);
     console.log(`- Rede:  http://0.0.0.0:${PORT}`);
@@ -3941,5 +3932,7 @@ server.listen(PORT, '0.0.0.0', () => {
         console.error('[ERR] Falha ao iniciar FileBrowser:', err.message);
     });
 });
+
+server.listen(PORT, '0.0.0.0');
 
 
