@@ -66,6 +66,14 @@ try {
     systemConfig = { is_termux: true, has_root: false, package_manager: 'pkg', prefix: process.env.PREFIX || '/data/data/com.termux/files/usr' };
     try { fs.writeFileSync(SYSTEM_FILE, JSON.stringify(systemConfig, null, 4)); } catch(err){}
 }
+
+// Detecção dinâmica de ambiente: Força o modo WSL/Linux se não estiver em um Termux real
+const isRealTermux = !!(process.env.PREFIX && process.env.PREFIX.includes('com.termux'));
+if (!isRealTermux) {
+    systemConfig.is_termux = false;
+    systemConfig.prefix = '/usr';
+    systemConfig.package_manager = 'apt';
+}
 const BACKUP_DIR = path.join(BASE_DIR, 'backups');
 
 // Initialize config directory
