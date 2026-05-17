@@ -2,6 +2,15 @@
 
 ---
 
+## 🏆 MARCO v1.2.1 — 2026-05-17 (Resiliência & Bypasses de Taxa de API)
+
+### ✅ Novidades da Versão
+- **Bypass de Limite de Taxa (Rate Limit) da API do GitHub:** Implementado um mecanismo inteligente e automatizado de **Dual-Fallback** no backend (`server.js`). Caso o GitHub retorne erros `403` ou `Timeout` de API nas consultas de check/versions, o cPanel executa uma query nativa e levíssima com `git ls-remote --tags` em background. Isso contorna completamente qualquer bloqueio de IP ou lentidão da operadora móvel.
+- **Correção da Ordem de Inicialização das Configurações de Hospedagem:** Reordenadas e hasteadas as declarações de `PREFIX` e `NGINX_CONF_DIR` para o início do bloco correspondente, eliminando eventuais erros de referência durante chamadas aos endpoints.
+- **Estabilização da Sintaxe do Backend:** Corrigido o fechamento do bloco `catch` na rota de verificação do sistema, assegurando 100% de conformidade sintática no interpretador V8 do Node.js.
+
+---
+
 ## 🏆 MARCO v1.2.0 — 2026-05-17 (Hospedagem Unificada)
 
 **Nova aba premium unificando Websites (PHP/HTML), Apps (Node.js/Python) e Proxies Reversos!**
