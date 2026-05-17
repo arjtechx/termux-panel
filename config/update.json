@@ -1,5 +1,5 @@
 {
   "github_repo": "arjtechx/termux-panel",
-  "update_channel": "unstable",
-  "version": "0.0.1-unstable"
+  "update_channel": "stable",
+  "version": "0.0.2"
 }

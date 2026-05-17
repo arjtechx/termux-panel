@@ -2606,6 +2606,499 @@ app.get('/api/system/update/versions', async (req, res) => {
     }
 });
 
+// ============================================================
+//  NÚCLEO DE ATUALIZAÇÃO E ROLLBACK AVANÇADO (v0.0.3)
+// ============================================================
+
+function parseSemver(versionString) {
+    const clean = versionString.trim().replace(/^v/, '');
+    const [mainPart, prePart] = clean.split('-');
+    const parts = mainPart.split('.').map(Number);
+    while (parts.length < 3) {
+        parts.push(0);
+    }
+    return {
+        major: parts[0] || 0,
+        minor: parts[1] || 0,
+        patch: parts[2] || 0,
+        prerelease: prePart || null
+    };
+}
+
+function compareSemver(v1, v2) {
+    const p1 = parseSemver(v1);
+    const p2 = parseSemver(v2);
+    
+    if (p1.major !== p2.major) return p1.major - p2.major;
+    if (p1.minor !== p2.minor) return p1.minor - p2.minor;
+    if (p1.patch !== p2.patch) return p1.patch - p2.patch;
+    
+    if (p1.prerelease && !p2.prerelease) return -1;
+    if (!p1.prerelease && p2.prerelease) return 1;
+    if (p1.prerelease && p2.prerelease) {
+        return p1.prerelease.localeCompare(p2.prerelease);
+    }
+    return 0;
+}
+
+const UPDATE_CACHE_FILE = path.join(__dirname, 'config', 'update-cache.json');
+
+function readUpdateCache() {
+    try {
+        if (fs.existsSync(UPDATE_CACHE_FILE)) {
+            return JSON.parse(fs.readFileSync(UPDATE_CACHE_FILE, 'utf8'));
+        }
+    } catch(e) {}
+    return null;
+}
+
+function writeUpdateCache(data) {
+    try {
+        fs.writeFileSync(UPDATE_CACHE_FILE, JSON.stringify({
+            ...data,
+            lastChecked: new Date().toISOString()
+        }, null, 2));
+    } catch(e) {}
+}
+
+// GET /api/update/status
+app.get('/api/update/status', async (req, res) => {
+    try {
+        const pjson = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+        const installed = pjson.version || '0.0.2';
+        const config = getUpdateConfig();
+        const repo = config.github_repo || 'arjtechx/termux-panel';
+
+        const cached = readUpdateCache();
+        
+        if (cached && cached.repo === repo && cached.installed === installed && !req.query.force) {
+            const age = Date.now() - new Date(cached.lastChecked).getTime();
+            if (age < 5 * 60 * 1000) {
+                return res.json(cached);
+            }
+        }
+
+        let latest = installed;
+        let hasUpdate = false;
+        let status = 'up_to_date';
+
+        try {
+            const apiUrl = `https://api.github.com/repos/${repo}/releases/latest`;
+            const resp = await axios.get(apiUrl, {
+                headers: { 'User-Agent': 'termux-panel' },
+                timeout: 3000
+            });
+            latest = (resp.data.tag_name || installed).replace(/^v/, '');
+            hasUpdate = compareSemver(latest, installed) > 0;
+            status = hasUpdate ? 'update_available' : 'up_to_date';
+        } catch(err) {
+            if (cached && cached.repo === repo) {
+                return res.json({
+                    ...cached,
+                    status: cached.hasUpdate ? 'update_available' : 'up_to_date'
+                });
+            }
+            status = 'failed_check';
+        }
+
+        const result = {
+            installed,
+            latest,
+            hasUpdate,
+            status,
+            repo
+        };
+
+        if (status !== 'failed_check') {
+            writeUpdateCache(result);
+        }
+
+        res.json(result);
+    } catch(err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/update/releases
+app.get('/api/update/releases', async (req, res) => {
+    try {
+        const config = getUpdateConfig();
+        const pjson = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+        const installed = pjson.version || '0.0.2';
+        const repo = config.github_repo || 'arjtechx/termux-panel';
+
+        try {
+            const apiUrl = `https://api.github.com/repos/${repo}/releases`;
+            const resp = await axios.get(apiUrl, {
+                headers: { 'User-Agent': 'termux-panel' },
+                timeout: 5000
+            });
+            const releases = resp.data || [];
+            const versions = releases.map(rel => {
+                const tag = rel.tag_name || '';
+                const tagClean = tag.replace(/^v/, '');
+                
+                let compatStatus = 'compatible';
+                let compatMessage = 'Upgrade/Reinstalação 100% seguro.';
+
+                if (tagClean === installed) {
+                    compatStatus = 'compatible';
+                    compatMessage = 'Esta é a sua versão ativa atual.';
+                } else {
+                    const cmp = compareSemver(tagClean, installed);
+                    if (cmp < 0) {
+                        compatStatus = 'breaking';
+                        compatMessage = 'Aviso: Downgrade. Recursos novos do painel poderão ficar indisponíveis.';
+                    } else {
+                        compatStatus = 'compatible';
+                        compatMessage = 'Upgrade compatível e recomendado.';
+                    }
+                }
+
+                return {
+                    tag,
+                    name: rel.name || tag,
+                    publishedAt: rel.published_at,
+                    body: rel.body || '',
+                    compatStatus,
+                    compatMessage
+                };
+            });
+
+            res.json(versions);
+        } catch(err) {
+            // Fallback via Git ls-remote
+            try {
+                const gitUrl = `https://github.com/${repo}.git`;
+                const tagsOut = await new Promise((resolve, reject) => {
+                    exec(`git ls-remote --tags ${gitUrl}`, (gitErr, stdout) => {
+                        if (gitErr) reject(gitErr);
+                        else resolve(stdout || '');
+                    });
+                });
+
+                const lines = tagsOut.split('\n').filter(Boolean);
+                const rawVersions = lines.map(line => {
+                    const match = line.match(/refs\/tags\/(v?\d+\.\d+\.\d+)/);
+                    if (!match) return null;
+                    const tag = match[1].startsWith('v') ? match[1] : 'v' + match[1];
+                    const tagClean = tag.replace(/^v/, '');
+                    
+                    let compatStatus = 'compatible';
+                    let compatMessage = 'Upgrade/Reinstalação 100% seguro.';
+
+                    if (tagClean === installed) {
+                        compatStatus = 'compatible';
+                        compatMessage = 'Esta é a sua versão ativa atual.';
+                    } else {
+                        const cmp = compareSemver(tagClean, installed);
+                        if (cmp < 0) {
+                            compatStatus = 'breaking';
+                            compatMessage = 'Aviso: Downgrade. Recursos novos do painel poderão ficar indisponíveis.';
+                        } else {
+                            compatStatus = 'compatible';
+                            compatMessage = 'Upgrade compatível e recomendado.';
+                        }
+                    }
+
+                    return {
+                        tag,
+                        name: `Termux Panel ${tag}`,
+                        publishedAt: new Date().toISOString(),
+                        body: 'Carregada via Git tags (API rate limit bypass).',
+                        compatStatus,
+                        compatMessage
+                    };
+                }).filter(Boolean);
+
+                const sortedVersions = rawVersions.sort((a, b) => {
+                    return compareSemver(b.tag, a.tag);
+                });
+
+                res.json(sortedVersions);
+            } catch (errFallback) {
+                res.status(500).json({ error: `GitHub API indisponível e falha no Git fallback: ${err.message}` });
+            }
+        }
+    } catch(err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/update/check
+app.post('/api/update/check', async (req, res) => {
+    try {
+        const pjson = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+        const installed = pjson.version || '0.0.2';
+        const config = getUpdateConfig();
+        const repo = config.github_repo || 'arjtechx/termux-panel';
+
+        let latest = installed;
+        let hasUpdate = false;
+        let status = 'up_to_date';
+
+        try {
+            const apiUrl = `https://api.github.com/repos/${repo}/releases/latest`;
+            const resp = await axios.get(apiUrl, {
+                headers: { 'User-Agent': 'termux-panel' },
+                timeout: 5000
+            });
+            latest = (resp.data.tag_name || installed).replace(/^v/, '');
+            hasUpdate = compareSemver(latest, installed) > 0;
+            status = hasUpdate ? 'update_available' : 'up_to_date';
+        } catch(err) {
+            try {
+                const gitUrl = `https://github.com/${repo}.git`;
+                const tagsOut = await new Promise((resolve, reject) => {
+                    exec(`git ls-remote --tags ${gitUrl}`, (gitErr, stdout) => {
+                        if (gitErr) reject(gitErr);
+                        else resolve(stdout || '');
+                    });
+                });
+                const tags = tagsOut.split('\n')
+                    .map(line => {
+                        const match = line.match(/refs\/tags\/(v?\d+\.\d+\.\d+)/);
+                        return match ? match[1] : null;
+                    })
+                    .filter(Boolean);
+                if (tags.length > 0) {
+                    const sorted = tags.sort(compareSemver);
+                    const latestTag = sorted[sorted.length - 1];
+                    latest = latestTag.replace(/^v/, '');
+                    hasUpdate = compareSemver(latest, installed) > 0;
+                    status = hasUpdate ? 'update_available' : 'up_to_date';
+                } else {
+                    status = 'failed_check';
+                }
+            } catch(eGit) {
+                status = 'failed_check';
+            }
+        }
+
+        const result = {
+            installed,
+            latest,
+            hasUpdate,
+            status,
+            repo
+        };
+
+        if (status !== 'failed_check') {
+            writeUpdateCache(result);
+        }
+
+        res.json(result);
+    } catch(err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/update/install (SSE Log Stream)
+app.get('/api/update/install', async (req, res) => {
+    res.setHeader('Content-Type',  'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection',    'keep-alive');
+    res.flushHeaders();
+
+    const sendLog = (type, message) => {
+        res.write(`data: ${JSON.stringify({ line: `[${type}] ${message}` })}\n\n`);
+    };
+
+    const targetTag = req.query.tag || 'latest';
+    sendLog('INFO', `Verificando releases GitHub para tag: ${targetTag}...`);
+
+    try {
+        const config = getUpdateConfig();
+        const repo = config.github_repo || 'arjtechx/termux-panel';
+        const pjson = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+        const currentVersion = pjson.version || '0.0.2';
+
+        let downloadUrl = '';
+        let resolvedTag = targetTag;
+        
+        try {
+            const apiUrl = targetTag === 'latest'
+                ? `https://api.github.com/repos/${repo}/releases/latest`
+                : `https://api.github.com/repos/${repo}/releases/tags/${targetTag}`;
+            
+            const resp = await axios.get(apiUrl, { headers: { 'User-Agent': 'termux-panel' }, timeout: 5000 });
+            resolvedTag = resp.data.tag_name || targetTag;
+            downloadUrl = `https://github.com/${repo}/releases/download/${resolvedTag}/termux-panel-dist.tar.gz`;
+            sendLog('OK', `Release encontrada: ${resolvedTag}`);
+        } catch(e) {
+            resolvedTag = targetTag === 'latest' ? 'v0.0.2' : targetTag;
+            downloadUrl = `https://github.com/${repo}/releases/download/${resolvedTag}/termux-panel-dist.tar.gz`;
+            sendLog('WARN', `GitHub API limite de requisições. Tentando URL direta: ${resolvedTag}`);
+        }
+
+        // Criar Backup Preventivo
+        sendLog('INFO', `Criando backup automático da versão ${currentVersion}...`);
+        const backupDir = path.join(__dirname, 'backups', 'panel-backups', `version-${currentVersion}`);
+        
+        try {
+            fs.mkdirSync(backupDir, { recursive: true });
+            const itemsToBackup = ['public', 'scripts', 'server.js', 'package.json', 'package-lock.json'];
+            for (const item of itemsToBackup) {
+                const srcPath = path.join(__dirname, item);
+                const destPath = path.join(backupDir, item);
+                if (fs.existsSync(srcPath)) {
+                    fs.cpSync(srcPath, destPath, { recursive: true });
+                }
+            }
+            sendLog('OK', `Backup criado com sucesso em: backups/panel-backups/version-${currentVersion}`);
+        } catch (backupErr) {
+            sendLog('WARN', `Não foi possível criar o backup preventivo: ${backupErr.message}`);
+        }
+
+        // Baixar pacote
+        sendLog('INFO', `Baixando pacote da release...`);
+        const tempDir = path.join(__dirname, 'backups', 'tmp');
+        fs.mkdirSync(tempDir, { recursive: true });
+        const tempTarPath = path.join(tempDir, `update-${resolvedTag}.tar.gz`);
+
+        try {
+            const writer = fs.createWriteStream(tempTarPath);
+            const response = await axios({
+                method: 'get',
+                url: downloadUrl,
+                responseType: 'stream',
+                timeout: 15000
+            });
+
+            response.data.pipe(writer);
+
+            await new Promise((resolve, reject) => {
+                writer.on('finish', resolve);
+                writer.on('error', reject);
+            });
+            sendLog('OK', `Pacote baixado com sucesso.`);
+        } catch (dlErr) {
+            sendLog('ERR', `Falha ao baixar o pacote: ${dlErr.message}`);
+            res.write(`data: ${JSON.stringify({ line: '__DONE__:1' })}\n\n`);
+            return res.end();
+        }
+
+        // Extrair atualização
+        sendLog('INFO', `Extraindo pacote do painel...`);
+        const extractDir = path.join(tempDir, 'extract');
+        fs.rmSync(extractDir, { recursive: true, force: true });
+        fs.mkdirSync(extractDir, { recursive: true });
+
+        try {
+            await new Promise((resolve, reject) => {
+                const proc = spawn('tar', ['-xzf', tempTarPath, '-C', extractDir, '--strip-components=1']);
+                proc.on('close', code => code === 0 ? resolve() : reject(new Error(`Tar terminou com código ${code}`)));
+                proc.on('error', reject);
+            });
+            sendLog('OK', `Extração básica concluída.`);
+        } catch (extErr) {
+            sendLog('ERR', `Falha ao extrair tarball: ${extErr.message}`);
+            res.write(`data: ${JSON.stringify({ line: '__DONE__:1' })}\n\n`);
+            return res.end();
+        }
+
+        // Substituir apenas arquivos da aplicação
+        sendLog('INFO', `Instalando atualização...`);
+        try {
+            const itemsToCopy = ['public', 'scripts', 'server.js', 'package.json', 'package-lock.json', 'README.md', 'install.sh'];
+            for (const item of itemsToCopy) {
+                const srcPath = path.join(extractDir, item);
+                const destPath = path.join(__dirname, item);
+                if (fs.existsSync(srcPath)) {
+                    fs.cpSync(srcPath, destPath, { recursive: true, force: true });
+                }
+            }
+            sendLog('OK', `Arquivos copiados com sucesso.`);
+        } catch (copyErr) {
+            sendLog('ERR', `Falha ao instalar arquivos: ${copyErr.message}`);
+            res.write(`data: ${JSON.stringify({ line: '__DONE__:1' })}\n\n`);
+            return res.end();
+        }
+
+        try {
+            fs.rmSync(tempDir, { recursive: true, force: true });
+        } catch(e) {}
+
+        sendLog('OK', `Atualização concluída.`);
+        res.write(`data: ${JSON.stringify({ line: '__DONE__:0' })}\n\n`);
+        res.end();
+
+        setTimeout(() => {
+            console.log('Painel atualizado. Reiniciando...');
+            process.exit(0);
+        }, 1500);
+
+    } catch (err) {
+        sendLog('ERR', `Erro geral durante atualização: ${err.message}`);
+        res.write(`data: ${JSON.stringify({ line: '__DONE__:1' })}\n\n`);
+        res.end();
+    }
+});
+
+// POST /api/update/install
+app.post('/api/update/install', (req, res) => {
+    res.json({ success: true, message: 'Processo iniciado. Acompanhe via SSE GET.' });
+});
+
+// GET /api/update/rollback
+app.get('/api/update/rollback', async (req, res) => {
+    res.setHeader('Content-Type',  'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection',    'keep-alive');
+    res.flushHeaders();
+
+    const sendLog = (type, message) => {
+        res.write(`data: ${JSON.stringify({ line: `[${type}] ${message}` })}\n\n`);
+    };
+
+    const targetVersion = req.query.version || '';
+    if (!targetVersion) {
+        sendLog('ERR', 'Versão para rollback não especificada.');
+        res.write(`data: ${JSON.stringify({ line: '__DONE__:1' })}\n\n`);
+        return res.end();
+    }
+
+    sendLog('INFO', `Iniciando rollback para a versão: ${targetVersion}...`);
+    const backupDir = path.join(__dirname, 'backups', 'panel-backups', `version-${targetVersion}`);
+
+    if (!fs.existsSync(backupDir)) {
+        sendLog('ERR', `Nenhum backup encontrado para a versão: ${targetVersion}`);
+        res.write(`data: ${JSON.stringify({ line: '__DONE__:1' })}\n\n`);
+        return res.end();
+    }
+
+    try {
+        sendLog('INFO', 'Restaurando arquivos de backup...');
+        const itemsToRestore = ['public', 'scripts', 'server.js', 'package.json', 'package-lock.json'];
+        
+        for (const item of itemsToRestore) {
+            const srcPath = path.join(backupDir, item);
+            const destPath = path.join(__dirname, item);
+            if (fs.existsSync(srcPath)) {
+                fs.cpSync(srcPath, destPath, { recursive: true, force: true });
+            }
+        }
+        
+        sendLog('OK', `Rollback para a versão ${targetVersion} concluído com sucesso!`);
+        res.write(`data: ${JSON.stringify({ line: '__DONE__:0' })}\n\n`);
+        res.end();
+
+        setTimeout(() => {
+            console.log(`Rollback aplicado. Reiniciando na versão ${targetVersion}...`);
+            process.exit(0);
+        }, 1500);
+
+    } catch (err) {
+        sendLog('ERR', `Erro durante o rollback: ${err.message}`);
+        res.write(`data: ${JSON.stringify({ line: '__DONE__:1' })}\n\n`);
+        res.end();
+    }
+});
+
+// POST /api/update/rollback
+app.post('/api/update/rollback', (req, res) => {
+    res.json({ success: true, message: 'Rollback iniciado. Acompanhe via SSE GET.' });
+});
 
 // Status rápido dos serviços (sem script externo)
 app.get('/api/health-check/status', async (req, res) => {

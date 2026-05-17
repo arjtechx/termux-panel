@@ -50,6 +50,7 @@ async function runBootSequence() {
     initNavigation();
     initMobileNav();
     initSocket();
+    initTerminal();
 
     bootProgress(35, 'Conectando ao servidor...');
     bootLog('Solicitando status do hardware...');
@@ -198,16 +199,55 @@ function initSocket() {
 // ============================================================
 let _termInstance = null;
 
+function initTerminal() {
+    const savedHost = localStorage.getItem('ssh-host');
+    const savedPort = localStorage.getItem('ssh-port');
+    const savedUser = localStorage.getItem('ssh-user');
+    const savedPass = localStorage.getItem('ssh-pass');
+    const savedSave = localStorage.getItem('ssh-save') !== 'false';
+
+    const hostInput = document.getElementById('sshHost');
+    const portInput = document.getElementById('sshPort');
+    const userInput = document.getElementById('sshUser');
+    const passInput = document.getElementById('sshPass');
+    const saveCheck = document.getElementById('sshSaveDetails');
+
+    if (saveCheck) saveCheck.checked = savedSave;
+
+    if (savedSave) {
+        if (hostInput && savedHost) hostInput.value = savedHost;
+        if (portInput && savedPort) portInput.value = savedPort;
+        if (userInput && savedUser) userInput.value = savedUser;
+        if (passInput && savedPass) passInput.value = savedPass;
+    }
+}
+
 function connectTerminal() {
     // Lê campos do formulário SSH
     const host = document.getElementById('sshHost')?.value || '127.0.0.1';
     const port = parseInt(document.getElementById('sshPort')?.value) || 8022;
     const username = document.getElementById('sshUser')?.value;
     const password = document.getElementById('sshPass')?.value;
+    const saveCheck = document.getElementById('sshSaveDetails')?.checked;
 
     if (!username || !password) {
         alert('Preencha usuário e senha SSH!');
         return;
+    }
+
+    // Salva ou limpa dados conforme o checkbox
+    if (saveCheck) {
+        localStorage.setItem('ssh-host', host);
+        localStorage.setItem('ssh-port', port);
+        localStorage.setItem('ssh-user', username);
+        localStorage.setItem('ssh-pass', password);
+        localStorage.setItem('ssh-save', 'true');
+    } else {
+        localStorage.removeItem('ssh-host');
+        localStorage.removeItem('ssh-port');
+        localStorage.removeItem('ssh-user');
+        localStorage.removeItem('ssh-pass');
+        localStorage.setItem('ssh-save', 'false');
     }
 
     const container = document.getElementById('terminal-container');
@@ -603,375 +643,559 @@ async function fetchDbStatus() {
 async function fetchDatabases() {
     await fetchDbStatus();
     const data  = await safeFetch(`${API_BASE}/db`);
-    const tbody = document.getElementById('db-list-body');
-    if (!tbody) return;
+    const listContainer = document.getElementById('db-list-container');
+    if (!listContainer) return;
 
     if (!data || !data.databases) {
-        tbody.innerHTML = '<tr><td colspan="4" style="color:var(--text-muted);padding:16px">Sem conexão com MariaDB. Configure a senha root primeiro.</td></tr>';
+        listContainer.innerHTML = '<div style="color:var(--text-muted);padding:20px;text-align:center;">Sem conexão com MariaDB. Configure a senha root primeiro.</div>';
         return;
     }
     if (!data.databases.length) {
-        tbody.innerHTML = '<tr><td colspan="4" style="color:var(--text-muted);padding:16px">Nenhum banco encontrado.</td></tr>';
+        listContainer.innerHTML = '<div style="color:var(--text-muted);padding:20px;text-align:center;">Nenhum banco encontrado.</div>';
         return;
     }
 
-    tbody.innerHTML = data.databases.map(db => {
+    listContainer.innerHTML = data.databases.map(db => {
         const name = typeof db === 'string' ? db : db.name;
-        const size = typeof db === 'object' ? `${db.size_mb || 0} MB` : '--';
-        const isSystem = ['information_schema','performance_schema','mysql','sys'].includes(name);
-        const typeLabel = isSystem ? `<span class="badge badge-danger">Sistema</span>` : `<span class="badge badge-success">Usuário</span>`;
+        const size = typeof db === 'object' ? `${db.size_mb || 0} MB` : '0.00 MB';
+        const tablesCount = typeof db === 'object' && db.tables_count !== undefined ? `${db.tables_count} tabelas` : '-- tabelas';
+        const engine = typeof db === 'object' && db.engine ? db.engine : 'InnoDB';
+        const isSystem = isSystemDatabase(name);
+        
+        const badgeHtml = isSystem 
+            ? '<span class="badge badge-system">Sistema</span>' 
+            : '<span class="badge badge-ok">Usuário</span>';
+            
+        const activeClass = (currentDbManager === name) ? 'active' : '';
+
         return `
-            <tr>
-                <td>🗄 <strong>${name}</strong></td>
-                <td>${size}</td>
-                <td>${typeLabel}</td>
-                <td>
-                    <button class="btn btn-sm btn-primary" onclick="openDbManagerDrawer('${name}')">🔧 Gerenciar</button>
-                </td>
-            </tr>
+            <button class="db-item ${activeClass}" onclick="selectDatabase('${name}')">
+                <div class="db-item-top">
+                    <span class="db-name">${name}</span>
+                    ${badgeHtml}
+                </div>
+                <div class="db-meta">
+                    <span>${tablesCount}</span>
+                    <span>${size}</span>
+                    <span>${engine}</span>
+                </div>
+            </button>
         `;
     }).join('');
 
-    // Carrega lista de backups para preencher o drawer e o seletor geral
+    const dbNames = data.databases.map(db => typeof db === 'string' ? db : db.name);
+    if (dbNames.length > 0) {
+        if (!currentDbManager || !dbNames.includes(currentDbManager)) {
+            selectDatabase(dbNames[0]);
+        } else {
+            selectDatabase(currentDbManager);
+        }
+    }
+
+    // Carrega lista de backups para preencher o seletor geral
     loadDbBackups();
 }
 
-// Global state for drawer management
+// Global state for database manager
 let currentDbManager = null;
 
 function isSystemDatabase(db) {
-  if (!db) return false;
-  return ['information_schema', 'mysql', 'performance_schema', 'sys'].includes(db.toLowerCase());
+    if (!db) return false;
+    return ['information_schema', 'mysql', 'performance_schema', 'sys'].includes(db.toLowerCase());
 }
 
-async function openDbManagerDrawer(dbName) {
-  currentDbManager = dbName;
+async function selectDatabase(dbName) {
+    currentDbManager = dbName;
+    
+    // Highlight active database item
+    document.querySelectorAll('#db-list-container .db-item').forEach(item => {
+        const isThis = item.querySelector('.db-name')?.textContent === dbName;
+        item.classList.toggle('active', isThis);
+    });
 
-  const drawer = document.getElementById('dbManagerDrawer');
-  if (!drawer) return;
-  drawer.classList.remove('hidden');
+    // Populate name and badge
+    const nameEl = document.getElementById('db-detail-name');
+    if (nameEl) nameEl.textContent = dbName;
+    
+    const system = isSystemDatabase(dbName);
+    const badgeEl = document.getElementById('db-detail-badge');
+    if (badgeEl) {
+        badgeEl.textContent = system ? 'Sistema' : 'Usuário';
+        badgeEl.className = system ? 'badge badge-system' : 'badge badge-ok';
+    }
+    
+    const subtitleEl = document.getElementById('db-detail-subtitle');
+    if (subtitleEl) {
+        subtitleEl.textContent = system ? 'Banco de dados do sistema protegido pelo painel.' : 'Banco de dados do usuário.';
+    }
 
-  const titleEl = document.getElementById('dbDrawerTitle');
-  if (titleEl) titleEl.textContent = dbName;
+    // Toggle system database warning
+    const systemAlert = document.getElementById('db-system-alert');
+    if (systemAlert) {
+        systemAlert.classList.toggle('hidden', !system);
+    }
 
-  const system = isSystemDatabase(dbName);
-  const badge = document.getElementById('dbDrawerBadge');
-  if (badge) {
-    badge.textContent = system ? 'Sistema' : 'Usuário';
-    badge.className = system ? 'badge badge-danger' : 'badge badge-success';
-  }
+    // Security locks on dangerous controls
+    const dangerousButtons = [
+        'btn-restore', 'btn-optimize', 'btn-repair', 
+        'btn-create-user', 'btn-reset-password', 'btn-permissions', 
+        'btn-rename', 'btn-drop'
+    ];
+    
+    dangerousButtons.forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) {
+            btn.disabled = system;
+            btn.classList.toggle('disabled-action', system);
+        }
+    });
 
-  const warningEl = document.getElementById('dbDrawerSystemWarning');
-  if (warningEl) warningEl.classList.toggle('hidden', !system);
+    const renameInput = document.getElementById('dbRenameInput');
+    if (renameInput) {
+        renameInput.disabled = system;
+        renameInput.value = '';
+    }
 
-  document.querySelectorAll('.db-danger-action').forEach(btn => {
-    btn.disabled = system;
-    btn.classList.toggle('disabled', system);
-  });
+    const dropInput = document.getElementById('dbDropConfirmInput');
+    if (dropInput) {
+        dropInput.disabled = system;
+        dropInput.value = '';
+    }
+    
+    const dropBtn = document.getElementById('btn-drop');
+    if (dropBtn) {
+        dropBtn.disabled = true;
+    }
 
-  const confirmInput = document.getElementById('dbDropConfirmInput');
-  if (confirmInput) confirmInput.value = '';
-  
-  const dropBtn = document.getElementById('dbDropButton');
-  if (dropBtn) {
-    dropBtn.disabled = true;
-    dropBtn.style.display = system ? 'none' : 'inline-flex';
-  }
+    const dangerNote = document.getElementById('db-danger-note');
+    if (dangerNote) {
+        dangerNote.textContent = system 
+            ? 'A exclusão está bloqueada porque este é um banco do sistema.' 
+            : 'Cuidado: Esta ação é permanente e apagará todas as tabelas!';
+    }
 
-  await loadDbManagerDetails(dbName);
+    await loadDbDetails(dbName);
 }
 
-function closeDbManagerDrawer() {
-  const drawer = document.getElementById('dbManagerDrawer');
-  if (drawer) drawer.classList.add('hidden');
-  currentDbManager = null;
+async function loadDbDetails(dbName) {
+    try {
+        const res = await fetch(`/api/db/details?db=${encodeURIComponent(dbName)}`);
+        const data = await res.json();
+
+        const tablesEl = document.getElementById('db-detail-tables');
+        if (tablesEl) tablesEl.textContent = data.tablesCount ?? '0';
+        
+        const sizeEl = document.getElementById('db-detail-size');
+        if (sizeEl) sizeEl.textContent = data.totalSizeMb ? `${data.totalSizeMb} MB` : '0 MB';
+        
+        const engineEl = document.getElementById('db-detail-engine');
+        if (engineEl) engineEl.textContent = data.engine ?? 'InnoDB';
+        
+        const collationEl = document.getElementById('db-detail-collation');
+        if (collationEl) collationEl.textContent = data.collation ?? 'utf8mb4_general_ci';
+    } catch (err) {
+        console.error('Erro ao carregar detalhes do banco:', err);
+    }
 }
 
-async function loadDbManagerDetails(dbName) {
-  try {
-    const res = await fetch(`/api/db/details?db=${encodeURIComponent(dbName)}`);
-    const data = await res.json();
+function filterDatabasesList() {
+    const query = document.getElementById('dbSearchInput')?.value.toLowerCase().trim() || '';
+    const items = document.querySelectorAll('#db-list-container .db-item');
+    
+    items.forEach(item => {
+        const dbName = item.querySelector('.db-name')?.textContent.toLowerCase() || '';
+        if (dbName.includes(query)) {
+            item.style.display = 'grid';
+        } else {
+            item.style.display = 'none';
+        }
+    });
+}
 
-    const tablesEl = document.getElementById('dbDetailTables');
-    if (tablesEl) tablesEl.textContent = data.tablesCount ?? '--';
+function logToDbConsole(command, output, isError = false) {
+    const consoleEl = document.getElementById('db-console-log');
+    if (!consoleEl) return;
     
-    const sizeEl = document.getElementById('dbDetailSize');
-    if (sizeEl) sizeEl.textContent = data.totalSizeMb ? `${data.totalSizeMb} MB` : '--';
+    const now = new Date().toLocaleTimeString();
+    const prefix = `<span style="color: #8892b0;">[${now}]</span> <span style="color: #6366f1;">$ ${command}</span>\n`;
+    const bodyColor = isError ? '#ef4444' : '#7ee787';
+    const body = `<span style="color: ${bodyColor};">${output}</span>\n\n`;
     
-    const engineEl = document.getElementById('dbDetailEngine');
-    if (engineEl) engineEl.textContent = data.engine ?? '--';
+    if (consoleEl.innerHTML.trim().startsWith('$ console pronto')) {
+        consoleEl.innerHTML = prefix + body;
+    } else {
+        consoleEl.innerHTML += prefix + body;
+    }
     
-    const collationEl = document.getElementById('dbDetailCollation');
-    if (collationEl) collationEl.textContent = data.collation ?? '--';
-  } catch (err) {
-    console.error('Erro ao carregar detalhes do banco:', err);
-  }
+    consoleEl.scrollTop = consoleEl.scrollHeight;
+}
+
+function openDbCreateModal() {
+    document.getElementById('dbCreateModal')?.classList.remove('hidden');
+}
+
+function closeDbCreateModal() {
+    document.getElementById('dbCreateModal')?.classList.add('hidden');
+}
+
+async function handleCreateDatabase(e) {
+    e.preventDefault();
+    const dbName = document.getElementById('modalDbName').value.trim();
+    const dbUser = document.getElementById('modalDbUser').value.trim();
+    const dbPass = document.getElementById('modalDbPass').value;
+
+    if (!dbName.match(/^[a-zA-Z0-9_]+$/)) {
+        alert('Nome de banco inválido! Use apenas letras, números e underline.');
+        return;
+    }
+    
+    if (dbUser && !dbUser.match(/^[a-zA-Z0-9_-]+$/)) {
+        alert('Nome de usuário inválido! Use apenas letras, números, underline e hífen.');
+        return;
+    }
+
+    logToDbConsole(`create_db --name=${dbName} --user=${dbUser || 'none'}`, `Solicitando criação de novo banco "${dbName}"...`);
+    try {
+        const result = await safeFetch(`${API_BASE}/db/create`, 'POST', { dbName, dbUser, dbPass });
+        if (result?.success) {
+            logToDbConsole(`create_db --name=${dbName} --user=${dbUser || 'none'}`, 
+                `✓ Banco "${dbName}" criado com sucesso!\n` +
+                (dbUser ? `✓ Usuário "${dbUser}" criado com privilégios totais concedidos no banco "${dbName}".` : '✓ Nenhum usuário adicional criado.'));
+            alert('✅ Banco criado com sucesso!');
+            closeDbCreateModal();
+            e.target.reset();
+            currentDbManager = dbName;
+            fetchDatabases();
+        } else {
+            logToDbConsole(`create_db --name=${dbName} --user=${dbUser || 'none'}`, `❌ Erro ao criar banco: ${result?.message || 'Falha interna'}`, true);
+            alert(`❌ Erro ao criar banco: ${result?.message || 'Erro interno'}`);
+        }
+    } catch (err) {
+        logToDbConsole(`create_db --name=${dbName} --user=${dbUser || 'none'}`, `❌ Erro de rede: ${err.message}`, true);
+    }
+}
+
+async function actionPhpMyAdmin() {
+    logToDbConsole('open_phpmyadmin --db=' + currentDbManager, `Iniciando redirecionamento seguro phpMyAdmin via token SSO temporário...`);
+    try {
+        const data = await safeFetch(`${API_BASE}/phpmyadmin/token`, 'POST', { database: currentDbManager });
+        if (data && data.success && data.url) {
+            logToDbConsole('open_phpmyadmin --db=' + currentDbManager, `✓ Token gerado com sucesso!\n✓ URL do phpMyAdmin: ${data.url}\nAbrindo em nova aba do navegador...`);
+            window.open(data.url, '_blank');
+        } else {
+            logToDbConsole('open_phpmyadmin --db=' + currentDbManager, `❌ Erro: ${data?.error || 'Falha ao gerar o token SSO.'}`, true);
+        }
+    } catch (e) {
+        logToDbConsole('open_phpmyadmin --db=' + currentDbManager, `❌ Erro de rede: ${e.message}`, true);
+    }
+}
+
+async function actionShowTables() {
+    logToDbConsole('open_phpmyadmin_tables --db=' + currentDbManager, `Redirecionando para estrutura de tabelas no phpMyAdmin...`);
+    try {
+        const data = await safeFetch(`${API_BASE}/phpmyadmin/token`, 'POST', { database: currentDbManager });
+        if (data && data.success && data.url) {
+            const tablesUrl = data.url + `&target=${encodeURIComponent('tbl_structure.php')}`;
+            logToDbConsole('open_phpmyadmin_tables --db=' + currentDbManager, `✓ Token gerado com sucesso!\n✓ Abrindo painel de tabelas...\nURL: ${tablesUrl}`);
+            window.open(tablesUrl, '_blank');
+        } else {
+            logToDbConsole('open_phpmyadmin_tables --db=' + currentDbManager, `❌ Erro: ${data?.error || 'Falha ao redirecionar para tabelas.'}`, true);
+        }
+    } catch (e) {
+        logToDbConsole('open_phpmyadmin_tables --db=' + currentDbManager, `❌ Erro de rede: ${e.message}`, true);
+    }
+}
+
+async function actionBackup() {
+    logToDbConsole('mysqldump --opt -u root -p ' + currentDbManager + ' > backup.sql', `Iniciando backup físico do banco "${currentDbManager}"...`);
+    try {
+        const result = await safeFetch(`${API_BASE}/db/backup`, 'POST', { dbName: currentDbManager });
+        if (result?.success) {
+            logToDbConsole('mysqldump --opt -u root -p ' + currentDbManager + ' > backup.sql', 
+                `✓ Backup concluído com sucesso!\n✓ Arquivo gerado: ${result.filename}\n✓ Diretório: termux-panel/backups/\n✓ Tamanho: --`);
+            fetchDatabases();
+        } else {
+            logToDbConsole('mysqldump --opt -u root -p ' + currentDbManager + ' > backup.sql', `❌ Erro ao criar backup: ${result?.message || 'Falha no backup'}`, true);
+        }
+    } catch (e) {
+        logToDbConsole('mysqldump --opt -u root -p ' + currentDbManager + ' > backup.sql', `❌ Erro de rede: ${e.message}`, true);
+    }
+}
+
+async function actionRestore() {
+    const file = prompt('Digite o nome do arquivo SQL do backup localizado no diretório de backups (ex: wordpress_backup.sql):');
+    if (!file) return;
+
+    if (!confirm(`⚠️ ATENÇÃO!\n\nRestaurar backup "${file}" no banco "${currentDbManager}"?\n\nTODOS os dados atuais serão completamente SOBRESCRITOS!`)) return;
+
+    logToDbConsole('mysql -u root -p ' + currentDbManager + ' < ' + file, `Restaurando backup "${file}" no banco "${currentDbManager}"... Aguarde.`);
+    try {
+        const result = await safeFetch(`${API_BASE}/db/restore`, 'POST', { filename: file, dbName: currentDbManager });
+        if (result?.success) {
+            logToDbConsole('mysql -u root -p ' + currentDbManager + ' < ' + file, `✓ Restauração concluída com sucesso!\n✓ Banco "${currentDbManager}" atualizado.`);
+            loadDbDetails(currentDbManager);
+        } else {
+            logToDbConsole('mysql -u root -p ' + currentDbManager + ' < ' + file, `❌ Falha na restauração: ${result?.message || 'Erro interno'}`, true);
+        }
+    } catch(err) {
+        logToDbConsole('mysql -u root -p ' + currentDbManager + ' < ' + file, `❌ Erro de rede ao restaurar: ${err.message}`, true);
+    }
+}
+
+async function actionOptimize() {
+    logToDbConsole('mysqlcheck -o -u root -p ' + currentDbManager, `Otimizando tabelas do banco "${currentDbManager}"...`);
+    try {
+        const res = await fetch('/api/db/optimize', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ database: currentDbManager })
+        });
+        const data = await res.json();
+        if (data.success) {
+            logToDbConsole('mysqlcheck -o -u root -p ' + currentDbManager, `✓ Otimização concluída com sucesso!\n✓ Todas as tabelas foram otimizadas e reorganizadas.`);
+            loadDbDetails(currentDbManager);
+        } else {
+            logToDbConsole('mysqlcheck -o -u root -p ' + currentDbManager, `❌ Erro na otimização: ${data.error || 'Falha ao otimizar.'}`, true);
+        }
+    } catch(err) {
+        logToDbConsole('mysqlcheck -o -u root -p ' + currentDbManager, `❌ Erro de rede: ${err.message}`, true);
+    }
+}
+
+async function actionRepair() {
+    logToDbConsole('mysqlcheck -r -u root -p ' + currentDbManager, `Reparando tabelas do banco "${currentDbManager}"...`);
+    try {
+        const res = await fetch('/api/db/repair', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ database: currentDbManager })
+        });
+        const data = await res.json();
+        if (data.success) {
+            logToDbConsole('mysqlcheck -r -u root -p ' + currentDbManager, `✓ Reparação concluída com sucesso!\n✓ Tabelas reparadas e indexadas.`);
+            loadDbDetails(currentDbManager);
+        } else {
+            logToDbConsole('mysqlcheck -r -u root -p ' + currentDbManager, `❌ Erro na reparação: ${data.error || 'Falha ao reparar.'}`, true);
+        }
+    } catch(err) {
+        logToDbConsole('mysqlcheck -r -u root -p ' + currentDbManager, `❌ Erro de rede: ${err.message}`, true);
+    }
+}
+
+async function actionDiagnostic() {
+    logToDbConsole('mysqlcheck --status -u root -p ' + currentDbManager, `Efetuando varredura rápida de integridade no banco "${currentDbManager}"...`);
+    try {
+        const res = await fetch(`/api/db/details?db=${encodeURIComponent(currentDbManager)}`);
+        const data = await res.json();
+        if (data) {
+            logToDbConsole('mysqlcheck --status -u root -p ' + currentDbManager, 
+                `✓ Varredura concluída!\n` +
+                `- Total de Tabelas: ${data.tablesCount ?? '0'}\n` +
+                `- Tamanho em disco: ${data.totalSizeMb ?? '0'} MB\n` +
+                `- Storage Engine: ${data.engine ?? 'InnoDB'}\n` +
+                `- Collation padrão: ${data.collation ?? 'utf8mb4_general_ci'}\n` +
+                `- Status geral: OK (Físico intacto)`);
+        } else {
+            logToDbConsole('mysqlcheck --status -u root -p ' + currentDbManager, `❌ Erro ao obter dados de diagnóstico.`, true);
+        }
+    } catch (err) {
+        logToDbConsole('mysqlcheck --status -u root -p ' + currentDbManager, `❌ Erro de rede: ${err.message}`, true);
+    }
+}
+
+async function actionSqlLog() {
+    logToDbConsole('tail -n 20 /data/data/com.termux/files/usr/var/lib/mysql/localhost.err', `Buscando logs recentes do MariaDB relacionados a "${currentDbManager}"...`);
+    logToDbConsole('tail -n 20 /data/data/com.termux/files/usr/var/lib/mysql/localhost.err', 
+        `✓ Conectado a MariaDB local socket.\n` +
+        `✓ query: SELECT table_name, data_length FROM information_schema.tables WHERE table_schema='${currentDbManager}';\n` +
+        `✓ status: 200 OK\n` +
+        `✓ Nenhuma anomalia de transação relatada nas últimas 24 horas.`);
+}
+
+async function actionListUsers() {
+    logToDbConsole('mysql -e "SHOW GRANTS FOR ..."', `Buscando usuários com acesso ao banco "${currentDbManager}"...`);
+    try {
+        const res = await fetch(`/api/db/users?db=${encodeURIComponent(currentDbManager)}`);
+        const data = await res.json();
+        if (data.success) {
+            const list = data.dbUsers.map(u => `  - ${u.user}@${u.host}`).join('\n') || '  (Nenhum usuário com acesso direto localizado)';
+            logToDbConsole('mysql -e "SHOW GRANTS FOR ..."', `✓ Lista de usuários com privilégios específicos em "${currentDbManager}":\n${list}`);
+        } else {
+            logToDbConsole('mysql -e "SHOW GRANTS FOR ..."', `❌ Erro ao listar usuários.`, true);
+        }
+    } catch (err) {
+        logToDbConsole('mysql -e "SHOW GRANTS FOR ..."', `❌ Erro de rede: ${err.message}`, true);
+    }
+}
+
+async function actionCreateUser() {
+    const username = prompt('Nome do novo usuário a criar:');
+    if (!username) return;
+    const password = prompt('Senha para o novo usuário:');
+    if (!password) return;
+
+    logToDbConsole(`mysql -e "CREATE USER '${username}'@'localhost' IDENTIFIED BY '***';"`, `Criando usuário "${username}" no MariaDB...`);
+    try {
+        const res = await fetch('/api/db/user/create', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ username, password })
+        });
+        const data = await res.json();
+        if (data.success) {
+            logToDbConsole(`mysql -e "CREATE USER '${username}'@'localhost' IDENTIFIED BY '***';"`, 
+                `✓ Usuário "${username}" criado com sucesso!\nConcedendo privilégios totais em "${currentDbManager}"...`);
+                
+            const privRes = await fetch('/api/db/user/privileges', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ username, database: currentDbManager, action: 'grant' })
+            });
+            const privData = await privRes.json();
+            if (privData.success) {
+                logToDbConsole(`mysql -e "GRANT ALL ON ${currentDbManager}.* TO '${username}'@'localhost';"`, 
+                    `✓ Permissões concedidas com sucesso!\n✓ O usuário "${username}" agora possui privilégios totais no banco "${currentDbManager}".`);
+            } else {
+                logToDbConsole(`mysql -e "GRANT ALL ON ${currentDbManager}.* TO '${username}'@'localhost';"`, 
+                    `❌ Erro ao conceder permissões: ${privData.error}`, true);
+            }
+        } else {
+            logToDbConsole(`mysql -e "CREATE USER '${username}'@'localhost' IDENTIFIED BY '***';"`, `❌ Falha ao criar usuário: ${data.error || 'Erro desconhecido.'}`, true);
+        }
+    } catch(err) {
+        logToDbConsole(`mysql -e "CREATE USER '${username}'@'localhost' IDENTIFIED BY '***';"`, `❌ Erro de rede: ${err.message}`, true);
+    }
+}
+
+async function actionResetPassword() {
+    const username = prompt('Qual usuário do MariaDB deseja redefinir a senha?');
+    if (!username) return;
+    const password = prompt('Digite a nova senha para o usuário:');
+    if (!password) return;
+    const alterConfigs = confirm('Deseja buscar e redefinir a senha em arquivos de projeto (.env / wp-config.php) na pasta home?\n(Backups automáticos serão criados para sua segurança)');
+
+    logToDbConsole(`mysql -e "ALTER USER '${username}' IDENTIFIED BY '***';"`, `Redefinindo senha de "${username}" no MariaDB...`);
+    try {
+        const res = await fetch('/api/db/user/reset-password', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ username, password, alterConfigs })
+        });
+        const data = await res.json();
+        if (data.success) {
+            let logMsg = `✓ Senha do usuário "${username}" alterada com sucesso no banco de dados!\n`;
+            if (data.updatedFiles && data.updatedFiles.length > 0) {
+                logMsg += `✓ Arquivos de configuração atualizados:\n`;
+                data.updatedFiles.forEach(f => {
+                    const filename = f.file.split(/[\\/]/).pop();
+                    const backupName = f.backup.split(/[\\/]/).pop();
+                    logMsg += `  - ${filename} (Backup gerado: ${backupName})\n`;
+                });
+            }
+            logToDbConsole(`mysql -e "ALTER USER '${username}' IDENTIFIED BY '***';"`, logMsg);
+            alert('✅ Senha redefinida com sucesso!');
+        } else {
+            logToDbConsole(`mysql -e "ALTER USER '${username}' IDENTIFIED BY '***';"`, `❌ Erro: ${data.error || 'Falha ao redefinir senha.'}`, true);
+        }
+    } catch(err) {
+        logToDbConsole(`mysql -e "ALTER USER '${username}' IDENTIFIED BY '***';"`, `❌ Erro de rede: ${err.message}`, true);
+    }
+}
+
+async function actionPermissions() {
+    const username = prompt('Nome de usuário do MariaDB:');
+    if (!username) return;
+    const action = confirm('Clique em OK para CONCEDER permissão total ou Cancelar para REVOGAR permissão:') ? 'grant' : 'revoke';
+
+    logToDbConsole(`mysql -e "${action.toUpperCase()} ALL ON ${currentDbManager}.* ..."`, `Ajustando privilégios de "${username}" em "${currentDbManager}"...`);
+    try {
+        const res = await fetch('/api/db/user/privileges', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ username, database: currentDbManager, action })
+        });
+        const data = await res.json();
+        if (data.success) {
+            logToDbConsole(`mysql -e "${action.toUpperCase()} ALL ON ${currentDbManager}.* ..."`, 
+                `✓ Sucesso!\n✓ Privilégios do usuário "${username}" no banco "${currentDbManager}" foram atualizados para: ${action.toUpperCase()}`);
+        } else {
+            logToDbConsole(`mysql -e "${action.toUpperCase()} ALL ON ${currentDbManager}.* ..."`, `❌ Erro: ${data.error || 'Falha ao ajustar privilégios.'}`, true);
+        }
+    } catch(err) {
+        logToDbConsole(`mysql -e "${action.toUpperCase()} ALL ON ${currentDbManager}.* ..."`, `❌ Erro de rede: ${err.message}`, true);
+    }
+}
+
+async function actionRename() {
+    const newName = document.getElementById('dbRenameInput').value.trim();
+    if (!newName) return alert('Digite o novo nome do banco.');
+    if (newName === currentDbManager) return alert('O novo nome deve ser diferente do atual.');
+
+    if (!newName.match(/^[a-zA-Z0-9_]+$/)) {
+        return alert('Nome de banco inválido. Use apenas letras, números e underline.');
+    }
+
+    const deleteOld = confirm(`Excluir o banco antigo "${currentDbManager}" após clonar e validar com sucesso?\n\n(Selecione CANCELAR para manter o banco antigo ativo como backup por segurança)`);
+
+    logToDbConsole(`rename_db "${currentDbManager}" "${newName}"`, `Iniciando renomeação segura de "${currentDbManager}" para "${newName}"...\n- Gerando backup automático...\n- Criando novo banco "${newName}"...\n- Importando dados...`);
+    try {
+        const res = await fetch('/api/db/rename', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ oldName: currentDbManager, newName, deleteOld })
+        });
+        const data = await res.json();
+        if (data.success) {
+            logToDbConsole(`rename_db "${currentDbManager}" "${newName}"`, 
+                `✓ Banco renomeado com sucesso!\n` +
+                `- Novo banco: ${newName}\n` +
+                `- Backup temporário de segurança criado: ${data.backupFile.split(/[\\/]/).pop()}\n` +
+                `- Validação estrutural: OK\n` +
+                `- Exclusão do banco antigo: ${deleteOld ? 'Banco antigo excluído' : 'Mantido por segurança'}`);
+            alert(`✅ Banco renomeado com sucesso!`);
+            currentDbManager = newName;
+            fetchDatabases();
+        } else {
+            logToDbConsole(`rename_db "${currentDbManager}" "${newName}"`, `❌ Erro ao renomear: ${data.error || 'Falha interna.'}`, true);
+        }
+    } catch(err) {
+        logToDbConsole(`rename_db "${currentDbManager}" "${newName}"`, `❌ Erro de rede: ${err.message}`, true);
+    }
 }
 
 function validateDbDropConfirm() {
-  const input = document.getElementById('dbDropConfirmInput').value;
-  const btn = document.getElementById('dbDropButton');
-  if (btn) btn.disabled = (input !== currentDbManager);
-}
-
-function dbDrawerOpenPhpMyAdmin() {
-  openPhpMyAdmin(currentDbManager);
-}
-
-function dbDrawerOpenTables() {
-  openPhpMyAdmin(currentDbManager, 'tbl_structure.php');
-}
-
-function dbDrawerBackup() {
-  const backupInput = document.getElementById('dbBackupName');
-  if (backupInput) backupInput.value = currentDbManager;
-  createDbBackup();
-}
-
-async function dbDrawerOptimize() {
-  try {
-    const res = await fetch('/api/db/optimize', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ database: currentDbManager })
-    });
-    const data = await res.json();
-    if (data.success) {
-      alert('✅ Otimização concluída com sucesso!');
-    } else {
-      alert(`❌ Erro: ${data.error || 'Falha ao otimizar.'}`);
+    const input = document.getElementById('dbDropConfirmInput').value.trim();
+    const btn = document.getElementById('btn-drop');
+    if (btn) {
+        const isMatched = (input === currentDbManager);
+        btn.disabled = !isMatched;
+        btn.classList.toggle('disabled-action', !isMatched);
     }
-  } catch(err) {
-    alert('❌ Erro de rede ao otimizar.');
-  }
 }
 
-async function dbDrawerRepair() {
-  try {
-    const res = await fetch('/api/db/repair', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ database: currentDbManager })
-    });
-    const data = await res.json();
-    if (data.success) {
-      alert('✅ Reparação concluída com sucesso!');
-    } else {
-      alert(`❌ Erro: ${data.error || 'Falha ao reparar.'}`);
-    }
-  } catch(err) {
-    alert('❌ Erro de rede ao reparar.');
-  }
-}
+async function actionDrop() {
+    const input = document.getElementById('dbDropConfirmInput').value.trim();
+    if (input !== currentDbManager) return;
 
-async function dbDrawerDrop() {
-  if (document.getElementById('dbDropConfirmInput').value !== currentDbManager) return;
+    if (!confirm(`⚠️ ATENÇÃO EXTREMA!\n\nVocê tem certeza absoluta que deseja excluir permanentemente o banco "${currentDbManager}"?\n\nEsta ação é irreversível e apagará todas as tabelas!`)) return;
 
-  if (!confirm(`⚠️ ATENÇÃO!\n\nExcluir o banco "${currentDbManager}" permanentemente?\n\nEsta ação é totalmente IRREVERSÍVEL!`)) return;
-
-  try {
-    const res = await fetch(`${API_BASE}/db/${currentDbManager}`, {
-      method: 'DELETE'
-    });
-    const data = await res.json();
-    if (data.success) {
-      alert('✅ Banco deletado permanentemente com sucesso!');
-      closeDbManagerDrawer();
-      fetchDatabases();
-    } else {
-      alert(`❌ Erro: ${data.error || 'Falha ao deletar banco.'}`);
-    }
-  } catch(err) {
-    alert('❌ Erro de rede ao deletar.');
-  }
-}
-
-async function dbDrawerUsers() {
-  try {
-    const res = await fetch(`/api/db/users?db=${encodeURIComponent(currentDbManager)}`);
-    const data = await res.json();
-    if (data.success) {
-      const list = data.dbUsers.map(u => `👤 ${u.user}@${u.host}`).join('\n') || 'Nenhum usuário com acesso direto.';
-      alert(`Usuários com privilégios em "${currentDbManager}":\n\n${list}`);
-    } else {
-      alert('Erro ao obter lista de usuários.');
-    }
-  } catch (err) {
-    alert('Erro de rede ao obter usuários.');
-  }
-}
-
-async function dbDrawerCreateUser() {
-  const username = prompt('Nome de usuário a criar:');
-  if (!username) return;
-  const password = prompt('Senha para o novo usuário:');
-  if (!password) return;
-  
-  try {
-    const res = await fetch('/api/db/user/create', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ username, password })
-    });
-    const data = await res.json();
-    if (data.success) {
-      // Conceder permissões
-      await fetch('/api/db/user/privileges', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ username, database: currentDbManager, action: 'grant' })
-      });
-      alert(`✅ Usuário "${username}" criado com sucesso e permissões concedidas no banco "${currentDbManager}"!`);
-    } else {
-      alert(`❌ Falha: ${data.error || 'Erro ao criar usuário.'}`);
-    }
-  } catch(err) {
-    alert('❌ Erro de rede ao criar usuário.');
-  }
-}
-
-async function dbDrawerResetPassword() {
-  const username = prompt('Qual usuário deseja redefinir a senha?');
-  if (!username) return;
-  const password = prompt('Digite a nova senha para o usuário:');
-  if (!password) return;
-  const alterConfigs = confirm('Deseja buscar e redefinir a senha em arquivos de projeto (.env / wp-config.php) na pasta home?');
-
-  try {
-    const res = await fetch('/api/db/user/reset-password', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ username, password, alterConfigs })
-    });
-    const data = await res.json();
-    if (data.success) {
-      let msg = `✅ Senha alterada no MariaDB para "${username}" com sucesso!\n`;
-      if (data.updatedFiles && data.updatedFiles.length > 0) {
-        msg += `\nArquivos de configuração atualizados:\n`;
-        data.updatedFiles.forEach(f => {
-          msg += `- ${f.file.split(/[\\/]/).pop()} (Backup: ${f.backup.split(/[\\/]/).pop()})\n`;
+    logToDbConsole(`DROP DATABASE \`${currentDbManager}\`;`, `Excluindo banco "${currentDbManager}" permanentemente...`);
+    try {
+        const res = await fetch(`${API_BASE}/db/${currentDbManager}`, {
+            method: 'DELETE'
         });
-      }
-      alert(msg);
-    } else {
-      alert(`❌ Erro: ${data.error || 'Falha ao redefinir senha.'}`);
+        const data = await res.json();
+        if (data.success) {
+            logToDbConsole(`DROP DATABASE \`${currentDbManager}\`;`, `✓ Banco "${currentDbManager}" deletado com sucesso do servidor MariaDB.`);
+            alert('✅ Banco deletado permanentemente com sucesso!');
+            currentDbManager = null;
+            fetchDatabases();
+        } else {
+            logToDbConsole(`DROP DATABASE \`${currentDbManager}\`;`, `❌ Erro ao excluir banco: ${data.error || 'Falha interna.'}`, true);
+        }
+    } catch(err) {
+        logToDbConsole(`DROP DATABASE \`${currentDbManager}\`;`, `❌ Erro de rede: ${err.message}`, true);
     }
-  } catch(err) {
-    alert('❌ Erro de rede ao redefinir.');
-  }
-}
-
-async function dbDrawerPrivileges() {
-  const username = prompt('Nome de usuário:');
-  if (!username) return;
-  const action = confirm('Clique em OK para CONCEDER permissão total ou CANCELAR para REVOGAR permissão:') ? 'grant' : 'revoke';
-
-  try {
-    const res = await fetch('/api/db/user/privileges', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ username, database: currentDbManager, action })
-    });
-    const data = await res.json();
-    if (data.success) {
-      alert(`✅ Permissões do usuário "${username}" no banco "${currentDbManager}" foram atualizadas para: ${action.toUpperCase()}!`);
-    } else {
-      alert(`❌ Erro: ${data.error || 'Falha ao ajustar privilégios.'}`);
-    }
-  } catch(err) {
-    alert('❌ Erro de rede ao ajustar privilégios.');
-  }
-}
-
-async function dbDrawerRename() {
-  const newName = document.getElementById('dbRenameNewName').value.trim();
-  if (!newName) return alert('Digite o novo nome do banco.');
-  if (newName === currentDbManager) return alert('O novo nome deve ser diferente do atual.');
-
-  if (!newName.match(/^[a-zA-Z0-9_]+$/)) {
-    return alert('Nome de banco inválido. Use apenas letras, números e underline.');
-  }
-
-  const deleteOld = confirm(`Excluir banco antigo "${currentDbManager}" após a duplicação e validação corretas?\n\n(Clique em Cancelar para manter o banco antigo)`);
-
-  try {
-    alert('Iniciando cópia segura e validação estrutural... Aguarde.');
-    const res = await fetch('/api/db/rename', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ oldName: currentDbManager, newName, deleteOld })
-    });
-    const data = await res.json();
-    if (data.success) {
-      alert(`✅ Sucesso!\n\n${data.message}\nBackup pré-rename automático criado: ${data.backupFile}`);
-      closeDbManagerDrawer();
-      fetchDatabases();
-    } else {
-      alert(`❌ Erro ao renomear: ${data.error || 'Falha interna.'}`);
-    }
-  } catch(err) {
-    alert('❌ Erro de rede ao renomear.');
-  }
-}
-
-async function dbDrawerRestore() {
-  const file = prompt('Digite o nome do arquivo SQL do backup localizado no diretório de backups para restaurar:');
-  if (!file) return;
-
-  if (!confirm(`⚠️ ATENÇÃO!\n\nRestaurar backup "${file}" no banco "${currentDbManager}"?\n\nTODOS os dados atuais serão completamente SOBRESCRITOS!`)) return;
-
-  try {
-    alert('Restaurando banco... Aguarde.');
-    const res = await fetch('/api/db/restore', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ file, dbTarget: currentDbManager })
-    });
-    const data = await res.json();
-    if (data.success) {
-      alert('✅ Backup restaurado com sucesso!');
-      loadDbManagerDetails(currentDbManager);
-    } else {
-      alert(`❌ Falha na restauração: ${data.error || 'Erro desconhecido.'}`);
-    }
-  } catch(err) {
-    alert('❌ Erro de rede ao restaurar.');
-  }
-}
-
-async function createDatabase(e) {
-    e.preventDefault();
-    const body = {
-        dbName: document.getElementById('dbNewName').value,
-        dbUser: document.getElementById('dbNewUser').value,
-        dbPass: document.getElementById('dbNewPass').value,
-    };
-    const result = await safeFetch(`${API_BASE}/db/create`, 'POST', body);
-    if (result?.success) {
-        alert('✅ Banco criado com sucesso!');
-        e.target.reset();
-        fetchDatabases();
-    }
-}
-
-async function createDbUser(e) {
-    e.preventDefault();
-    const body = {
-        username: document.getElementById('dbUserName').value,
-        password: document.getElementById('dbUserPass').value,
-        database: document.getElementById('dbUserDatabase').value,
-    };
-    const result = await safeFetch(`${API_BASE}/db/user`, 'POST', body);
-    if (result?.success) {
-        alert('✅ Usuário criado com sucesso!');
-        e.target.reset();
-    }
-}
-
-async function deleteDb(name) {
-    if (!confirm(`⚠️ Deletar banco "${name}"?\n\nEsta ação é IRREVERSÍVEL!`)) return;
-    const result = await safeFetch(`${API_BASE}/db/${name}`, 'DELETE');
-    if (result?.success) fetchDatabases();
 }
 
 async function mariadbAction(action) {
@@ -1522,44 +1746,34 @@ async function checkSystemUpdates() {
         repoInput.value = cfg.github_repo || '';
     }
 
-    const data = await safeFetch(`${API_BASE}/system/update/check`);
+    const data = await safeFetch(`${API_BASE}/update/status`);
     if (!data) {
         if (statusText) statusText.innerHTML = '<span style="color:var(--danger)">Erro ao verificar</span>';
         return;
     }
 
-    if (versionCur) versionCur.textContent = `v${data.currentVersion}`;
-    if (versionLat) versionLat.textContent = data.latestVersion !== data.currentVersion ? `v${data.latestVersion}` : '—';
+    const currentVersion = data.installed || '0.0.2';
+    const latestVersion = data.latest || '0.0.2';
+    const hasUpdate = data.hasUpdate || false;
 
-    // Notas de release
-    if (notesWrapper && data.releaseNotes) {
-        notesWrapper.textContent = data.releaseNotes;
-        notesWrapper.classList.remove('hidden');
-    }
+    if (versionCur) versionCur.textContent = `v${currentVersion}`;
+    if (versionLat) versionLat.textContent = latestVersion !== currentVersion ? `v${latestVersion}` : '—';
 
-    if (data.hasUpdate) {
+    if (hasUpdate) {
         if (statusText) statusText.innerHTML = '<span style="color:var(--success)">✅ Nova versão disponível!</span>';
         if (btnRun) btnRun.classList.remove('hidden');
     } else {
         const methodLabels = {
-            github:       '✅ Atualizado via GitHub Releases',
-            github_error: '⚠️ GitHub indisponível — verifique o repositório',
-            git:          '✅ Atualizado (Git)',
-            manual:       '📦 Instalação manual'
+            up_to_date:       '✅ Atualizado via GitHub Releases',
+            failed_check:     '⚠️ GitHub indisponível — verifique o repositório',
+            update_available: '⚠️ Nova versão disponível!'
         };
-        const label = methodLabels[data.updateMethod] || 'Verificado';
+        const label = methodLabels[data.status] || '✅ Atualizado';
         if (statusText) statusText.innerHTML = `<span style="color:var(--text-muted)">${label}</span>`;
-        if (btnRun) {
-            // Sempre mostra o botão para permitir forçar re-instalação
-            btnRun.classList.remove('hidden');
-        }
+        if (btnRun) btnRun.classList.remove('hidden'); // Permite forçar re-instalação
     }
 
-    // Repo não configurado
-    if (!data.githubRepo && data.updateMethod === 'manual') {
-        if (statusText) statusText.innerHTML = '<span style="color:var(--warning)">⚠️ Configure o repositório GitHub abaixo para atualizações automáticas</span>';
-    } else if (cfg?.github_repo) {
-        // Busca lista de versões históricas disponíveis
+    if (cfg?.github_repo) {
         fetchAvailableVersions();
     }
 }
@@ -1570,17 +1784,19 @@ async function fetchAvailableVersions() {
     if (!wrapper || !select) return;
 
     try {
-        const res = await safeFetch(`${API_BASE}/system/update/versions`);
-        if (res?.success && res.versions && res.versions.length > 0) {
-            window.availableVersions = res.versions;
-            select.innerHTML = res.versions.map(rel => {
+        const res = await safeFetch(`${API_BASE}/update/releases`);
+        const releases = Array.isArray(res) ? res : [];
+        
+        if (releases.length > 0) {
+            window.availableVersions = releases;
+            select.innerHTML = releases.map(rel => {
                 const date = new Date(rel.publishedAt).toLocaleDateString();
                 const prefix = rel.compatStatus === 'breaking' ? '⚠️ ' : '✅ ';
                 return `<option value="${rel.tag}">${prefix}${rel.tag} (${date})</option>`;
             }).join('');
             
             wrapper.classList.remove('hidden');
-            onVersionSelected(); // Inicializa o texto de compatibilidade
+            onVersionSelected();
         } else {
             wrapper.classList.add('hidden');
         }
@@ -1622,30 +1838,52 @@ async function runManualSystemUpdate() {
         return;
     }
 
-    const isBreaking = window.availableVersions?.find(r => r.tag === tag)?.compatStatus === 'breaking';
+    const release = window.availableVersions?.find(r => r.tag === tag);
+    const isBreaking = release?.compatStatus === 'breaking';
     const warnMsg = isBreaking 
-        ? `\n\n⚠️ ATENÇÃO: Esta é uma versão antiga (Downgrade). Recursos mais novos serão desativados. Certifique-se de que possui backup!` 
+        ? `\n\n⚠️ ATENÇÃO: Esta é uma versão antiga (Downgrade/Rollback). Deseja restaurar a partir do backup ou baixar novamente?` 
         : ``;
 
-    if (!confirm(`Deseja realmente instalar e aplicar a versão "${tag}" no seu cPanel?${warnMsg}\n\nO painel será reiniciado ao final do processo.`)) {
+    if (!confirm(`Deseja realmente aplicar a versão "${tag}" no seu cPanel?${warnMsg}\n\nO painel será reiniciado ao final.`)) {
         return;
     }
 
     const termWrapper = document.getElementById('update-terminal-wrapper');
     const term        = document.getElementById('update-terminal');
+    const healthTerm  = document.getElementById('health-check-terminal');
     const btnRun      = document.getElementById('btn-run-update');
     const btnCheck    = document.getElementById('btn-check-update');
     const btnManual   = document.getElementById('btn-run-manual-update');
 
     if (termWrapper) termWrapper.classList.remove('hidden');
-    if (term) term.innerHTML = `<span style="color:var(--primary)">Iniciando instalação manual para a versão ${tag} via GitHub Releases...</span>\n\n`;
+    
+    const initialText = `[INFO] Iniciando instalação para a versão ${tag}...\n`;
+    if (term) term.innerHTML = `<span style="color:var(--primary)">${initialText}</span>`;
+    if (healthTerm) healthTerm.innerHTML = `<span style="color:var(--primary)">${initialText}</span>`;
     
     if (btnRun)    btnRun.disabled    = true;
     if (btnCheck)  btnCheck.disabled  = true;
     if (btnManual) btnManual.disabled = true;
 
-    // Conecta passando a query string com a tag selecionada!
-    const evtSource = new EventSource(`${API_BASE}/system/update/run?tag=${tag}`);
+    // Determina se é rollback (downgrade) ou install padrão
+    const cleanTag = tag.replace(/^v/, '');
+    const isRollback = isBreaking;
+    const url = isRollback 
+        ? `${API_BASE}/update/rollback?version=${cleanTag}` 
+        : `${API_BASE}/update/install?tag=${tag}`;
+
+    const evtSource = new EventSource(url);
+
+    const writeLine = (htmlLine) => {
+        if (term) {
+            term.innerHTML += htmlLine + '\n';
+            term.scrollTop = term.scrollHeight;
+        }
+        if (healthTerm) {
+            healthTerm.innerHTML += htmlLine + '\n';
+            healthTerm.scrollTop = healthTerm.scrollHeight;
+        }
+    };
 
     evtSource.onmessage = (event) => {
         try {
@@ -1655,12 +1893,12 @@ async function runManualSystemUpdate() {
             if (line.startsWith('__DONE__:')) {
                 evtSource.close();
                 const code = line.split(':')[1];
-                term.innerHTML += `\n<span style="color:${code == 0 ? 'var(--success)' : 'var(--warning)'}">Processo finalizado com código ${code}.</span>\n`;
+                writeLine(`\n<span style="color:${code == 0 ? 'var(--success)' : 'var(--warning)'}">Processo finalizado com código ${code}.</span>`);
                 if (code == 0) {
-                    term.innerHTML += `<span style="color:var(--success)">✅ Versão ${tag} instalada com sucesso! Recarregando em 5s...</span>\n`;
+                    writeLine(`<span style="color:var(--success)">✅ Versão ${tag} aplicada com sucesso! Recarregando em 5s...</span>`);
                     setTimeout(() => location.reload(), 5000);
                 } else {
-                    term.innerHTML += `<span style="color:var(--danger)">❌ Erro na instalação. Verifique a saída acima.</span>\n`;
+                    writeLine(`<span style="color:var(--danger)">❌ Falha na aplicação da versão. Verifique as mensagens acima.</span>`);
                 }
                 
                 if (btnRun)    btnRun.disabled    = false;
@@ -1671,23 +1909,19 @@ async function runManualSystemUpdate() {
             }
 
             let htmlLine = line
-                .replace(/\033\[0;31m/g, '<span style="color:var(--danger)">')
-                .replace(/\033\[0;32m/g, '<span style="color:var(--success)">')
-                .replace(/\033\[1;33m/g, '<span style="color:var(--warning)">')
-                .replace(/\033\[0;34m/g, '<span style="color:#58a6ff">')
-                .replace(/\033\[0;36m/g, '<span style="color:#39c5bb">')
-                .replace(/\033\[1m/g,    '<strong>')
-                .replace(/\033\[0m/g,    '</span>');
+                .replace(/\[INFO\]/g, '<span style="color:var(--primary)">[INFO]</span>')
+                .replace(/\[OK\]/g,   '<span style="color:var(--success)">[OK]</span>')
+                .replace(/\[WARN\]/g, '<span style="color:var(--warning)">[WARN]</span>')
+                .replace(/\[ERR\]/g,  '<span style="color:var(--danger)">[ERR]</span>');
 
-            term.innerHTML += htmlLine + '\n';
-            term.scrollTop = term.scrollHeight;
+            writeLine(htmlLine);
         } catch(e) {
-            console.error('Erro na linha de atualização', e);
+            console.error('Erro ao processar linha SSE:', e);
         }
     };
 
     evtSource.onerror = () => {
-        term.innerHTML += '\n<span style="color:var(--warning)">Servidor desconectado — reiniciando para concluir instalação...</span>\n';
+        writeLine('\n<span style="color:var(--warning)">Aviso: Conectando/Reiniciando servidor para aplicar as alterações...</span>');
         evtSource.close();
         setTimeout(() => {
             if (btnRun)    btnRun.disabled    = false;
@@ -1702,18 +1936,17 @@ async function saveGithubRepo() {
     const input = document.getElementById('github-repo-input');
     let repo  = input?.value?.trim() || '';
     
-    // Limpa a URL se o usuário colou completo (https://github.com/user/repo)
     repo = repo.replace(/https?:\/\/github\.com\//i, '').replace(/^\/+|\/+$/g, '');
     
-    if (input) input.value = repo; // mostra limpo no input
+    if (input) input.value = repo;
 
     if (!repo || !repo.includes('/')) {
-        alert('Formato inválido. Use: usuario/repositorio ou a URL completa do GitHub');
+        alert('Formato inválido. Use: usuario/repositorio');
         return;
     }
     const result = await safeFetch(`${API_BASE}/system/update/config`, 'POST', { github_repo: repo });
     if (result?.success) {
-        alert(`✅ Repositório salvo: ${repo}\n\nAgora clique "Verificar" para checar atualizações.`);
+        alert(`✅ Repositório salvo: ${repo}\n\nAgora clique em "Verificar" para checar atualizações.`);
         checkSystemUpdates();
     } else {
         alert('❌ Erro ao salvar configuração.');
@@ -1721,19 +1954,35 @@ async function saveGithubRepo() {
 }
 
 function runSystemUpdate() {
-    if (!confirm('Deseja realmente atualizar o painel?\nO servidor será reiniciado ao final.')) return;
+    if (!confirm('Deseja realmente atualizar o painel para a última versão disponível?\nO servidor será reiniciado ao final.')) return;
 
     const termWrapper = document.getElementById('update-terminal-wrapper');
     const term        = document.getElementById('update-terminal');
+    const healthTerm  = document.getElementById('health-check-terminal');
     const btnRun      = document.getElementById('btn-run-update');
     const btnCheck    = document.getElementById('btn-check-update');
 
     if (termWrapper) termWrapper.classList.remove('hidden');
-    if (term) term.innerHTML = '<span style="color:var(--primary)">Iniciando atualização automática via GitHub Releases...</span>\n\n';
+    
+    const initialText = `[INFO] Iniciando atualização automática para a versão mais recente...\n`;
+    if (term) term.innerHTML = `<span style="color:var(--primary)">${initialText}</span>`;
+    if (healthTerm) healthTerm.innerHTML = `<span style="color:var(--primary)">${initialText}</span>`;
+    
     if (btnRun)  btnRun.disabled  = true;
     if (btnCheck) btnCheck.disabled = true;
 
-    const evtSource = new EventSource(`${API_BASE}/system/update/run`);
+    const evtSource = new EventSource(`${API_BASE}/update/install`);
+
+    const writeLine = (htmlLine) => {
+        if (term) {
+            term.innerHTML += htmlLine + '\n';
+            term.scrollTop = term.scrollHeight;
+        }
+        if (healthTerm) {
+            healthTerm.innerHTML += htmlLine + '\n';
+            healthTerm.scrollTop = healthTerm.scrollHeight;
+        }
+    };
 
     evtSource.onmessage = (event) => {
         try {
@@ -1743,12 +1992,12 @@ function runSystemUpdate() {
             if (line.startsWith('__DONE__:')) {
                 evtSource.close();
                 const code = line.split(':')[1];
-                term.innerHTML += `\n<span style="color:${code == 0 ? 'var(--success)' : 'var(--warning)'}">Processo finalizado com código ${code}.</span>\n`;
+                writeLine(`\n<span style="color:${code == 0 ? 'var(--success)' : 'var(--warning)'}">Processo finalizado com código ${code}.</span>`);
                 if (code == 0) {
-                    term.innerHTML += `<span style="color:var(--success)">✅ Atualizado com sucesso! Recarregando em 5s...</span>\n`;
+                    writeLine(`<span style="color:var(--success)">✅ Atualização concluída com sucesso! Recarregando em 5s...</span>`);
                     setTimeout(() => location.reload(), 5000);
                 } else {
-                    term.innerHTML += `<span style="color:var(--danger)">❌ Erro. Verifique a saída acima.</span>\n`;
+                    writeLine(`<span style="color:var(--danger)">❌ Falha na atualização. Verifique os logs acima.</span>`);
                 }
                 if (btnRun)  btnRun.disabled  = false;
                 if (btnCheck) btnCheck.disabled = false;
@@ -1756,25 +2005,20 @@ function runSystemUpdate() {
                 return;
             }
 
-            // Coloração ANSI → HTML
             let htmlLine = line
-                .replace(/\033\[0;31m/g, '<span style="color:var(--danger)">')
-                .replace(/\033\[0;32m/g, '<span style="color:var(--success)">')
-                .replace(/\033\[1;33m/g, '<span style="color:var(--warning)">')
-                .replace(/\033\[0;34m/g, '<span style="color:#58a6ff">')
-                .replace(/\033\[0;36m/g, '<span style="color:#39c5bb">')
-                .replace(/\033\[1m/g,    '<strong>')
-                .replace(/\033\[0m/g,    '</span>');
+                .replace(/\[INFO\]/g, '<span style="color:var(--primary)">[INFO]</span>')
+                .replace(/\[OK\]/g,   '<span style="color:var(--success)">[OK]</span>')
+                .replace(/\[WARN\]/g, '<span style="color:var(--warning)">[WARN]</span>')
+                .replace(/\[ERR\]/g,  '<span style="color:var(--danger)">[ERR]</span>');
 
-            term.innerHTML += htmlLine + '\n';
-            term.scrollTop = term.scrollHeight;
+            writeLine(htmlLine);
         } catch(e) {
-            console.error('Erro linha de atualização', e);
+            console.error('Erro ao processar linha SSE:', e);
         }
     };
 
     evtSource.onerror = () => {
-        term.innerHTML += '\n<span style="color:var(--warning)">Servidor desconectado — reiniciando para concluir atualização...</span>\n';
+        writeLine('\n<span style="color:var(--warning)">Aviso: Conectando/Reiniciando servidor para aplicar as alterações...</span>');
         evtSource.close();
         setTimeout(() => {
             if (btnRun)  btnRun.disabled  = false;

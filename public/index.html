@@ -288,6 +288,12 @@
                             <input type="password" id="sshPass" placeholder="senha">
                         </div>
                     </div>
+                    <div style="margin-top: 12px; display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" id="sshSaveDetails" style="width: auto; margin: 0;" checked>
+                        <label for="sshSaveDetails" style="font-size: 0.85rem; color: var(--text-muted); cursor: pointer; user-select: none;">
+                            💾 Salvar dados de conexão localmente
+                        </label>
+                    </div>
                 </div>
                 <div id="terminal-container" class="terminal-box"></div>
             </div>
@@ -383,110 +389,163 @@
                     </div>
                 </div>
 
-                <div class="two-col" style="margin-bottom: 20px;">
-                    <!-- Criar Banco -->
-                    <div class="card">
-                        <h3 class="card-title"><i data-lucide="plus-circle" style="width:16px;height:16px;vertical-align:middle;margin-right:6px;"></i>Criar Banco</h3>
-                        <form onsubmit="createDatabase(event)">
-                            <div class="form-stack">
-                                <div>
-                                    <label class="form-label">Nome do Banco</label>
-                                    <input type="text" id="dbNewName" placeholder="meu_banco" required>
-                                </div>
-                                <div>
-                                    <label class="form-label">Usuário (opcional)</label>
-                                    <input type="text" id="dbNewUser" placeholder="meu_usuario">
-                                </div>
-                                <div>
-                                    <label class="form-label">Senha do Usuário</label>
-                                    <input type="password" id="dbNewPass" placeholder="senha_segura">
-                                </div>
+                <div class="db-manager-grid" style="margin-bottom: 20px;">
+                    <!-- Coluna da Esquerda: Bancos encontrados -->
+                    <section class="card db-list-card">
+                        <div class="db-list-head">
+                            <div>
+                                <strong style="font-size:0.95rem;">Bancos encontrados</strong>
+                                <div class="muted-note">Selecione para abrir opções</div>
                             </div>
-                            <button type="submit" class="btn btn-success btn-sm" style="margin-top:14px; width:100%">
-                                <i data-lucide="database"></i> Criar Banco
+                            <button class="btn btn-primary btn-sm" onclick="openDbCreateModal()">
+                                <i data-lucide="plus"></i> Novo Banco
                             </button>
-                        </form>
-                    </div>
+                        </div>
+                        <div class="db-search">
+                            <input type="text" id="dbSearchInput" placeholder="Buscar banco..." onkeyup="filterDatabasesList()" aria-label="Buscar banco">
+                        </div>
+                        <div class="db-list" id="db-list-container">
+                            <!-- Renderizado via JS -->
+                        </div>
+                    </section>
 
-                    <!-- Criar Usuário -->
-                    <div class="card">
-                        <h3 class="card-title"><i data-lucide="user-plus" style="width:16px;height:16px;vertical-align:middle;margin-right:6px;"></i>Criar Usuário</h3>
-                        <form onsubmit="createDbUser(event)">
-                            <div class="form-stack">
+                    <!-- Coluna da Direita: Detalhes e Opções avançadas -->
+                    <section class="card db-detail-card">
+                        <div class="db-detail-top">
+                            <div class="db-title">
+                                <div class="db-title-icon">🗄️</div>
                                 <div>
-                                    <label class="form-label">Nome de Usuário</label>
-                                    <input type="text" id="dbUserName" placeholder="novo_usuario" required>
-                                </div>
-                                <div>
-                                    <label class="form-label">Senha</label>
-                                    <input type="password" id="dbUserPass" placeholder="senha_segura" required>
-                                </div>
-                                <div>
-                                    <label class="form-label">Banco (permissão total, opcional)</label>
-                                    <input type="text" id="dbUserDatabase" placeholder="nome_do_banco">
+                                    <h2 id="db-detail-name">Selecione um banco</h2>
+                                    <p id="db-detail-subtitle">Selecione um banco na lista para gerenciar.</p>
                                 </div>
                             </div>
-                            <button type="submit" class="btn btn-primary btn-sm" style="margin-top:14px; width:100%">
-                                <i data-lucide="user-check"></i> Criar Usuário
-                            </button>
-                        </form>
-                    </div>
-                </div>
+                            <span class="badge" id="db-detail-badge">--</span>
+                        </div>
+                        <div class="db-detail-body">
+                            <!-- Alerta de Banco de Sistema Protegido -->
+                            <div class="system-alert hidden" id="db-system-alert">
+                                <strong>⚠️ Banco Protegido do Sistema</strong>
+                                <div class="muted-note">Ações destrutivas, reparo, otimização e alteração de privilégios estão travadas por segurança.</div>
+                            </div>
 
-                <!-- Bancos Existentes -->
-                <div class="card" style="margin-bottom:20px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-                        <h3 class="card-title" style="margin:0"><i data-lucide="table" style="width:16px;height:16px;vertical-align:middle;margin-right:6px;"></i>Bancos Existentes</h3>
-                        <button class="btn btn-secondary btn-sm" onclick="fetchDatabases()">
-                            <i data-lucide="refresh-cw"></i>
-                        </button>
-                    </div>
-                    <div class="table-card">
-                        <table>
-                            <thead>
-                                <tr><th>Nome</th><th>Tamanho</th><th>Tipo</th><th>Ações</th></tr>
-                            </thead>
-                            <tbody id="db-list-body"></tbody>
-                        </table>
-                    </div>
-                </div>
+                            <!-- Seção: Detalhes Técnicos -->
+                            <div class="action-section">
+                                <h3><i data-lucide="info" style="width:14px;height:14px;vertical-align:middle;"></i> Estatísticas</h3>
+                                <div class="mini-grid">
+                                    <div class="mini-stat">
+                                        <span>Tabelas</span>
+                                        <strong id="db-detail-tables">--</strong>
+                                    </div>
+                                    <div class="mini-stat">
+                                        <span>Tamanho</span>
+                                        <strong id="db-detail-size">--</strong>
+                                    </div>
+                                    <div class="mini-stat">
+                                        <span>Engine</span>
+                                        <strong id="db-detail-engine">--</strong>
+                                    </div>
+                                    <div class="mini-stat">
+                                        <span>Collation</span>
+                                        <strong id="db-detail-collation">--</strong>
+                                    </div>
+                                </div>
+                            </div>
 
-                <!-- Backup & Restore -->
-                <div class="two-col">
-                    <div class="card">
-                        <h3 class="card-title"><i data-lucide="download" style="width:16px;height:16px;vertical-align:middle;margin-right:6px;"></i>Backup SQL</h3>
-                        <div class="form-stack">
-                            <div>
-                                <label class="form-label">Banco (vazio = todos)</label>
-                                <input type="text" id="dbBackupName" placeholder="nome_do_banco">
+                            <!-- Seção: Ações Rápidas -->
+                            <div class="action-section">
+                                <h3><i data-lucide="zap" style="width:14px;height:14px;vertical-align:middle;"></i> Ações Rápidas</h3>
+                                <div class="action-grid">
+                                    <button class="btn btn-primary btn-sm" onclick="actionPhpMyAdmin()" id="btn-phpmyadmin">
+                                        <i data-lucide="external-link"></i> phpMyAdmin
+                                    </button>
+                                    <button class="btn btn-secondary btn-sm" onclick="actionShowTables()" id="btn-show-tables">
+                                        <i data-lucide="database"></i> Tabelas
+                                    </button>
+                                    <button class="btn btn-secondary btn-sm" onclick="actionBackup()" id="btn-backup">
+                                        <i data-lucide="download"></i> Backup SQL
+                                    </button>
+                                    <button class="btn btn-secondary btn-sm" onclick="actionRestore()" id="btn-restore">
+                                        <i data-lucide="upload"></i> Restaurar
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Seção: Manutenção -->
+                            <div class="action-section">
+                                <h3><i data-lucide="wrench" style="width:14px;height:14px;vertical-align:middle;"></i> Manutenção</h3>
+                                <div class="action-grid">
+                                    <button class="btn btn-secondary btn-sm" onclick="actionOptimize()" id="btn-optimize">
+                                        🧹 Otimizar
+                                    </button>
+                                    <button class="btn btn-secondary btn-sm" onclick="actionRepair()" id="btn-repair">
+                                        🛠 Reparar
+                                    </button>
+                                    <button class="btn btn-secondary btn-sm" onclick="actionDiagnostic()" id="btn-diagnostic">
+                                        🔍 Integridade
+                                    </button>
+                                    <button class="btn btn-secondary btn-sm" onclick="actionSqlLog()" id="btn-sql-log">
+                                        📄 SQL Log
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Seção: Usuários & Permissões -->
+                            <div class="action-section">
+                                <h3><i data-lucide="users" style="width:14px;height:14px;vertical-align:middle;"></i> Usuários e Permissões</h3>
+                                <div class="action-grid">
+                                    <button class="btn btn-secondary btn-sm" onclick="actionListUsers()" id="btn-list-users">
+                                        👤 Ver Usuários
+                                    </button>
+                                    <button class="btn btn-secondary btn-sm" onclick="actionCreateUser()" id="btn-create-user">
+                                        ➕ Criar Usuário
+                                    </button>
+                                    <button class="btn btn-secondary btn-sm" onclick="actionResetPassword()" id="btn-reset-password">
+                                        🔐 Alterar Senha
+                                    </button>
+                                    <button class="btn btn-secondary btn-sm" onclick="actionPermissions()" id="btn-permissions">
+                                        🔑 Privilégios
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Seção: Renomear Banco -->
+                            <div class="action-section">
+                                <h3><i data-lucide="edit" style="width:14px;height:14px;vertical-align:middle;"></i> Renomear Banco</h3>
+                                <div class="inline-form">
+                                    <div>
+                                        <label class="form-label">Novo nome do banco</label>
+                                        <input type="text" id="dbRenameInput" placeholder="ex: novo_nome_do_banco">
+                                    </div>
+                                    <button class="btn btn-secondary btn-sm" onclick="actionRename()" id="btn-rename">
+                                        Renomear
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Seção: Zona de Perigo -->
+                            <div class="action-section">
+                                <h3><i data-lucide="alert-triangle" style="width:14px;height:14px;vertical-align:middle;color:var(--danger);"></i> Zona de Perigo</h3>
+                                <div class="danger-zone">
+                                    <label class="form-label" style="font-weight:600;margin-bottom:6px;display:block;">Digite exatamente o nome do banco para confirmar a exclusão:</label>
+                                    <div class="inline-form">
+                                        <input type="text" id="dbDropConfirmInput" placeholder="nome_do_banco" oninput="validateDbDropConfirm()">
+                                        <button class="btn btn-danger btn-sm disabled-action" id="btn-drop" onclick="actionDrop()" disabled>
+                                            ✕ Excluir Banco
+                                        </button>
+                                    </div>
+                                    <div class="muted-note" id="db-danger-note" style="color:var(--danger);font-weight:500;margin-top:6px;">
+                                        Cuidado: Esta ação é definitiva e removerá fisicamente todas as tabelas!
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Seção: Console de Logs -->
+                            <div class="action-section">
+                                <h3><i data-lucide="terminal" style="width:14px;height:14px;vertical-align:middle;"></i> Console de Retorno</h3>
+                                <div class="db-log" id="db-console-log">$ console pronto para exibir logs de retorno...</div>
                             </div>
                         </div>
-                        <button class="btn btn-primary btn-sm" style="margin-top:14px; width:100%" onclick="createDbBackup()">
-                            Gerar Dump SQL
-                        </button>
-                        <div id="db-backup-result" class="hidden" style="margin-top:12px; padding:10px; background:rgba(16,185,129,0.1); border:1px solid var(--success); border-radius:6px; font-size:0.82rem; color:var(--success);">
-                            ✅ Backup salvo: <span id="db-backup-filename"></span>
-                        </div>
-                    </div>
-
-                    <div class="card">
-                        <h3 class="card-title"><i data-lucide="upload" style="width:16px;height:16px;vertical-align:middle;margin-right:6px;"></i>Restaurar Backup</h3>
-                        <div class="form-stack">
-                            <div>
-                                <label class="form-label">Arquivo de Backup</label>
-                                <select id="dbRestoreFile">
-                                    <option value="">Selecione o backup...</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="form-label">Banco de Destino (opcional)</label>
-                                <input type="text" id="dbRestoreTarget" placeholder="nome_do_banco">
-                            </div>
-                        </div>
-                        <button class="btn btn-warning btn-sm" style="margin-top:14px; width:100%; background:var(--warning); color:white;" onclick="restoreDbBackup()">
-                            Restaurar Banco
-                        </button>
-                    </div>
+                    </section>
                 </div>
 
                 <!-- Modal Setup Root -->
@@ -934,73 +993,41 @@
 </div><!-- /app-shell -->
 
 <!-- ============================================================
-     DRAWER: GERENCIADOR DE BANCO DE DADOS DETALHADO (v0.0.2)
+     MODAL: CRIAR NOVO BANCO DE DADOS (v0.0.3)
 ============================================================ -->
-<div id="dbManagerDrawer" class="drawer-overlay hidden">
-  <div class="drawer-panel">
-    <div class="drawer-header">
-      <div>
-        <h2 id="dbDrawerTitle">Banco</h2>
-        <span id="dbDrawerBadge" class="badge"></span>
-      </div>
-      <button class="btn btn-secondary btn-sm" onclick="closeDbManagerDrawer()">✕</button>
+<div id="dbCreateModal" class="modal hidden">
+    <div class="modal-box">
+        <div class="modal-header">
+            <h3>＋ Criar Novo Banco</h3>
+            <button class="btn btn-secondary btn-sm" onclick="closeDbCreateModal()">✕</button>
+        </div>
+        <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:16px;">
+            Adicione um novo banco de dados MariaDB. Você também pode configurar um usuário com privilégios totais para ele.
+        </p>
+        <form onsubmit="handleCreateDatabase(event)">
+            <div class="form-stack">
+                <div>
+                    <label class="form-label">Nome do Banco (letras, números e underline)</label>
+                    <input type="text" id="modalDbName" placeholder="ex: wordpress_db" required pattern="^[a-zA-Z0-9_]+$">
+                </div>
+                <div style="border-top: 1px solid var(--border); padding-top: 12px; margin-top: 12px;">
+                    <label class="form-label" style="font-weight: 700; color: var(--primary);">👤 Usuário do Banco (Opcional)</label>
+                </div>
+                <div>
+                    <label class="form-label">Nome de Usuário</label>
+                    <input type="text" id="modalDbUser" placeholder="ex: wordpress_user" pattern="^[a-zA-Z0-9_-]+$">
+                </div>
+                <div>
+                    <label class="form-label">Senha do Usuário</label>
+                    <input type="password" id="modalDbPass" placeholder="Senha do Usuário">
+                </div>
+            </div>
+            <div class="form-actions" style="margin-top:20px">
+                <button type="submit" class="btn btn-success">Criar Banco</button>
+                <button type="button" class="btn btn-secondary" onclick="closeDbCreateModal()">Cancelar</button>
+            </div>
+        </form>
     </div>
-
-    <div id="dbDrawerSystemWarning" class="alert alert-warning hidden">
-      Banco do sistema protegido. Ações perigosas foram desativadas.
-    </div>
-
-    <div class="drawer-section">
-      <h3>📊 Detalhes</h3>
-      <div class="stats-grid compact">
-        <div class="stat-card"><small>Tabelas</small><strong id="dbDetailTables">--</strong></div>
-        <div class="stat-card"><small>Tamanho</small><strong id="dbDetailSize">--</strong></div>
-        <div class="stat-card"><small>Engine</small><strong id="dbDetailEngine">--</strong></div>
-        <div class="stat-card"><small>Collation</small><strong id="dbDetailCollation">--</strong></div>
-      </div>
-    </div>
-
-    <div class="drawer-section">
-      <h3>⚡ Ações rápidas</h3>
-      <div class="action-grid">
-        <button onclick="dbDrawerOpenPhpMyAdmin()">↗ phpMyAdmin</button>
-        <button onclick="dbDrawerOpenTables()">📊 Tabelas</button>
-        <button onclick="dbDrawerBackup()">⬇ Backup</button>
-        <button class="db-danger-action" onclick="dbDrawerRestore()">🔁 Restaurar</button>
-      </div>
-    </div>
-
-    <div class="drawer-section">
-      <h3>🛠 Manutenção</h3>
-      <div class="action-grid">
-        <button onclick="dbDrawerOptimize()">🧹 Otimizar</button>
-        <button class="db-danger-action" onclick="dbDrawerRepair()">🛠 Reparar</button>
-      </div>
-    </div>
-
-    <div class="drawer-section">
-      <h3>👤 Usuários e permissões</h3>
-      <div class="action-grid">
-        <button class="db-danger-action" onclick="dbDrawerUsers()">👤 Ver usuários</button>
-        <button class="db-danger-action" onclick="dbDrawerCreateUser()">➕ Criar usuário</button>
-        <button class="db-danger-action" onclick="dbDrawerResetPassword()">🔐 Redefinir senha</button>
-        <button class="db-danger-action" onclick="dbDrawerPrivileges()">🔑 Permissões</button>
-      </div>
-    </div>
-
-    <div class="drawer-section">
-      <h3>✏️ Renomear banco</h3>
-      <input id="dbRenameNewName" placeholder="novo_nome_do_banco">
-      <button class="btn btn-warning db-danger-action" onclick="dbDrawerRename()">Renomear com backup</button>
-    </div>
-
-    <div class="drawer-section danger-zone">
-      <h3>🗑 Zona de perigo</h3>
-      <p>Digite exatamente o nome do banco para apagar.</p>
-      <input id="dbDropConfirmInput" oninput="validateDbDropConfirm()" placeholder="nome do banco">
-      <button id="dbDropButton" class="btn btn-danger" disabled onclick="dbDrawerDrop()">Apagar banco</button>
-    </div>
-  </div>
 </div>
 
 <script src="/socket.io/socket.io.js"></script>
