@@ -31,7 +31,21 @@ const APPS_FILE = path.join(__dirname, 'config', 'apps.json');
 const NOIP_FILE = path.join(__dirname, 'config', 'noip.json');
 const DB_FILE = path.join(__dirname, 'config', 'db.json');
 const AUTH_FILE = path.join(__dirname, 'config', 'auth.json');
+const SYSTEM_FILE = path.join(__dirname, 'config', 'system.json');
 const BASE_DIR = process.env.HOME || __dirname;
+
+let systemConfig = { is_termux: true, has_root: false, package_manager: 'pkg', prefix: process.env.PREFIX || '/data/data/com.termux/files/usr' };
+try {
+    if (fs.existsSync(SYSTEM_FILE)) {
+        systemConfig = JSON.parse(fs.readFileSync(SYSTEM_FILE, 'utf8'));
+        if (typeof systemConfig.has_root !== 'boolean') throw new Error('Invalid config');
+    } else {
+        fs.writeFileSync(SYSTEM_FILE, JSON.stringify(systemConfig, null, 4));
+    }
+} catch (e) {
+    systemConfig = { is_termux: true, has_root: false, package_manager: 'pkg', prefix: process.env.PREFIX || '/data/data/com.termux/files/usr' };
+    try { fs.writeFileSync(SYSTEM_FILE, JSON.stringify(systemConfig, null, 4)); } catch(err){}
+}
 const BACKUP_DIR = path.join(BASE_DIR, 'backups');
 
 // Initialize config directory
@@ -182,11 +196,38 @@ io.on('connection', (socket) => {
     });
 });
 
+// Restaura permissões caso arquivos de log/config sejam tocados pelo root
+async function chownToUser(pathsArray) {
+    if (!systemConfig.has_root || !systemConfig.is_termux || !pathsArray || pathsArray.length === 0) return;
+    try {
+        let uid = typeof process.getuid === 'function' ? process.getuid() : null;
+        let gid = typeof process.getgid === 'function' ? process.getgid() : null;
+        let owner = (uid !== null && gid !== null) ? `${uid}:${gid}` : os.userInfo().username;
+        if (!owner) return;
+        
+        const safePaths = pathsArray.map(p => `"${p.replace(/"/g, '\\"')}"`).join(' ');
+        await runCmd(`chown -R ${owner} ${safePaths}`, true);
+    } catch (e) {
+        console.error("chownToUser falhou:", e);
+    }
+}
+
 // Utils to run commands safely
-function runCmd(cmd) {
-    return new Promise((resolve) => {
+function runCmd(cmd, needsRoot = false) {
+    return new Promise((resolve, reject) => {
+        if (needsRoot) {
+            if (!systemConfig.has_root) {
+                return reject(new Error('Esta ação requer privilégios de Superusuário (Root).'));
+            }
+            if (systemConfig.is_termux) {
+                cmd = `su -c ${JSON.stringify(cmd)}`;
+            } else {
+                cmd = `sudo ${cmd}`;
+            }
+        }
         exec(cmd, (error, stdout, stderr) => {
-            if (error) resolve('');
+            if (error && !needsRoot) resolve('');
+            else if (error && needsRoot) reject(error);
             else resolve(stdout.trim());
         });
     });
@@ -414,7 +455,7 @@ app.get('/api/backup/download', (req, res) => {
 // Termux Power & Services Controls
 app.post('/api/reboot', async (req, res) => {
     try {
-        await runCmd('su -c reboot');
+        await runCmd('reboot', true);
         res.json({ success: true, message: 'Rebooting...' });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -574,6 +615,10 @@ app.post('/api/hosting', async (req, res) => {
     const parsedTargetPort = targetPort ? parseInt(targetPort) : null;
     
     try {
+        if (parsedListenPort < 1024 && !systemConfig.has_root) {
+            return res.status(400).json({ error: `A porta pública ${parsedListenPort} é restrita (menor que 1024) e requer permissão de Root. Ative o Root no instalador ou use uma porta maior (ex: 8080).` });
+        }
+
         if (await isPortListening(parsedListenPort)) {
             return res.status(400).json({ error: `A porta pública ${parsedListenPort} já está em uso por outro serviço.` });
         }
@@ -657,10 +702,14 @@ app.post('/api/hosting', async (req, res) => {
         }
         fs.writeFileSync(confPath, content);
         
+        const requireRoot = (parsedListenPort < 1024);
         let isNginxOk = true;
         let nginxError = '';
+        
+        let testCmd = requireRoot && systemConfig.is_termux ? `su -c 'nginx -t'` : (requireRoot && !systemConfig.is_termux ? `sudo nginx -t` : `nginx -t`);
+        
         await new Promise((resolve) => {
-            exec('nginx -t', (error, stdout, stderr) => {
+            exec(testCmd, (error, stdout, stderr) => {
                 if (error) {
                     isNginxOk = false;
                     nginxError = stderr || stdout || error.message;
@@ -676,7 +725,14 @@ app.post('/api/hosting', async (req, res) => {
             return res.status(400).json({ error: `Erro na sintaxe do NGINX:\n${nginxError}` });
         }
         
-        await runCmd('nginx -s reload');
+        try {
+            await runCmd('nginx -s reload', requireRoot);
+            if (requireRoot) {
+                await chownToUser([NGINX_CONF_DIR, HOSTING_LOGS_DIR]);
+            }
+        } catch (e) {
+            console.error("Nginx reload falhou", e);
+        }
         
         let pid = null;
         let activeStatus = 'stopped';
@@ -755,7 +811,13 @@ app.delete('/api/hosting/:id', async (req, res) => {
             fs.unlinkSync(confPath);
         }
         
-        await runCmd('nginx -s reload');
+        const requireRoot = (svc.listenPort < 1024);
+        try {
+            await runCmd('nginx -s reload', requireRoot);
+            if (requireRoot) {
+                await chownToUser([NGINX_CONF_DIR, HOSTING_LOGS_DIR]);
+            }
+        } catch(e) { console.error("Nginx reload failed", e); }
         
         const fullLogPath = path.join(__dirname, svc.logFile);
         const fullErrorLogPath = path.join(__dirname, svc.errorLog);
