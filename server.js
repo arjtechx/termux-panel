@@ -56,7 +56,17 @@ app.use(session({
 
 // Auth Middleware
 function checkAuth(req, res, next) {
-    if (req.path === '/login' || req.path === '/login.html' || req.path.startsWith('/api/login') || req.path.startsWith('/socket.io/') || req.path.endsWith('.css') || req.path.endsWith('.js')) {
+    if (
+        req.path === '/login' || 
+        req.path === '/login.html' || 
+        req.path.startsWith('/api/login') || 
+        req.path.startsWith('/socket.io/') || 
+        req.path.endsWith('.css') || 
+        req.path.endsWith('.js') ||
+        req.path === '/api/phpmyadmin/validate-token' ||
+        req.path === '/api/pma/sso/validate' ||
+        req.path === '/api/database/verify-token'
+    ) {
         return next();
     }
     if (req.session && req.session.authenticated) {
