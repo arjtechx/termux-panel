@@ -1,0 +1,56 @@
+name: Build & Release Termux Panel
+
+on:
+  push:
+    branches: [ master, main ]
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract version from package.json
+        id: version
+        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+
+      - name: Build distribution package
+        run: |
+          mkdir -p dist_build/termux-panel
+          cp -r public scripts install.sh package.json README.md server.js dist_build/termux-panel/
+          # Remove node_modules se existir
+          rm -rf dist_build/termux-panel/node_modules
+          tar -czvf termux-panel-dist.tar.gz -C dist_build termux-panel
+          echo "Build concluído: termux-panel-dist.tar.gz"
+          ls -lh termux-panel-dist.tar.gz
+
+      - name: Delete existing release (if any)
+        run: |
+          gh release delete latest --yes 2>/dev/null || true
+          git push --delete origin latest 2>/dev/null || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create GitHub Release with asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: "Termux Panel v${{ steps.version.outputs.version }} (latest)"
+          body: |
+            ## Atualização Automática
+            
+            Esta release foi gerada automaticamente pelo GitHub Actions.
+            
+            **Versão**: ${{ steps.version.outputs.version }}
+            **Commit**: ${{ github.sha }}
+            **Data**: ${{ github.event.head_commit.timestamp }}
+            
+            ### Como atualizar no Termux:
+            No painel web, acesse **Diagnóstico / Fix** → **Atualização do Painel** → clique **Atualizar Agora**.
+          files: termux-panel-dist.tar.gz
+          prerelease: false

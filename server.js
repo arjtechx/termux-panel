@@ -1209,35 +1209,96 @@ app.get('/api/system/update/run', (req, res) => {
     req.on('close', () => proc.kill());
 });
 
-app.get('/api/system/update/check', async (req, res) => {
-    try {
-        const pjson = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
-        let hasGitUpdate = false;
-        
-        const isGit = fs.existsSync(path.join(__dirname, '.git'));
-        if (isGit) {
-            try {
-                await new Promise((resolve) => {
-                    exec('git fetch --dry-run', () => resolve());
-                });
-                const statusOut = await new Promise((resolve) => {
-                    exec('git status -uno', (err, stdout) => resolve(stdout || ''));
-                });
-                if (statusOut.includes('behind')) {
-                    hasGitUpdate = true;
-                }
-            } catch (e) {}
-        }
+const UPDATE_CONFIG_FILE = path.join(__dirname, 'config', 'update.json');
 
-        res.json({
-            version: pjson.version || '1.0.0',
-            isGit,
-            hasUpdate: hasGitUpdate
-        });
-    } catch (err) {
+function getUpdateConfig() {
+    try {
+        if (fs.existsSync(UPDATE_CONFIG_FILE)) {
+            return JSON.parse(fs.readFileSync(UPDATE_CONFIG_FILE, 'utf8'));
+        }
+    } catch(e) {}
+    return { github_repo: '', update_channel: 'release' };
+}
+
+// GET/POST config de update (repositório GitHub)
+app.get('/api/system/update/config', (req, res) => {
+    res.json(getUpdateConfig());
+});
+
+app.post('/api/system/update/config', (req, res) => {
+    try {
+        const config = { ...getUpdateConfig(), ...req.body };
+        fs.writeFileSync(UPDATE_CONFIG_FILE, JSON.stringify(config, null, 2));
+        res.json({ success: true, config });
+    } catch(err) {
         res.status(500).json({ error: err.message });
     }
 });
+
+app.get('/api/system/update/check', async (req, res) => {
+    try {
+        const pjson = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+        const config = getUpdateConfig();
+        const currentVersion = pjson.version || '1.0.0';
+        let hasUpdate = false;
+        let latestVersion = currentVersion;
+        let updateMethod = 'manual';
+        let releaseUrl = '';
+        let releaseNotes = '';
+
+        // Método 1: GitHub Releases API
+        if (config.github_repo && config.github_repo.includes('/')) {
+            try {
+                updateMethod = 'github';
+                releaseUrl = `https://github.com/${config.github_repo}/releases/latest/download/termux-panel-dist.tar.gz`;
+                const apiUrl = `https://api.github.com/repos/${config.github_repo}/releases/latest`;
+                const resp = await axios.get(apiUrl, {
+                    headers: { 'User-Agent': 'termux-panel' },
+                    timeout: 5000
+                });
+                latestVersion = (resp.data.tag_name || currentVersion).replace(/^v/, '');
+                releaseNotes = resp.data.body || '';
+                // Compara versões simples
+                hasUpdate = latestVersion !== currentVersion;
+                if (!hasUpdate) {
+                    // Mesmo número de versão: verifica se o release é mais novo
+                    const publishedAt = new Date(resp.data.published_at || 0);
+                    const localStat = fs.statSync(path.join(__dirname, 'server.js'));
+                    hasUpdate = publishedAt > localStat.mtime;
+                }
+            } catch(e) {
+                // Se falhar na API do GitHub, reporta sem update mas com erro
+                updateMethod = 'github_error';
+            }
+        }
+
+        // Método 2: Git local
+        const isGit = fs.existsSync(path.join(__dirname, '.git'));
+        if (updateMethod === 'manual' && isGit) {
+            updateMethod = 'git';
+            try {
+                await new Promise((resolve) => exec('git fetch --dry-run', () => resolve()));
+                const statusOut = await new Promise((resolve) => {
+                    exec('git status -uno', (err, stdout) => resolve(stdout || ''));
+                });
+                if (statusOut.includes('behind')) hasUpdate = true;
+            } catch(e) {}
+        }
+
+        res.json({
+            currentVersion,
+            latestVersion,
+            hasUpdate,
+            updateMethod,
+            githubRepo: config.github_repo || '',
+            releaseUrl,
+            releaseNotes: releaseNotes.substring(0, 500)
+        });
+    } catch(err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 
 // Status rápido dos serviços (sem script externo)
 app.get('/api/health-check/status', async (req, res) => {

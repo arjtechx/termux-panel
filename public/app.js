@@ -981,101 +981,137 @@ function runHealthCheck() {
 }
 
 // ============================================================
-//  SISTEMA DE ATUALIZAÇÃO DO PAINEL
+//  SISTEMA DE ATUALIZAÇÃO DO PAINEL — GitHub Releases
 // ============================================================
 async function checkSystemUpdates() {
-    const statusText = document.getElementById('update-status-text');
-    const versionText = document.getElementById('update-current-version');
-    const btnRun = document.getElementById('btn-run-update');
-    
+    const statusText   = document.getElementById('update-status-text');
+    const versionCur   = document.getElementById('update-current-version');
+    const versionLat   = document.getElementById('update-latest-version');
+    const btnRun       = document.getElementById('btn-run-update');
+    const repoInput    = document.getElementById('github-repo-input');
+    const notesWrapper = document.getElementById('update-release-notes-wrapper');
+
     if (statusText) statusText.innerHTML = 'Verificando...';
-    
+
+    // Carrega config do repositório GitHub
+    const cfg = await safeFetch(`${API_BASE}/system/update/config`);
+    if (cfg && repoInput && !repoInput.value) {
+        repoInput.value = cfg.github_repo || '';
+    }
+
     const data = await safeFetch(`${API_BASE}/system/update/check`);
     if (!data) {
         if (statusText) statusText.innerHTML = '<span style="color:var(--danger)">Erro ao verificar</span>';
         return;
     }
-    
-    if (versionText) versionText.textContent = `v${data.version}`;
-    
+
+    if (versionCur) versionCur.textContent = `v${data.currentVersion}`;
+    if (versionLat) versionLat.textContent = data.latestVersion !== data.currentVersion ? `v${data.latestVersion}` : '—';
+
+    // Notas de release
+    if (notesWrapper && data.releaseNotes) {
+        notesWrapper.textContent = data.releaseNotes;
+        notesWrapper.classList.remove('hidden');
+    }
+
     if (data.hasUpdate) {
-        if (statusText) statusText.innerHTML = '<span style="color:var(--success)">Nova versão disponível!</span>';
+        if (statusText) statusText.innerHTML = '<span style="color:var(--success)">✅ Nova versão disponível!</span>';
         if (btnRun) btnRun.classList.remove('hidden');
     } else {
-        if (data.isGit) {
-            if (statusText) statusText.innerHTML = '<span style="color:var(--text-muted)">Painel atualizado (Git)</span>';
-        } else {
-            if (statusText) statusText.innerHTML = '<span style="color:var(--text-muted)">Atualizar via tarball</span>';
-        }
-        // Se for manual, sempre deixa o botão de atualizar ativo para reinstalar/atualizar via tarball local se quiser
+        const methodLabels = {
+            github:       '✅ Atualizado via GitHub Releases',
+            github_error: '⚠️ GitHub indisponível — verifique o repositório',
+            git:          '✅ Atualizado (Git)',
+            manual:       '📦 Instalação manual'
+        };
+        const label = methodLabels[data.updateMethod] || 'Verificado';
+        if (statusText) statusText.innerHTML = `<span style="color:var(--text-muted)">${label}</span>`;
         if (btnRun) {
-            if (data.isGit) {
-                btnRun.classList.add('hidden');
-            } else {
-                btnRun.classList.remove('hidden');
-                if (statusText) statusText.innerHTML = '<span style="color:var(--text-muted)">Instalação manual (coloque termux-panel-dist.tar.gz no home para atualizar)</span>';
-            }
+            // Sempre mostra o botão para permitir forçar re-instalação
+            btnRun.classList.remove('hidden');
         }
+    }
+
+    // Repo não configurado
+    if (!data.githubRepo && data.updateMethod === 'manual') {
+        if (statusText) statusText.innerHTML = '<span style="color:var(--warning)">⚠️ Configure o repositório GitHub abaixo para atualizações automáticas</span>';
+    }
+}
+
+async function saveGithubRepo() {
+    const input = document.getElementById('github-repo-input');
+    const repo  = input?.value?.trim();
+    if (!repo || !repo.includes('/')) {
+        alert('Formato inválido. Use: usuario/repositorio');
+        return;
+    }
+    const result = await safeFetch(`${API_BASE}/system/update/config`, 'POST', { github_repo: repo });
+    if (result?.success) {
+        alert(`✅ Repositório salvo: ${repo}\n\nAgora clique "Verificar" para checar atualizações.`);
+        checkSystemUpdates();
+    } else {
+        alert('❌ Erro ao salvar configuração.');
     }
 }
 
 function runSystemUpdate() {
-    if (!confirm('Deseja realmente iniciar a atualização do painel? O servidor será reiniciado ao final.')) return;
-    
+    if (!confirm('Deseja realmente atualizar o painel?\nO servidor será reiniciado ao final.')) return;
+
     const termWrapper = document.getElementById('update-terminal-wrapper');
-    const term = document.getElementById('update-terminal');
-    const btnRun = document.getElementById('btn-run-update');
-    const btnCheck = document.getElementById('btn-check-update');
-    
+    const term        = document.getElementById('update-terminal');
+    const btnRun      = document.getElementById('btn-run-update');
+    const btnCheck    = document.getElementById('btn-check-update');
+
     if (termWrapper) termWrapper.classList.remove('hidden');
-    if (term) term.innerHTML = '<span style="color:var(--primary)">Iniciando processo de auto-atualização...</span>\n\n';
-    if (btnRun) btnRun.disabled = true;
+    if (term) term.innerHTML = '<span style="color:var(--primary)">Iniciando atualização automática via GitHub Releases...</span>\n\n';
+    if (btnRun)  btnRun.disabled  = true;
     if (btnCheck) btnCheck.disabled = true;
-    
+
     const evtSource = new EventSource(`${API_BASE}/system/update/run`);
-    
+
     evtSource.onmessage = (event) => {
         try {
             const data = JSON.parse(event.data);
             const line = data.line;
-            
+
             if (line.startsWith('__DONE__:')) {
                 evtSource.close();
                 const code = line.split(':')[1];
                 term.innerHTML += `\n<span style="color:${code == 0 ? 'var(--success)' : 'var(--warning)'}">Processo finalizado com código ${code}.</span>\n`;
                 if (code == 0) {
-                    term.innerHTML += `<span style="color:var(--success)">Painel atualizado com sucesso! Recarregando a página...</span>\n`;
+                    term.innerHTML += `<span style="color:var(--success)">✅ Atualizado com sucesso! Recarregando em 5s...</span>\n`;
+                    setTimeout(() => location.reload(), 5000);
                 } else {
-                    term.innerHTML += `<span style="color:var(--danger)">Erro na atualização. Verifique a saída acima.</span>\n`;
+                    term.innerHTML += `<span style="color:var(--danger)">❌ Erro. Verifique a saída acima.</span>\n`;
                 }
-                if (btnRun) btnRun.disabled = false;
+                if (btnRun)  btnRun.disabled  = false;
                 if (btnCheck) btnCheck.disabled = false;
                 checkSystemUpdates();
                 return;
             }
-            
-            // Coloração básica ANSI para HTML
+
+            // Coloração ANSI → HTML
             let htmlLine = line
                 .replace(/\033\[0;31m/g, '<span style="color:var(--danger)">')
                 .replace(/\033\[0;32m/g, '<span style="color:var(--success)">')
                 .replace(/\033\[1;33m/g, '<span style="color:var(--warning)">')
                 .replace(/\033\[0;34m/g, '<span style="color:#58a6ff">')
                 .replace(/\033\[0;36m/g, '<span style="color:#39c5bb">')
-                .replace(/\033\[1m/g, '<strong>')
-                .replace(/\033\[0m/g, '</span>');
-                
+                .replace(/\033\[1m/g,    '<strong>')
+                .replace(/\033\[0m/g,    '</span>');
+
             term.innerHTML += htmlLine + '\n';
             term.scrollTop = term.scrollHeight;
-        } catch (e) {
-            console.error('Erro ao processar linha de atualização', e);
+        } catch(e) {
+            console.error('Erro linha de atualização', e);
         }
     };
-    
+
     evtSource.onerror = () => {
-        term.innerHTML += '\n<span style="color:var(--warning)">Servidor desconectado (reiniciando para concluir atualização...).</span>\n';
+        term.innerHTML += '\n<span style="color:var(--warning)">Servidor desconectado — reiniciando para concluir atualização...</span>\n';
         evtSource.close();
         setTimeout(() => {
-            if (btnRun) btnRun.disabled = false;
+            if (btnRun)  btnRun.disabled  = false;
             if (btnCheck) btnCheck.disabled = false;
             location.reload();
         }, 5000);
@@ -1085,8 +1121,9 @@ function runSystemUpdate() {
 // Chama na inicialização
 document.addEventListener('DOMContentLoaded', () => {
     // Apenas quando a aba for aberta ou na inicialização
-    setTimeout(checkHealthStatus, 2000); 
+    setTimeout(checkHealthStatus, 2000);
 });
+
 
 // ============================================================
 //  BACKUPS

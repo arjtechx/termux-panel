@@ -652,15 +652,16 @@
 
                 <!-- Card de Atualização do Painel -->
                 <div class="card" style="margin-bottom:20px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
                         <div>
-                            <h3 class="card-title" style="margin-bottom:4px;">Atualização do Painel</h3>
+                            <h3 class="card-title" style="margin-bottom:4px;">🔄 Atualização Automática</h3>
                             <p style="font-size:0.85rem; color:var(--text-muted);">
-                                Versão Atual: <strong id="update-current-version">v1.0.0</strong> | 
+                                Versão instalada: <strong id="update-current-version">v1.0.0</strong> &nbsp;|&nbsp;
+                                Disponível: <strong id="update-latest-version">—</strong> &nbsp;|&nbsp;
                                 Status: <span id="update-status-text" style="font-weight:600;">Carregando...</span>
                             </p>
                         </div>
-                        <div style="display:flex; gap:8px;">
+                        <div style="display:flex; gap:8px; flex-wrap:wrap;">
                             <button class="btn btn-success btn-sm hidden" id="btn-run-update" onclick="runSystemUpdate()">
                                 <i data-lucide="download-cloud"></i> Atualizar Agora
                             </button>
@@ -669,8 +670,32 @@
                             </button>
                         </div>
                     </div>
-                    <div id="update-terminal-wrapper" class="hidden" style="margin-top:16px;">
-                        <div id="update-terminal" class="terminal-box" style="height:250px; overflow-y:auto; font-size:13px; font-family:monospace; white-space:pre-wrap; background:#0d1117; color:#c9d1d9; padding:16px; border-radius:6px;">
+
+                    <!-- Configuração do Repositório GitHub -->
+                    <div style="background:var(--bg-secondary); border-radius:8px; padding:14px; margin-bottom:14px;">
+                        <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:8px;">
+                            <i data-lucide="github" style="width:14px;height:14px;vertical-align:middle;"></i>
+                            Repositório GitHub para atualização automática:
+                        </p>
+                        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                            <input type="text" id="github-repo-input"
+                                placeholder="usuario/nome-do-repositorio"
+                                style="flex:1; min-width:220px; font-family:monospace; font-size:0.875rem;">
+                            <button class="btn btn-primary btn-sm" onclick="saveGithubRepo()">
+                                <i data-lucide="save"></i> Salvar
+                            </button>
+                        </div>
+                        <p style="font-size:0.75rem; color:var(--text-muted); margin-top:6px;">
+                            Após cada <code>.\auto-push.ps1</code> no Windows, o GitHub Actions empacota o código automaticamente.
+                        </p>
+                    </div>
+
+                    <!-- Notas de release -->
+                    <div id="update-release-notes-wrapper" class="hidden" style="background:var(--bg-secondary); border-radius:8px; padding:14px; margin-bottom:14px; font-size:0.82rem; color:var(--text-muted); white-space:pre-wrap; max-height:120px; overflow-y:auto;" id="update-release-notes"></div>
+
+                    <!-- Terminal de atualização -->
+                    <div id="update-terminal-wrapper" class="hidden">
+                        <div id="update-terminal" class="terminal-box" style="height:260px; overflow-y:auto; font-size:13px; font-family:monospace; white-space:pre-wrap; background:#0d1117; color:#c9d1d9; padding:16px; border-radius:6px;">
                             [Aguardando início da atualização...]
                         </div>
                     </div>
