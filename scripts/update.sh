@@ -153,8 +153,17 @@ ok "Painel atualizado com sucesso!"
 log "Encerrando para auto-restart..."
 sleep 2
 
+# Detecta a porta atual do painel de forma dinâmica
+PORT=8088
+SERVER_CONFIG_FILE="$PANEL_DIR/config/server.json"
+if [ -f "$SERVER_CONFIG_FILE" ]; then
+    PORT=$(python3 -c "import json; print(json.load(open('$SERVER_CONFIG_FILE')).get('port', 8088))" 2>/dev/null || \
+           node -e "try{const d=require('$SERVER_CONFIG_FILE');console.log(d.port||8088)}catch(e){console.log(8088)}" 2>/dev/null || \
+           echo 8088)
+fi
+
 # Mata o servidor para que o loop start.sh o reinicie
-OLDPID=$(lsof -t -i:8088 2>/dev/null)
+OLDPID=$(lsof -t -i:$PORT 2>/dev/null)
 if [ -n "$OLDPID" ]; then
     kill -9 "$OLDPID" 2>/dev/null
 else
@@ -163,9 +172,9 @@ fi
 
 # Se não há loop de auto-restart ativo, inicia em background
 sleep 2
-if ! lsof -t -i:8088 > /dev/null 2>&1; then
+if ! lsof -t -i:$PORT > /dev/null 2>&1; then
     nohup node "$PANEL_DIR/server.js" > "$PANEL_DIR/panel.log" 2>&1 &
-    ok "Painel reiniciado em background (PID: $!)."
+    ok "Painel reiniciado em background. PID: $!"
 fi
 
 exit 0

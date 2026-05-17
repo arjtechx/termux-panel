@@ -99,21 +99,30 @@ ok "Todos os serviços verificados! Iniciando painel..."
 
 cd "$PANEL_DIR"
 
-# Mata qualquer instância antiga na porta 8088
-OLDPID=$(lsof -t -i:8088 2>/dev/null)
+# Detecta a porta atual do painel de forma dinâmica
+PORT=8088
+SERVER_CONFIG_FILE="$PANEL_DIR/config/server.json"
+if [ -f "$SERVER_CONFIG_FILE" ]; then
+    PORT=$(python3 -c "import json; print(json.load(open('$SERVER_CONFIG_FILE')).get('port', 8088))" 2>/dev/null || \
+           node -e "try{const d=require('$SERVER_CONFIG_FILE');console.log(d.port||8088)}catch(e){console.log(8088)}" 2>/dev/null || \
+           echo 8088)
+fi
+
+# Mata qualquer instância antiga na porta configurada
+OLDPID=$(lsof -t -i:$PORT 2>/dev/null)
 if [ -n "$OLDPID" ]; then
     log "Encerrando instância anterior (PID: $OLDPID)..."
     kill -9 "$OLDPID" 2>/dev/null
     sleep 1
 else
     # Fallback robusto usando fuser e pkill caso lsof não esteja disponível
-    fuser -k 8088/tcp >/dev/null 2>&1
+    fuser -k $PORT/tcp >/dev/null 2>&1
     pkill -9 -f "node.*server.js" 2>/dev/null || true
     sleep 1
 fi
 
 ok "Auto-restart ativado — painel reinicia se cair."
-log "Acesse: http://0.0.0.0:8088"
+log "Acesse: http://0.0.0.0:$PORT"
 echo ""
 
 while true; do
