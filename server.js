@@ -502,18 +502,27 @@ if (!fs.existsSync(HOSTING_LOGS_DIR)) {
     fs.mkdirSync(HOSTING_LOGS_DIR, { recursive: true });
 }
 
-// Utility to check if port is currently in use
-function isPortInUse(port) {
+// Utility to check if port is currently in use/listening using ss -tulpn or net fallback
+function isPortListening(port) {
     return new Promise((resolve) => {
-        const tester = net.createServer()
-            .once('error', (err) => {
-                if (err.code === 'EADDRINUSE') resolve(true);
-                else resolve(false);
-            })
-            .once('listening', () => {
-                tester.once('close', () => resolve(false)).close();
-            })
-            .listen(port, '0.0.0.0');
+        exec('ss -tulpn', (err, stdout) => {
+            if (!err && stdout) {
+                const regex = new RegExp(':' + port + '(\\b|\\s)');
+                if (regex.test(stdout)) {
+                    return resolve(true);
+                }
+            }
+            // Fallback usando net
+            const tester = net.createServer()
+                .once('error', (errNet) => {
+                    if (errNet.code === 'EADDRINUSE') resolve(true);
+                    else resolve(false);
+                })
+                .once('listening', () => {
+                    tester.once('close', () => resolve(false)).close();
+                })
+                .listen(port, '0.0.0.0');
+        });
     });
 }
 
@@ -535,7 +544,7 @@ app.get('/api/hosting', async (req, res) => {
                 
                 let portListening = false;
                 if (svc.targetPort) {
-                    portListening = await isPortInUse(svc.targetPort);
+                    portListening = await isPortListening(svc.targetPort);
                 }
                 
                 if (processAlive && portListening) {
@@ -544,7 +553,7 @@ app.get('/api/hosting', async (req, res) => {
                     svc.status = 'offline';
                 }
             } else {
-                const portListening = await isPortInUse(svc.listenPort);
+                const portListening = await isPortListening(svc.listenPort);
                 svc.status = portListening ? 'online' : 'offline';
             }
             return svc;
@@ -565,12 +574,12 @@ app.post('/api/hosting', async (req, res) => {
     const parsedTargetPort = targetPort ? parseInt(targetPort) : null;
     
     try {
-        if (await isPortInUse(parsedListenPort)) {
+        if (await isPortListening(parsedListenPort)) {
             return res.status(400).json({ error: `A porta pública ${parsedListenPort} já está em uso por outro serviço.` });
         }
         
         if (parsedTargetPort && (type === 'node' || type === 'python' || type === 'proxy')) {
-            if (await isPortInUse(parsedTargetPort)) {
+            if (await isPortListening(parsedTargetPort)) {
                 return res.status(400).json({ error: `A porta interna ${parsedTargetPort} já está em uso por outra aplicação.` });
             }
         }
@@ -606,7 +615,7 @@ app.post('/api/hosting', async (req, res) => {
         if (type === 'php' || type === 'static') {
             content = `server {
     listen 0.0.0.0:${parsedListenPort};
-    server_name ${domain || '_'};
+    server_name _;
     root ${resolvedPath};
     index index.php index.html index.htm;
     access_log ${fullLogPath};
@@ -626,7 +635,7 @@ app.post('/api/hosting', async (req, res) => {
             const proxyPort = parsedTargetPort;
             content = `server {
     listen 0.0.0.0:${parsedListenPort};
-    server_name ${domain || '_'};
+    server_name _;
     access_log ${fullLogPath};
     error_log ${fullErrorLogPath};
 
@@ -779,7 +788,7 @@ app.post('/api/hosting/:id/toggle', async (req, res) => {
                 return res.status(400).json({ error: 'Este tipo de serviço não possui processos associados.' });
             }
             
-            if (svc.targetPort && await isPortInUse(svc.targetPort)) {
+            if (svc.targetPort && await isPortListening(svc.targetPort)) {
                 return res.status(400).json({ error: `A porta interna ${svc.targetPort} já está ocupada.` });
             }
             
@@ -864,7 +873,7 @@ setInterval(async () => {
                 
                 let portListening = false;
                 if (svc.targetPort) {
-                    portListening = await isPortInUse(svc.targetPort);
+                    portListening = await isPortListening(svc.targetPort);
                 }
                 
                 if (!processAlive || !portListening) {

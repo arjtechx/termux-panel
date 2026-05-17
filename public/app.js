@@ -1586,11 +1586,14 @@ function renderHostingGrid(filterType = 'all') {
     grid.innerHTML = filtered.map(svc => {
         const isApp = svc.type === 'node' || svc.type === 'python';
         const isOnline = svc.status === 'online';
+        const openUrl = svc.domain && svc.domain !== '_' 
+            ? `http://${svc.domain}:${svc.listenPort}` 
+            : `http://${window.location.hostname}:${svc.listenPort}`;
         
         let typeLabel = '';
         let typeClass = '';
         switch (svc.type) {
-            case 'php': typeLabel = 'PHP-FPM'; typeClass = 'badge-type-php'; break;
+            case 'php': typeLabel = 'Website PHP'; typeClass = 'badge-type-php'; break;
             case 'static': typeLabel = 'Estático'; typeClass = 'badge-type-static'; break;
             case 'node': typeLabel = 'Node.js'; typeClass = 'badge-type-node'; break;
             case 'python': typeLabel = 'Python'; typeClass = 'badge-type-python'; break;
@@ -1646,7 +1649,7 @@ function renderHostingGrid(filterType = 'all') {
                 </div>
 
                 <div class="hosting-card-actions">
-                    <a href="${svc.publicUrl}" target="_blank" class="btn btn-secondary btn-sm" style="flex:1; justify-content:center; text-decoration:none; padding:8px 0;">
+                    <a href="${openUrl}" target="_blank" class="btn btn-secondary btn-sm" style="flex:1; justify-content:center; text-decoration:none; padding:8px 0;">
                         <i data-lucide="external-link"></i> Abrir
                     </a>
                     

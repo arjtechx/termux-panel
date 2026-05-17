@@ -2,6 +2,16 @@
 
 ---
 
+## 🏆 MARCO v1.2.2 — 2026-05-17 (Hospedagem Estabilizada & Nginx Wildcards)
+
+### ✅ Novidades da Versão
+- **Aprimoramento do Monitoramento de Status (ss -tulpn):** Para serviços PHP, Estáticos e Proxies, o status de atividade agora é monitorado unicamente através da escuta ativa de suas portas públicas (`listenPort`) no sistema via utilitário `ss` com fallback robusto, sem dependência do estado do PID do processo pai. Para apps Node/Python, a integridade do PID + porta interna (`targetPort`) segue mantida de forma independente.
+- **Dynamic Port Opening ("Abrir" inteligente):** O botão "Abrir" no card de hospedagem passa a construir a URL de acesso dinamicamente com base no IP ativo de acesso do painel (`window.location.hostname`) ou domínio configurado, assegurando que o usuário consiga carregar o seu projeto em qualquer aparelho da rede local sem caminhos quebrados.
+- **Wildcard Nginx default bindings:** As novas configurações criadas no Nginx passam a adotar por padrão `server_name _;` associado a `listen 0.0.0.0:PORTA;`, garantindo acessibilidade universal em toda a rede local por padrão.
+- **Website PHP Custom Label:** Renomeado o selo descritivo de serviços PHP de "PHP-FPM" para "Website PHP" para melhor legibilidade no painel.
+
+---
+
 ## 🏆 MARCO v1.2.1 — 2026-05-17 (Resiliência & Bypasses de Taxa de API)
 
 ### ✅ Novidades da Versão
