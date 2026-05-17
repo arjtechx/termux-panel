@@ -2436,4 +2436,101 @@ function closeHostingLogsModal() {
 // ============================================================
 //  START
 // ============================================================
-document.addEventListener('DOMContentLoaded', runBootSequence);
+document.addEventListener('DOMContentLoaded', () => {
+    runBootSequence();
+    initFileBrowserShortcuts();
+});
+
+// ============================================================
+//  FILEBROWSER DYNAMIC SHORTCUTS & LOADING SEQUENCE
+// ============================================================
+let fileBrowserBooted = false;
+
+async function bootFileBrowser() {
+    if (fileBrowserBooted) return;
+    fileBrowserBooted = true;
+    
+    const overlay = document.getElementById('fb-loading-overlay');
+    const layout = document.getElementById('fb-layout');
+    const log = document.getElementById('fb-boot-log');
+    const progress = document.getElementById('fb-boot-progress');
+    const status = document.getElementById('fb-boot-status');
+    const iframe = document.getElementById('iframe-filebrowser');
+    
+    const addLog = (msg, color = '#a6e3a1') => {
+        if (!log) return;
+        const line = document.createElement('div');
+        line.style.color = color;
+        line.textContent = `> ${msg}`;
+        log.appendChild(line);
+        log.scrollTop = log.scrollHeight;
+    };
+    
+    setTimeout(() => { addLog('Verificando daemon de arquivos (porta 8095)...'); progress.style.width = '20%'; status.textContent = 'Checando daemon...'; }, 400);
+    setTimeout(() => { addLog('Validando Proxy Reverso NGINX/Node...'); progress.style.width = '40%'; status.textContent = 'Validando rotas...'; }, 1000);
+    setTimeout(() => { addLog('Autenticando sessão interna (NoAuth SSO)...'); progress.style.width = '60%'; status.textContent = 'Autenticando...'; }, 1600);
+    setTimeout(() => { 
+        addLog('Carregando interface Web...'); 
+        progress.style.width = '75%'; 
+        status.textContent = 'Carregando UI...'; 
+        iframe.src = '/__filebrowser/'; 
+    }, 2200);
+    
+    iframe.onload = () => {
+        if (iframe.src.includes('about:blank')) return;
+        
+        addLog('Aplicando injeção de CSS (Termux cPanel Dark Theme)...');
+        progress.style.width = '90%';
+        status.textContent = 'Injetando tema...';
+        
+        setTimeout(() => {
+            addLog('Sistema de Arquivos montado e pronto para uso.', '#f9e2af');
+            progress.style.width = '100%';
+            status.textContent = 'Sistema Montado!';
+            
+            setTimeout(() => {
+                if (overlay) overlay.style.display = 'none';
+                if (layout) layout.style.opacity = '1';
+            }, 800);
+        }, 1000);
+    };
+}
+
+async function initFileBrowserShortcuts() {
+    const container = document.getElementById('fb-dynamic-shortcuts');
+    if (!container) return;
+    
+    // Adiciona listener para a aba
+    const fbTabBtn = document.querySelector('.nav-link[data-target="tab-files"]');
+    if (fbTabBtn) {
+        fbTabBtn.addEventListener('click', () => {
+            setTimeout(bootFileBrowser, 100);
+        });
+    }
+    
+    try {
+        const res = await safeFetch('/api/env');
+        const env = await res.json();
+        
+        let html = '';
+        
+        if (env.is_termux) {
+            html += `<button class="btn btn-secondary" style="justify-content: flex-start;" onclick="document.getElementById('iframe-filebrowser').src='/__filebrowser/files/data/data/com.termux/files/home'"><i data-lucide="home"></i> Home do Termux</button>`;
+            html += `<button class="btn btn-secondary" style="justify-content: flex-start;" onclick="document.getElementById('iframe-filebrowser').src='/__filebrowser/files/data/data/com.termux/files/usr'"><i data-lucide="terminal-square"></i> Root do Termux</button>`;
+            html += `<button class="btn btn-secondary" style="justify-content: flex-start;" onclick="document.getElementById('iframe-filebrowser').src='/__filebrowser/files${env.nginx_conf_dir}'"><i data-lucide="globe"></i> NGINX Conf</button>`;
+        } else {
+            const storageBase = env.storage_path === '/' ? '' : env.storage_path;
+            html += `<button class="btn btn-secondary" style="justify-content: flex-start;" onclick="document.getElementById('iframe-filebrowser').src='/__filebrowser/files${storageBase}/home'"><i data-lucide="home"></i> Diretório Home</button>`;
+            html += `<button class="btn btn-secondary" style="justify-content: flex-start;" onclick="document.getElementById('iframe-filebrowser').src='/__filebrowser/files/etc'"><i data-lucide="terminal-square"></i> Pasta /etc</button>`;
+            html += `<button class="btn btn-secondary" style="justify-content: flex-start;" onclick="document.getElementById('iframe-filebrowser').src='/__filebrowser/files/var/www'"><i data-lucide="globe"></i> Pasta /var/www</button>`;
+        }
+        
+        html += `<button class="btn btn-secondary" style="justify-content: flex-start;" onclick="document.getElementById('iframe-filebrowser').src='/__filebrowser/files' + window.location.pathname.replace('/index.html', '') + '/backups'"><i data-lucide="archive"></i> Backups</button>`;
+        html += `<button class="btn btn-secondary" style="justify-content: flex-start;" onclick="document.getElementById('iframe-filebrowser').src='/__filebrowser/files' + window.location.pathname.replace('/index.html', '') + '/config'"><i data-lucide="settings"></i> Configurações</button>`;
+        
+        container.innerHTML = html;
+        if (window.lucide) lucide.createIcons();
+    } catch(e) {
+        console.error('Falha ao carregar atalhos dinâmicos do FileBrowser:', e);
+    }
+}

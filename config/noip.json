@@ -1,7 +1,7 @@
 {
-  "username": "",
-  "password": "",
-  "hostname": "",
-  "autostart": false,
-  "interval": 15
+  "username": "arjtechx@gmail.com",
+  "password": "mapamundi",
+  "hostname": "neurixcurso.ddns.net",
+  "interval": 15,
+  "autostart": true
 }

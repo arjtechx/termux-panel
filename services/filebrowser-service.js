@@ -13,26 +13,89 @@ class FileBrowserService {
         this.binPath = path.join(this.binDir, os.platform() === 'win32' ? 'filebrowser.exe' : 'filebrowser');
         this.port = 8095;
         this.process = null;
-        this.defaultRoot = process.env.PREFIX ? '/data/data/com.termux/files/home' : os.homedir();
+        this.defaultRoot = process.env.PREFIX ? '/data/data/com.termux/files/home' : '/';
+        this.setupGracefulShutdown();
+    }
+
+    setupGracefulShutdown() {
+        const killProcess = () => {
+            if (this.process) {
+                console.log('\n[INFO] Encerrando FileBrowser graciosamente...');
+                try {
+                    this.process.kill('SIGKILL');
+                } catch(e) {}
+                this.process = null;
+            }
+        };
+
+        // Captura encerramentos do Node.js para não deixar zumbis
+        process.on('exit', killProcess);
+        process.on('SIGINT', () => { killProcess(); process.exit(); });
+        process.on('SIGTERM', () => { killProcess(); process.exit(); });
+        process.on('SIGHUP', () => { killProcess(); process.exit(); });
+    }
+
+    killZombies() {
+        console.log('[INFO] Iniciando caçada a processos zumbis do FileBrowser...');
+        try {
+            if (os.platform() !== 'win32') {
+                // Força o encerramento pela porta
+                try { execSync('fuser -k -9 8095/tcp 2>/dev/null', { stdio: 'ignore' }); } catch(e) {}
+                try { execSync('fuser -k -9 8096/tcp 2>/dev/null', { stdio: 'ignore' }); } catch(e) {}
+                // Força o encerramento pelo nome
+                try { execSync('pkill -9 -f filebrowser 2>/dev/null', { stdio: 'ignore' }); } catch(e) {}
+                try { execSync('killall -9 filebrowser 2>/dev/null', { stdio: 'ignore' }); } catch(e) {}
+            } else {
+                try { execSync('taskkill /F /IM filebrowser.exe 2>nul', { stdio: 'ignore' }); } catch(e) {}
+            }
+        } catch (e) {
+            // Ignora erros caso não haja processos para matar
+        }
+        console.log('[OK] Caçada terminada. Portas livres.');
+    }
+
+    wipeOldTraces() {
+        const markerFile = path.join(this.dataDir, '.v0.0.5_clean_install');
+        if (!fs.existsSync(markerFile)) {
+            console.log('[WARN] Iniciando rotina de remoção rastreada (Limpeza profunda v0.0.5)...');
+            try {
+                if (fs.existsSync(this.dataDir)) {
+                    const files = fs.readdirSync(this.dataDir);
+                    for (const file of files) {
+                        if (file.startsWith('database.db')) {
+                            const p = path.join(this.dataDir, file);
+                            fs.unlinkSync(p);
+                            console.log(`[DELETED] ${p}`);
+                        }
+                    }
+                } else {
+                    fs.mkdirSync(this.dataDir, { recursive: true });
+                }
+                // Cria o marcador para nunca mais apagar o banco depois dessa versão
+                fs.writeFileSync(markerFile, 'Instalação limpa e rastreada concluída.\n');
+                console.log('[OK] Limpeza profunda finalizada com sucesso. Banco de dados obliterado.');
+            } catch(e) {
+                console.log('[ERR] Erro na limpeza profunda:', e.message);
+            }
+        }
     }
 
     async init() {
         console.log('[INFO] Iniciando módulo FileBrowserService...');
         
-        // Criar pastas necessárias
         if (!fs.existsSync(this.binDir)) fs.mkdirSync(this.binDir, { recursive: true });
         if (!fs.existsSync(this.dataDir)) fs.mkdirSync(this.dataDir, { recursive: true });
 
-        // Instalar se não existir
+        // Rotina cão de guarda e faxina
+        this.killZombies();
+        this.wipeOldTraces();
+
         if (!fs.existsSync(this.binPath)) {
             console.log('[INFO] Binário do FileBrowser não encontrado. Iniciando instalação automática...');
             await this.installBinary();
         }
 
-        // Buscar porta livre a partir da 8095
         this.port = await this.findFreePort(8095);
-        
-        // Iniciar serviço
         return this.startProcess();
     }
 
@@ -61,16 +124,14 @@ class FileBrowserService {
 
     getPlatformInfo() {
         let arch = os.arch();
-        let platform = os.platform(); // 'linux', 'win32', 'darwin', 'android'
+        let platform = os.platform();
 
-        // Mapear Node.js arch para FileBrowser arch
         if (arch === 'x64') arch = 'amd64';
         if (arch === 'arm64') arch = 'arm64';
         if (arch === 'arm') arch = 'armv7';
 
-        // Mapear platform Node.js para platform FileBrowser
         if (platform === 'win32') platform = 'windows';
-        if (platform === 'android') platform = 'linux'; // Android/Termux roda perfeitamente o binário estático de Linux!
+        if (platform === 'android') platform = 'linux';
 
         return { platform, arch };
     }
@@ -80,18 +141,13 @@ class FileBrowserService {
         const ext = platform === 'windows' ? 'zip' : 'tar.gz';
         
         try {
-            // Buscando latest release da API
             console.log(`[INFO] Buscando release para ${platform}-${arch}...`);
             const apiRes = await axios.get('https://api.github.com/repos/filebrowser/filebrowser/releases/latest');
             const release = apiRes.data;
-            
-            // Exemplo de tag filebrowser: linux-arm64-filebrowser.tar.gz
             const assetName = `${platform}-${arch}-filebrowser.${ext}`;
             const asset = release.assets.find(a => a.name === assetName);
 
-            if (!asset) {
-                throw new Error(`Asset ${assetName} não encontrado na release mais recente.`);
-            }
+            if (!asset) throw new Error(`Asset ${assetName} não encontrado.`);
 
             const downloadUrl = asset.browser_download_url;
             console.log(`[INFO] Baixando: ${downloadUrl}`);
@@ -99,12 +155,7 @@ class FileBrowserService {
             const tmpFile = path.join(this.binDir, assetName);
             const writer = fs.createWriteStream(tmpFile);
             
-            const response = await axios({
-                url: downloadUrl,
-                method: 'GET',
-                responseType: 'stream'
-            });
-
+            const response = await axios({ url: downloadUrl, method: 'GET', responseType: 'stream' });
             response.data.pipe(writer);
 
             await new Promise((resolve, reject) => {
@@ -116,41 +167,46 @@ class FileBrowserService {
             if (ext === 'tar.gz') {
                 execSync(`tar -xzf "${tmpFile}" -C "${this.binDir}" filebrowser`);
             } else {
-                // Windows simplificado (usar powershell nativo)
                 execSync(`powershell -command "Expand-Archive -Force '${tmpFile}' '${this.binDir}'"`);
             }
 
-            fs.unlinkSync(tmpFile); // Limpar arquivo baixado
-
-            if (platform !== 'windows') {
-                execSync(`chmod +x "${this.binPath}"`);
-            }
-            
+            fs.unlinkSync(tmpFile);
+            if (platform !== 'windows') execSync(`chmod +x "${this.binPath}"`);
             console.log('[OK] FileBrowser instalado com sucesso.');
         } catch (error) {
-            console.error('[ERR] Erro na instalação automática do FileBrowser:', error.message);
+            console.error('[ERR] Erro na instalação automática:', error.message);
+        }
+    }
+
+    setupDatabaseOnce() {
+        try {
+            // Só configura o banco de dados se ele não existir
+            if (!fs.existsSync(this.dbPath)) {
+                console.log('[INFO] Construindo banco de dados (One-Time Setup)...');
+                execSync(`"${this.binPath}" config init -d "${this.dbPath}"`);
+                execSync(`"${this.binPath}" config set --auth.method noauth -d "${this.dbPath}"`);
+                
+                // Aplica o tema dark permanentemente na criação
+                console.log('[INFO] Injetando tema padrão no banco...');
+                execSync(`"${this.binPath}" config set --branding.theme dark --branding.name "Termux cPanel" --branding.files "" -d "${this.dbPath}"`);
+
+                try {
+                    execSync(`"${this.binPath}" users add admin painel_cpanel1234 --perm.admin -d "${this.dbPath}"`);
+                } catch(e) {}
+                console.log('[OK] Banco de dados inicializado com sucesso.');
+            } else {
+                console.log('[INFO] Banco de dados existente detectado. Pulando setup.');
+            }
+        } catch(e) {
+            console.log('[WARN] Falha ao construir banco de dados:', e.message);
         }
     }
 
     startProcess() {
-        if (this.process) {
-            console.log('[INFO] Reiniciando processo antigo do FileBrowser...');
-            this.process.kill();
-        }
+        // Garantir configuração antes do spawn (e nunca roda se o db já existe)
+        this.setupDatabaseOnce();
 
-        // Garante inicialização do banco SQLite e aplicação de CSS antes do spawn (evita SQLite Database Locked)
-        try {
-            if (!fs.existsSync(this.dbPath)) {
-                console.log('[INFO] Inicializando banco de dados SQLite do FileBrowser...');
-                execSync(`"${this.binPath}" config init -d "${this.dbPath}"`);
-                execSync(`"${this.binPath}" config set --auth.method noauth -d "${this.dbPath}"`);
-            }
-            this.applyTheme();
-        } catch(e) {
-            console.log('[WARN] Falha ao preparar banco de dados do FileBrowser:', e.message);
-        }
-
-        console.log(`[INFO] Starting FileBrowser...`);
+        console.log(`[INFO] Starting FileBrowser (Process Guard Active)...`);
         const args = [
             '-a', '127.0.0.1', 
             '-p', this.port.toString(), 
@@ -163,7 +219,7 @@ class FileBrowserService {
         this.process = spawn(this.binPath, args);
 
         this.process.on('error', (err) => {
-            console.error('[ERR] Falha ao iniciar processo do FileBrowser (spawn error):', err.message);
+            console.error('[ERR] Falha no processo do FileBrowser:', err.message);
         });
 
         this.process.stdout.on('data', (data) => {
@@ -181,46 +237,20 @@ class FileBrowserService {
         });
 
         this.process.on('close', (code) => {
-            console.log(`[WARN] FileBrowser encerrou com código ${code}. Tentando reiniciar em 3s...`);
-            setTimeout(() => this.startProcess(), 3000);
+            if (code !== 0 && code !== null) {
+                console.log(`[WARN] FileBrowser encerrou inesperadamente (código ${code}). Reiniciando em 3s...`);
+                // Limpa zombies novamente antes de reiniciar para evitar porta presa
+                this.killZombies();
+                setTimeout(() => this.startProcess(), 3000);
+            } else {
+                console.log(`[INFO] FileBrowser encerrado normalmente.`);
+            }
         });
 
         console.log(`[OK] FileBrowser running on port ${this.port}`);
-        console.log(`[INFO] NGINX reverse proxy enabled (internally proxied)`);
-        console.log(`[INFO] Embedded FileBrowser ready`);
+        console.log(`[INFO] Embedded FileBrowser ready.`);
         
         return this.port;
-    }
-
-    applyTheme() {
-        // Envia as variáveis CSS do Termux cPanel para o banco de dados do FileBrowser
-        const customCss = `
-            :root {
-                --primary: #89b4fa;
-                --background: #11111b;
-                --surface: #1e1e2e;
-                --text: #cdd6f4;
-            }
-            body { font-family: 'Inter', sans-serif !important; background: var(--background) !important; color: var(--text) !important; }
-            #app { background: var(--background) !important; }
-            .card { background: var(--surface) !important; border: 1px solid rgba(255,255,255,0.05) !important; border-radius: 8px !important; }
-            .button { border-radius: 6px !important; }
-            header { background: var(--background) !important; border-bottom: 1px solid rgba(255,255,255,0.05) !important; }
-            .action { color: var(--primary) !important; }
-            /* Esconde a logo superior esquerda para não parecer software de terceiro */
-            #app > header > div.logo { display: none !important; }
-        `;
-        try {
-            // Criar o arquivo custom.css na pasta de branding
-            const tmpCssPath = path.join(this.dataDir, 'custom.css');
-            fs.writeFileSync(tmpCssPath, customCss);
-            
-            // FileBrowser v2 lê a pasta de branding e busca custom.css nela automaticamente!
-            execSync(`"${this.binPath}" config set --branding.theme dark --branding.name "Termux cPanel" --branding.files "${this.dataDir}" --auth.method noauth -d "${this.dbPath}"`);
-            console.log('[OK] FileBrowser theme integrado com sucesso.');
-        } catch(e) {
-            console.log('[WARN] Falha ao injetar CSS customizado:', e.message);
-        }
     }
 
     getPort() {

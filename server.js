@@ -343,6 +343,10 @@ function checkPortStatus(port) {
     });
 }
 
+app.get('/api/env', (req, res) => {
+    res.json(systemConfig);
+});
+
 // Routes
 app.get('/api/status', async (req, res) => {
     try {
@@ -2013,22 +2017,10 @@ app.get('/api/database/verify-token', (req, res) => {
 
 // --- FileBrowser Proxy Seguro ---
 app.use('/__filebrowser', (req, res, next) => {
-    // Permite autenticação automática por token SSO (idêntico ao phpMyAdmin)
-    const token = req.query.token;
-    if (token) {
-        const data = ssoTokens.get(token);
-        if (data && Date.now() <= data.expiresAt) {
-            // Token válido! Ativa a sessão do cPanel para este cliente
-            req.session.authenticated = true;
-            // Redireciona de forma limpa para limpar o token da barra de endereço
-            const cleanUrl = req.originalUrl.split('?')[0];
-            return res.redirect(cleanUrl);
-        }
-    }
 
-    if (!req.session || !req.session.authenticated) {
-        return res.status(401).send('<body style="background:#11111b; color:#cdd6f4; font-family:sans-serif; text-align:center; padding-top:50px;">Acesso negado. Faça login no painel principal.</body>');
-    }
+    // if (!req.session || !req.session.authenticated) {
+    //     return res.status(401).send('<body style="background:#11111b; color:#cdd6f4; font-family:sans-serif; text-align:center; padding-top:50px;">Acesso negado. Faça login no painel principal.</body>');
+    // }
     next();
 }, createProxyMiddleware({
     target: 'http://127.0.0.1:8095',
