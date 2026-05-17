@@ -803,11 +803,21 @@ async function checkMariaDBDiagnostics() {
                 ? `<span style="background:rgba(16,185,129,0.15); color:#34d399; font-weight:600; padding:2px 8px; border-radius:12px; font-size:0.75rem; border:1px solid rgba(16,185,129,0.3); display:inline-flex; align-items:center; gap:4px;">✅ OK</span>`
                 : `<span style="background:rgba(239,68,68,0.15); color:#f87171; font-weight:600; padding:2px 8px; border-radius:12px; font-size:0.75rem; border:1px solid rgba(239,68,68,0.3); display:inline-flex; align-items:center; gap:4px;">❌ Falha</span>`;
 
+            // Representação de portas HTTP ativas
+            const activePortsStr = d.nginx.activePorts && d.nginx.activePorts.length > 0
+                ? `<span style="color:#34d399; font-weight:600; background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.2); padding:2px 6px; border-radius:4px; font-family:monospace; font-size:0.75rem;">${d.nginx.activePorts.join(', ')}</span>`
+                : `<span style="background:rgba(239,68,68,0.15); color:#f87171; font-weight:600; padding:2px 8px; border-radius:12px; font-size:0.75rem; border:1px solid rgba(239,68,68,0.3);">❌ Nenhuma</span>`;
+
+            // Sites respondendo na varredura HTTP
+            const sitesRespondedStr = d.nginx.sitesResponding && d.nginx.sitesResponding.length > 0
+                ? d.nginx.sitesResponding.map(s => `<span style="background:rgba(59,130,246,0.15); color:#60a5fa; border:1px solid rgba(59,130,246,0.3); padding:2px 6px; border-radius:4px; font-size:0.72rem; margin-right:4px; font-family:monospace; margin-bottom:4px; display:inline-block;">Porta ${s.port} (HTTP ${s.status})</span>`).join('')
+                : `<span style="color:var(--text-muted); font-size:0.75rem;">Nenhum site respondendo</span>`;
+
             resultDiv.innerHTML = `
                 <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px;">
                     <div style="background:rgba(255,255,255,0.02); padding:14px; border-radius:6px; border:1px solid rgba(255,255,255,0.05);">
                         <h4 style="margin-top:0; margin-bottom:10px; font-size:0.875rem; display:flex; align-items:center; gap:6px; color:var(--primary);">
-                            <i data-lucide="binary" style="width:14px;height:14px;"></i> Binários do Sistema
+                            <i data-lucide="binary" style="width:14px;height:14px;"></i> Binários do MariaDB
                         </h4>
                         <div style="font-size:0.82rem; display:flex; flex-direction:column; gap:6px;">
                             <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -824,7 +834,7 @@ async function checkMariaDBDiagnostics() {
 
                     <div style="background:rgba(255,255,255,0.02); padding:14px; border-radius:6px; border:1px solid rgba(255,255,255,0.05);">
                         <h4 style="margin-top:0; margin-bottom:10px; font-size:0.875rem; display:flex; align-items:center; gap:6px; color:var(--primary);">
-                            <i data-lucide="activity" style="width:14px;height:14px;"></i> Status do Serviço
+                            <i data-lucide="activity" style="width:14px;height:14px;"></i> Status do MariaDB
                         </h4>
                         <div style="font-size:0.82rem; display:flex; flex-direction:column; gap:6px;">
                             <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -841,7 +851,7 @@ async function checkMariaDBDiagnostics() {
 
                     <div style="background:rgba(255,255,255,0.02); padding:14px; border-radius:6px; border:1px solid rgba(255,255,255,0.05);">
                         <h4 style="margin-top:0; margin-bottom:10px; font-size:0.875rem; display:flex; align-items:center; gap:6px; color:var(--primary);">
-                            <i data-lucide="folder" style="width:14px;height:14px;"></i> Permissões & Pastas
+                            <i data-lucide="folder" style="width:14px;height:14px;"></i> Permissões & Pastas DB
                         </h4>
                         <div style="font-size:0.82rem; display:flex; flex-direction:column; gap:6px;">
                             <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -878,21 +888,53 @@ async function checkMariaDBDiagnostics() {
 
                     <div style="background:rgba(255,255,255,0.02); padding:14px; border-radius:6px; border:1px solid rgba(255,255,255,0.05);">
                         <h4 style="margin-top:0; margin-bottom:10px; font-size:0.875rem; display:flex; align-items:center; gap:6px; color:var(--primary);">
-                            <i data-lucide="hard-drive" style="width:14px;height:14px;"></i> Nginx & Gateway
+                            <i data-lucide="hard-drive" style="width:14px;height:14px;"></i> Diagnóstico Nginx
                         </h4>
                         <div style="font-size:0.82rem; display:flex; flex-direction:column; gap:6px;">
                             <div style="display:flex; justify-content:space-between; align-items:center;">
-                                <span>NGINX Ativo:</span> ${badge(d.nginx.nginxRunning)}
+                                <span>NGINX Instalado:</span> ${badge(d.nginx.installed)}
                             </div>
                             <div style="display:flex; justify-content:space-between; align-items:center;">
-                                <span>Vhost Nginx phpMyAdmin:</span> ${badge(d.nginx.pmaVhostExists)}
+                                <span>Configuração NGINX:</span> ${badge(d.nginx.configOk)}
                             </div>
                             <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <span>Processo NGINX:</span> ${badge(d.nginx.processActive)}
+                            </div>
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <span>Portas HTTP Ativas:</span> ${activePortsStr}
+                            </div>
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <span>NGINX Ativo (Global):</span> ${badge(d.nginx.nginxActive)}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="background:rgba(255,255,255,0.02); padding:14px; border-radius:6px; border:1px solid rgba(255,255,255,0.05);">
+                        <h4 style="margin-top:0; margin-bottom:10px; font-size:0.875rem; display:flex; align-items:center; gap:6px; color:var(--primary);">
+                            <i data-lucide="shield-check" style="width:14px;height:14px;"></i> Conectividade HTTP & SSO
+                        </h4>
+                        <div style="font-size:0.82rem; display:flex; flex-direction:column; gap:6px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
                                 <span>Loop Validador SSO:</span> ${badge(d.sso.tokenValidationOk)}
+                            </div>
+                            <div style="display:flex; flex-direction:column; gap:4px; margin-top:2px;">
+                                <span style="font-weight:600;">Sites Respondendo (HTTP):</span>
+                                <div style="display:flex; flex-wrap:wrap; gap:4px; margin-top:2px;">
+                                    ${sitesRespondedStr}
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
+
+                <!-- Botão premium de Logs Técnicos -->
+                <div style="margin-top:16px; border-top:1px solid rgba(255,255,255,0.08); padding-top:14px; display:flex; justify-content:flex-end;">
+                    <button class="btn btn-secondary btn-sm" onclick="toggleTechDiagLogs()" style="display:flex; align-items:center; gap:6px; background:var(--bg-lighter); color:var(--text-color); border:1px solid var(--border-color); font-weight:600;">
+                        <i data-lucide="terminal" style="width:14px;height:14px;"></i> Detalhes Técnicos (Nginx & Portas)
+                    </button>
+                </div>
+                
+                <div id="tech-diag-logs-container" class="hidden" style="margin-top:12px; background:rgba(0,0,0,0.55); padding:14px; border-radius:6px; border:1px solid rgba(255,255,255,0.12); font-family:monospace; font-size:0.75rem; white-space:pre-wrap; max-height:320px; overflow-y:auto; color:#34d399; text-align:left; line-height:1.4;">${d.nginx.techLogs}</div>
             `;
         } else {
             resultDiv.innerHTML = `
@@ -911,6 +953,13 @@ async function checkMariaDBDiagnostics() {
         btn.disabled = false;
         btn.innerHTML = originalText;
         if (window.lucide) lucide.createIcons();
+    }
+}
+
+function toggleTechDiagLogs() {
+    const container = document.getElementById('tech-diag-logs-container');
+    if (container) {
+        container.classList.toggle('hidden');
     }
 }
 

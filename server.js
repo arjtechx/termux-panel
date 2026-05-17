@@ -2782,6 +2782,35 @@ app.get('/api/database/verify-token', (req, res) => {
     });
 });
 
+// Helper para extrair portas configuradas nos virtual hosts do Nginx
+function getConfiguredNginxPorts(prefix) {
+    const confDir = path.join(prefix, 'etc', 'nginx', 'conf.d');
+    const ports = new Set();
+    ports.add(8080); // Porta padrão do phpMyAdmin SSO
+    try {
+        if (fs.existsSync(confDir)) {
+            const files = fs.readdirSync(confDir);
+            for (const file of files) {
+                if (file.endsWith('.conf')) {
+                    const content = fs.readFileSync(path.join(confDir, file), 'utf8');
+                    const matches = content.match(/listen\s+(\d+|\[::\]:\d+|0\.0\.0\.0:\d+)/g);
+                    if (matches) {
+                        for (const match of matches) {
+                            const portMatch = match.match(/\d+/);
+                            if (portMatch) {
+                                ports.add(parseInt(portMatch[0], 10));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } catch (e) {
+        console.error('Erro ao ler portas do Nginx:', e);
+    }
+    return Array.from(ports);
+}
+
 // Endpoint Diagnóstico Completo da Stack do Banco de Dados
 app.get('/api/mariadb/diagnose', async (req, res) => {
     try {
@@ -2824,8 +2853,67 @@ app.get('/api/mariadb/diagnose', async (req, res) => {
         const configIncExists = fs.existsSync(path.join(pmaDir, 'config.inc.php'));
         const autologinExists = fs.existsSync(path.join(pmaDir, 'autologin.php'));
         
-        // 5. Nginx
-        const nginxRunning = await runCmd('pgrep -x "nginx"').then(r => !!r).catch(() => false);
+        // 5. Nginx Diagnóstico Avançado (Evita falsos negativos)
+        const hasNginxBinary = await runCmd('command -v nginx').then(r => !!r).catch(() => false);
+        
+        let nginxConfigTestOk = false;
+        let nginxConfigTestOutput = 'Nenhum teste executado';
+        try {
+            const testOut = await runCmd('nginx -t 2>&1');
+            nginxConfigTestOutput = testOut;
+            nginxConfigTestOk = testOut.includes('syntax is ok') && testOut.includes('test is successful');
+        } catch(e) {
+            nginxConfigTestOutput = e.message;
+            nginxConfigTestOk = false;
+        }
+
+        const nginxProcessActive = await runCmd('pgrep -f "nginx"').then(r => !!r).catch(() => false);
+        
+        // Obter portas de sites configurados do Nginx
+        const nginxPorts = getConfiguredNginxPorts(prefix);
+        const activePorts = [];
+        const sitesResponding = [];
+        const httpChecksLogs = [];
+
+        for (const port of nginxPorts) {
+            try {
+                const url = `http://127.0.0.1:${port}`;
+                const curlOut = await runCmd(`curl -s -I -o /dev/null -w "%{http_code}" --connect-timeout 2 "${url}"`).catch(() => '');
+                const statusCode = parseInt(curlOut.trim(), 10);
+                
+                if (statusCode > 0) {
+                    activePorts.push(port);
+                    sitesResponding.push({ port, status: statusCode });
+                    httpChecksLogs.push(`curl -I ${url} -> HTTP ${statusCode} (ONLINE)`);
+                } else {
+                    httpChecksLogs.push(`curl -I ${url} -> Falha (Sem resposta / Código: ${statusCode || '000'})`);
+                }
+            } catch(e) {
+                httpChecksLogs.push(`curl -I http://127.0.0.1:${port} -> Erro: ${e.message}`);
+            }
+        }
+
+        // Logs técnicos detalhados para exibição do botão "Detalhes"
+        const pgrepOutput = await runCmd('pgrep -af nginx || pgrep -f nginx').catch(() => 'Nenhum processo detectado');
+        const ssOutput = await runCmd(`ss -tulpn | grep -E ':(${nginxPorts.join('|')})' || ss -tulpn`).catch(() => 'ss indisponível');
+
+        let techLogs = `=== DIAGNÓSTICO TÉCNICO COMPLETO NGINX ===\n`;
+        techLogs += `1. BINÁRIO NGINX ENCONTRADO: ${hasNginxBinary ? 'SIM' : 'NÃO'}\n\n`;
+        techLogs += `2. CONFIGURAÇÃO (nginx -t):\n${nginxConfigTestOutput}\n\n`;
+        techLogs += `3. PROCESSOS NGINX ATIVOS (pgrep):\n${pgrepOutput}\n\n`;
+        techLogs += `4. PORTAS DOS SITES ESCUTANDO (ss):\n${ssOutput}\n\n`;
+        techLogs += `5. REQUISIÇÃO LOCAL HTTP (curl):\n${httpChecksLogs.join('\n')}\n`;
+
+        // Regra de validação final para o NGINX Ativo status
+        let nginxRunning = true;
+        if (!hasNginxBinary) {
+            nginxRunning = false;
+        } else if (!nginxConfigTestOk) {
+            nginxRunning = false;
+        } else if (!nginxProcessActive && activePorts.length === 0) {
+            nginxRunning = false;
+        }
+
         const pmaVhostFile = path.join(prefix, 'etc', 'nginx', 'conf.d', 'phpmyadmin.conf');
         const pmaVhostExists = fs.existsSync(pmaVhostFile);
         
@@ -2846,7 +2934,19 @@ app.get('/api/mariadb/diagnose', async (req, res) => {
                 service: { running, port3306Active, socketExists, socketFile },
                 folders: { mysqlDirExists, mysqlDir, mysqlDirOwner, runDir },
                 php: { phpRunning, pmaExists, configIncExists, autologinExists },
-                nginx: { nginxRunning, pmaVhostExists, pmaVhostFile },
+                nginx: { 
+                    installed: hasNginxBinary,
+                    configOk: nginxConfigTestOk,
+                    configOutput: nginxConfigTestOutput,
+                    processActive: nginxProcessActive,
+                    activePorts: activePorts,
+                    configuredPorts: nginxPorts,
+                    sitesResponding: sitesResponding,
+                    nginxActive: nginxRunning,
+                    techLogs: techLogs,
+                    pmaVhostExists,
+                    pmaVhostFile
+                },
                 sso: { tokenValidationOk }
             }
         });
