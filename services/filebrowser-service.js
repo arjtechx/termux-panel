@@ -10,7 +10,12 @@ class FileBrowserService {
         this.binDir = path.join(__dirname, '..', 'bin');
         this.dataDir = path.join(__dirname, '..', 'data', 'filebrowser');
         this.dbPath = path.join(this.dataDir, 'database.db');
-        this.binPath = path.join(this.binDir, os.platform() === 'win32' ? 'filebrowser.exe' : 'filebrowser');
+        
+        const isTermux = !!process.env.PREFIX;
+        this.binPath = isTermux 
+            ? path.join(process.env.PREFIX, 'bin', 'filebrowser')
+            : path.join(this.binDir, os.platform() === 'win32' ? 'filebrowser.exe' : 'filebrowser');
+            
         this.port = 8095;
         this.process = null;
         this.defaultRoot = process.env.PREFIX ? '/data/data/com.termux/files/home' : os.homedir();
@@ -75,6 +80,18 @@ class FileBrowserService {
     }
 
     async installBinary() {
+        const isTermux = !!process.env.PREFIX;
+        if (isTermux) {
+            console.log('[INFO] Ambiente Termux detectado. Instalando filebrowser nativo via pkg...');
+            try {
+                execSync('pkg install filebrowser -y');
+                console.log('[OK] FileBrowser nativo instalado via pkg com sucesso.');
+                return;
+            } catch(e) {
+                console.error('[ERR] Falha ao instalar filebrowser via pkg, tentando download alternativo:', e.message);
+            }
+        }
+
         const { platform, arch } = this.getPlatformInfo();
         const ext = platform === 'windows' ? 'zip' : 'tar.gz';
         
@@ -159,6 +176,10 @@ class FileBrowserService {
         ];
 
         this.process = spawn(this.binPath, args);
+
+        this.process.on('error', (err) => {
+            console.error('[ERR] Falha ao iniciar processo do FileBrowser (spawn error):', err.message);
+        });
 
         this.process.stdout.on('data', (data) => {
             const lines = data.toString().trim().split('\n');
