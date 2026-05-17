@@ -157,6 +157,7 @@ function switchTab(targetId) {
         checkHealthStatus();
         checkSystemUpdates();
     }
+    if (targetId === 'tab-settings') loadSettings();
 }
 
 function initMobileNav() {
@@ -1190,6 +1191,108 @@ async function safeFetch(url, method = 'GET', body = null) {
 //  AUTH
 // ============================================================
 function logout() { window.location.href = '/login.html'; }
+
+// ============================================================
+//  CONFIGURAÇÕES DO PAINEL
+// ============================================================
+async function loadSettings() {
+    const res = await safeFetch(`${API_BASE}/system/settings`);
+    if (res?.success) {
+        // Preenche porta
+        const portInput = document.getElementById('settings-port-input');
+        if (portInput) portInput.value = res.port;
+
+        // Preenche usuário
+        const userInput = document.getElementById('settings-user-input');
+        if (userInput) userInput.value = res.adminUser;
+        
+        // Limpa campo de senha
+        const passInput = document.getElementById('settings-pass-input');
+        if (passInput) passInput.value = '';
+
+        // Preenche autostart badge e botão
+        const badge = document.getElementById('autostart-status-badge');
+        const btn = document.getElementById('btn-toggle-autostart');
+        if (badge && btn) {
+            if (res.autostart) {
+                badge.className = 'badge badge-success';
+                badge.textContent = 'Ativo';
+                btn.className = 'btn btn-danger btn-block';
+                btn.innerHTML = '<i data-lucide="power-off"></i> Desativar Auto-Início';
+            } else {
+                badge.className = 'badge badge-danger';
+                badge.textContent = 'Inativo';
+                btn.className = 'btn btn-primary btn-block';
+                btn.innerHTML = '<i data-lucide="zap"></i> Ativar Auto-Início';
+            }
+            if (window.lucide) lucide.createIcons();
+        }
+    }
+}
+
+async function toggleBootAutostart() {
+    const badge = document.getElementById('autostart-status-badge');
+    const isCurrentActive = badge?.textContent === 'Ativo';
+    const nextState = !isCurrentActive;
+
+    const res = await safeFetch(`${API_BASE}/system/settings/autostart/toggle`, 'POST', { active: nextState });
+    if (res?.success) {
+        alert(nextState 
+            ? '✅ Auto-inicialização configurada com sucesso!\nSempre que abrir o aplicativo Termux, o painel e os serviços iniciarão sozinhos.' 
+            : '✅ Auto-inicialização removida com sucesso.'
+        );
+        loadSettings();
+    } else {
+        alert('❌ Falha ao alterar a regra de auto-inicialização.');
+    }
+}
+
+async function savePanelPort() {
+    const input = document.getElementById('settings-port-input');
+    const newPort = parseInt(input?.value);
+    if (!newPort || newPort < 1 || newPort > 65535) {
+        alert('❌ Porta inválida! Insira um valor entre 1 e 65535.');
+        return;
+    }
+
+    if (!confirm(`⚠️ Você tem certeza que deseja mudar a porta do painel para ${newPort}?\n\nO servidor será desligado e reiniciado automaticamente na nova porta. Você precisará acessar o painel usando o novo endereço.`)) {
+        return;
+    }
+
+    const res = await safeFetch(`${API_BASE}/system/settings/port`, 'POST', { port: newPort });
+    if (res?.success) {
+        alert(`✅ Porta alterada com sucesso!\n\nO servidor está reiniciando agora. Você será redirecionado para a nova porta em 5 segundos.`);
+        setTimeout(() => {
+            window.location.href = `http://${window.location.hostname}:${newPort}`;
+        }, 5000);
+    } else {
+        alert(`❌ Erro: ${res?.error || 'Não foi possível alterar a porta.'}`);
+    }
+}
+
+async function savePanelAuth() {
+    const userInput = document.getElementById('settings-user-input');
+    const passInput = document.getElementById('settings-pass-input');
+    const user = userInput?.value?.trim();
+    const pass = passInput?.value;
+
+    if (!user || !pass || user === '' || pass === '') {
+        alert('❌ Usuário e senha não podem ficar vazios!');
+        return;
+    }
+
+    if (!confirm('Deseja salvar as novas credenciais de acesso? Você precisará usá-las no próximo login.')) {
+        return;
+    }
+
+    const res = await safeFetch(`${API_BASE}/system/settings/auth`, 'POST', { user, pass });
+    if (res?.success) {
+        alert('✅ Credenciais atualizadas com sucesso!');
+        loadSettings();
+    } else {
+        alert(`❌ Erro: ${res?.error || 'Não foi possível salvar as credenciais.'}`);
+    }
+}
 
 // ============================================================
 //  START

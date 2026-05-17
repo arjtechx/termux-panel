@@ -15,7 +15,16 @@ const crypto = require('crypto');
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
-const PORT = 8088;
+const SERVER_CONFIG_FILE = path.join(__dirname, 'config', 'server.json');
+let PORT = 8088;
+if (fs.existsSync(SERVER_CONFIG_FILE)) {
+    try {
+        const serverConfig = JSON.parse(fs.readFileSync(SERVER_CONFIG_FILE, 'utf8'));
+        if (serverConfig.port) {
+            PORT = parseInt(serverConfig.port) || 8088;
+        }
+    } catch(e) {}
+}
 
 const session = require('express-session');
 const APPS_FILE = path.join(__dirname, 'config', 'apps.json');
@@ -1236,6 +1245,106 @@ app.post('/api/system/update/config', (req, res) => {
         const config = { ...getUpdateConfig(), github_repo: repo };
         fs.writeFileSync(UPDATE_CONFIG_FILE, JSON.stringify(config, null, 2));
         res.json({ success: true, config });
+    } catch(err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// --- Panel Settings Endpoints ---
+app.get('/api/system/settings', (req, res) => {
+    try {
+        const bashrcPath = path.join(os.homedir(), '.bashrc');
+        let autostart = false;
+        if (fs.existsSync(bashrcPath)) {
+            const content = fs.readFileSync(bashrcPath, 'utf8');
+            autostart = content.includes('termux-panel/scripts/start.sh');
+        }
+        
+        let adminUser = 'admin';
+        if (fs.existsSync(AUTH_FILE)) {
+            try {
+                const auth = JSON.parse(fs.readFileSync(AUTH_FILE, 'utf8'));
+                adminUser = auth.user || 'admin';
+            } catch(e) {}
+        }
+        
+        res.json({
+            success: true,
+            port: PORT,
+            autostart,
+            adminUser
+        });
+    } catch(err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/system/settings/port', (req, res) => {
+    try {
+        const newPort = parseInt(req.body.port);
+        if (!newPort || newPort < 1 || newPort > 65535) {
+            return res.status(400).json({ error: 'Porta inválida (deve ser entre 1 e 65535)' });
+        }
+        if ([80, 8080, 3306].includes(newPort)) {
+            return res.status(400).json({ error: `A porta ${newPort} é reservada para serviços do sistema (HTTP/phpMyAdmin/MariaDB).` });
+        }
+        
+        fs.writeFileSync(SERVER_CONFIG_FILE, JSON.stringify({ port: newPort }, null, 2));
+        
+        res.json({ success: true, message: `Porta alterada para ${newPort}. O painel reiniciará em breve.` });
+        
+        // Reinicia o servidor em 1.5s
+        setTimeout(() => {
+            console.log('Reiniciando servidor devido a alteração de porta...');
+            process.exit(0);
+        }, 1500);
+    } catch(err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/system/settings/auth', (req, res) => {
+    try {
+        const { user, pass } = req.body;
+        if (!user || !pass || user.trim() === '' || pass.trim() === '') {
+            return res.status(400).json({ error: 'Usuário e senha não podem ser vazios.' });
+        }
+        
+        fs.writeFileSync(AUTH_FILE, JSON.stringify({ user, pass }, null, 2));
+        res.json({ success: true, message: 'Credenciais de administrador salvas com sucesso!' });
+    } catch(err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/system/settings/autostart/toggle', (req, res) => {
+    try {
+        const { active } = req.body;
+        const bashrcPath = path.join(os.homedir(), '.bashrc');
+        
+        let content = '';
+        if (fs.existsSync(bashrcPath)) {
+            content = fs.readFileSync(bashrcPath, 'utf8');
+        }
+        
+        const lineToAdd = 'bash ~/termux-panel/scripts/start.sh';
+        const hasLine = content.includes(lineToAdd);
+        
+        if (active) {
+            if (!hasLine) {
+                // Adiciona quebra de linha se necessário
+                const prefix = content.length > 0 && !content.endsWith('\n') ? '\n' : '';
+                fs.appendFileSync(bashrcPath, `${prefix}${lineToAdd}\n`);
+            }
+        } else {
+            if (hasLine) {
+                const lines = content.split('\n');
+                const clean = lines.filter(l => !l.includes('termux-panel/scripts/start.sh')).join('\n');
+                fs.writeFileSync(bashrcPath, clean);
+            }
+        }
+        
+        res.json({ success: true, active });
     } catch(err) {
         res.status(500).json({ error: err.message });
     }

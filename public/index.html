@@ -116,6 +116,9 @@
                 <a href="#" class="nav-link" data-target="tab-health">
                     <i data-lucide="stethoscope"></i> Diagnóstico / Fix
                 </a>
+                <a href="#" class="nav-link" data-target="tab-settings">
+                    <i data-lucide="settings"></i> Ajustes / Senha / Porta
+                </a>
             </nav>
         </aside>
 
@@ -729,6 +732,64 @@
                     <div id="backup-result" class="hidden" style="margin-top:28px; padding:16px; background:rgba(16,185,129,0.1); border:1px solid var(--success); border-radius:8px;">
                         <p style="color:var(--success); font-weight:600;">✅ Backup concluído!</p>
                         <a id="backup-download-link" href="#" class="btn btn-success btn-sm" style="margin-top:10px;">Baixar Arquivo</a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- === TAB: SETTINGS === -->
+            <div id="tab-settings" class="tab-pane">
+                <div class="page-header">
+                    <h1>Configurações do Painel</h1>
+                </div>
+
+                <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; margin-bottom: 20px;">
+                    <!-- Auto-Start Card -->
+                    <div class="card" style="display:flex; flex-direction:column; justify-content:space-between; height: 100%;">
+                        <div>
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+                                <h3 class="card-title" style="margin-bottom:0; display:flex; align-items:center;"><i data-lucide="power" style="color:var(--success); margin-right:8px;"></i>Regra de Boot</h3>
+                                <span id="autostart-status-badge" class="badge badge-danger">Inativo</span>
+                            </div>
+                            <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:20px;">
+                                Configure o painel para iniciar automaticamente em segundo plano (incluindo NGINX, PHP-FPM e MariaDB) sempre que você abrir o aplicativo do Termux no seu celular.
+                            </p>
+                        </div>
+                        <button class="btn btn-primary btn-block" id="btn-toggle-autostart" onclick="toggleBootAutostart()">
+                            <i data-lucide="zap"></i> Ativar Auto-Início
+                        </button>
+                    </div>
+
+                    <!-- Port Card -->
+                    <div class="card" style="display:flex; flex-direction:column; justify-content:space-between; height: 100%;">
+                        <div>
+                            <h3 class="card-title" style="margin-bottom:14px; display:flex; align-items:center;"><i data-lucide="network" style="color:var(--primary); margin-right:8px;"></i>Porta de Acesso</h3>
+                            <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:16px;">
+                                Altere a porta HTTP do painel (Padrão: 8088). Após alterar, o servidor reiniciará automaticamente na nova porta.
+                            </p>
+                            <div class="form-row" style="margin-bottom: 16px;">
+                                <input type="number" id="settings-port-input" placeholder="Nova Porta (Ex: 8089)" min="1" max="65535" style="width:100%;">
+                            </div>
+                        </div>
+                        <button class="btn class-port-save btn-success btn-block" onclick="savePanelPort()">
+                            <i data-lucide="save"></i> Salvar Nova Porta
+                        </button>
+                    </div>
+
+                    <!-- Admin Auth Card -->
+                    <div class="card" style="display:flex; flex-direction:column; justify-content:space-between; height: 100%;">
+                        <div>
+                            <h3 class="card-title" style="margin-bottom:14px; display:flex; align-items:center;"><i data-lucide="shield-check" style="color:var(--warning); margin-right:8px;"></i>Credenciais de Acesso</h3>
+                            <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:16px;">
+                                Altere o usuário e senha de administrador para fazer login no painel web.
+                            </p>
+                            <div class="form-row" style="display:flex; flex-direction:column; gap:10px; margin-bottom: 16px;">
+                                <input type="text" id="settings-user-input" placeholder="Novo Usuário Admin" style="width:100%;">
+                                <input type="password" id="settings-pass-input" placeholder="Nova Senha" style="width:100%;">
+                            </div>
+                        </div>
+                        <button class="btn btn-warning btn-block" onclick="savePanelAuth()">
+                            <i data-lucide="lock"></i> Salvar Acesso
+                        </button>
                     </div>
                 </div>
             </div>
