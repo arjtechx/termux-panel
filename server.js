@@ -79,7 +79,8 @@ function checkAuth(req, res, next) {
         req.path.endsWith('.js') ||
         req.path === '/api/phpmyadmin/validate-token' ||
         req.path === '/api/pma/sso/validate' ||
-        req.path === '/api/database/verify-token'
+        req.path === '/api/database/verify-token' ||
+        req.path === '/api/phpmyadmin/validate'
     ) {
         return next();
     }
@@ -2462,6 +2463,395 @@ app.post('/api/mariadb/repair-tables', async (req, res) => {
         res.json({ success: true, output: out });
     } catch(err) {
         res.status(500).json({ error: err.message });
+    }
+});
+
+// ─── NOVO SISTEMA ROBUSTO MARIADB CONTROLES & DIAGNÓSTICO ─────────
+
+const ssoTokens = new Map();
+
+// Helper para verificar se MariaDB está rodando com validação real
+async function isMariaDBRunning() {
+    try {
+        // 1. Checa processo ativo pgrep -f
+        const pgrep = await runCmd('pgrep -f "mariadbd|mysqld"').then(r => !!r).catch(() => false);
+        if (!pgrep) return false;
+
+        // 2. Checa porta TCP 3306 de forma rápida
+        const portActive = await new Promise(resolve => {
+            const sock = new net.Socket();
+            sock.setTimeout(800);
+            sock.on('connect', () => { sock.destroy(); resolve(true); });
+            sock.on('timeout', () => { sock.destroy(); resolve(false); });
+            sock.on('error', () => { sock.destroy(); resolve(false); });
+            sock.connect(3306, '127.0.0.1');
+        });
+        if (portActive) return true;
+
+        // 3. Fallback: mysqladmin ping caso porta esteja ativa mas restrita ao socket local
+        const cfg = getFullDbConfig();
+        const passArg = cfg.password ? `-p${cfg.password}` : '';
+        const adminPing = await runCmd(`mysqladmin ping -u ${cfg.user} ${passArg} 2>/dev/null`).then(r => r.includes('alive')).catch(() => false);
+        return adminPing;
+    } catch (e) {
+        return false;
+    }
+}
+
+// Rota unificada para controle do serviço MariaDB
+app.post('/api/database/service', async (req, res) => {
+    const { action } = req.body;
+    if (!['start', 'stop', 'restart', 'status'].includes(action)) {
+        return res.status(400).json({ success: false, error: 'Ação inválida. Use start, stop, restart ou status.' });
+    }
+
+    try {
+        const prefix = systemConfig.prefix || process.env.PREFIX || '/data/data/com.termux/files/usr';
+        const mysqlDir = systemConfig.is_termux ? `${prefix}/var/lib/mysql` : '/var/lib/mysql';
+        const runDir = path.join(prefix, 'var', 'run', 'mysqld');
+        const logFile = path.join(prefix, 'var', 'log', 'mariadb-panel.log');
+        const username = os.userInfo().username;
+
+        if (action === 'status') {
+            const running = await isMariaDBRunning();
+            return res.json({ success: true, running });
+        }
+
+        if (action === 'start') {
+            const runningBefore = await isMariaDBRunning();
+            if (runningBefore) {
+                return res.json({ success: true, message: 'MariaDB já está rodando.' });
+            }
+
+            // Garante existência dos diretórios
+            if (!fs.existsSync(runDir)) fs.mkdirSync(runDir, { recursive: true });
+            const logDir = path.dirname(logFile);
+            if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+
+            // Garante permissões (chown)
+            try {
+                fs.chmodSync(runDir, '777');
+                // Tenta chown local
+                await runCmd(`chown -R ${username} "${mysqlDir}" "${runDir}" 2>/dev/null`).catch(() => {});
+                // Fallback com root/su se disponível para corrigir arquivos criados por execuções root anteriores
+                if (systemConfig.has_root) {
+                    await runCmd(`chown -R ${username} "${mysqlDir}" "${runDir}"`, true).catch(() => {});
+                }
+            } catch (e) {
+                console.warn('Erro ao ajustar permissões do MariaDB:', e.message);
+            }
+
+            // Identifica daemon disponível
+            const hasSafe = await runCmd('command -v mariadbd-safe').then(r => !!r).catch(() => false);
+            const daemonCmd = hasSafe ? 'mariadbd-safe' : 'mysqld_safe';
+
+            // Inicia em background direcionando saída para log
+            const startCmd = `${daemonCmd} --datadir="${mysqlDir}" --port=3306 --socket="${runDir}/mysqld.sock" --pid-file="${runDir}/mysqld.pid" > "${logFile}" 2>&1 &`;
+            exec(startCmd);
+
+            // Aguarda até 10s validando a inicialização real
+            let ok = false;
+            for (let i = 0; i < 10; i++) {
+                await new Promise(r => setTimeout(r, 1000));
+                if (await isMariaDBRunning()) {
+                    ok = true;
+                    break;
+                }
+            }
+
+            if (ok) {
+                return res.json({ success: true, message: 'MariaDB iniciado com sucesso!' });
+            } else {
+                // Lê últimas 40 linhas do log para feedback rico ao usuário
+                let errorLog = 'Sem logs disponíveis.';
+                try {
+                    if (fs.existsSync(logFile)) {
+                        const logs = fs.readFileSync(logFile, 'utf8').split('\n');
+                        errorLog = logs.slice(-40).join('\n');
+                    }
+                } catch (le) {}
+                return res.json({ success: false, message: 'MariaDB não conseguiu iniciar a tempo.', log: errorLog });
+            }
+        }
+
+        if (action === 'stop') {
+            const cfg = getFullDbConfig();
+            const passArg = cfg.password ? `-p${cfg.password}` : '';
+
+            // 1. Parada graciosa via mysqladmin
+            await runCmd(`mysqladmin shutdown -u ${cfg.user} ${passArg} 2>/dev/null`).catch(() => {});
+
+            // Aguarda até 4 segundos
+            let stopped = false;
+            for (let i = 0; i < 4; i++) {
+                await new Promise(r => setTimeout(r, 1000));
+                if (!(await isMariaDBRunning())) {
+                    stopped = true;
+                    break;
+                }
+            }
+
+            // 2. Kill manual se travado
+            if (!stopped) {
+                await runCmd('pkill -9 -f "mariadbd|mysqld" 2>/dev/null').catch(() => {});
+                await new Promise(r => setTimeout(r, 1500));
+                
+                // Fallback com root apenas se travado
+                if (await isMariaDBRunning()) {
+                    if (systemConfig.has_root) {
+                        await runCmd('pkill -9 -f "mariadbd|mysqld"', true).catch(() => {});
+                        await new Promise(r => setTimeout(r, 1500));
+                    }
+                }
+            }
+
+            const runningAfter = await isMariaDBRunning();
+            if (!runningAfter) {
+                return res.json({ success: true, message: 'MariaDB parado com sucesso.' });
+            } else {
+                return res.json({ success: false, error: 'Falha ao parar processos MariaDB. Verifique privilégios.' });
+            }
+        }
+
+        if (action === 'restart') {
+            // Parar o serviço
+            const stopResult = await runCmd('pkill -9 -f "mariadbd|mysqld" 2>/dev/null').catch(() => {});
+            await new Promise(r => setTimeout(r, 2000));
+
+            // Remove sockets e PIDs velhos
+            const sockPath = path.join(runDir, 'mysqld.sock');
+            const pidPath = path.join(runDir, 'mysqld.pid');
+            try { if (fs.existsSync(sockPath)) fs.unlinkSync(sockPath); } catch (e) {}
+            try { if (fs.existsSync(pidPath)) fs.unlinkSync(pidPath); } catch (e) {}
+
+            // Inicializa
+            const hasSafe = await runCmd('command -v mariadbd-safe').then(r => !!r).catch(() => false);
+            const daemonCmd = hasSafe ? 'mariadbd-safe' : 'mysqld_safe';
+            
+            exec(`${daemonCmd} --datadir="${mysqlDir}" --port=3306 --socket="${runDir}/mysqld.sock" --pid-file="${runDir}/mysqld.pid" > "${logFile}" 2>&1 &`);
+
+            // Aguarda inicialização
+            let ok = false;
+            for (let i = 0; i < 10; i++) {
+                await new Promise(r => setTimeout(r, 1000));
+                if (await isMariaDBRunning()) {
+                    ok = true;
+                    break;
+                }
+            }
+
+            if (ok) {
+                return res.json({ success: true, message: 'MariaDB reiniciado com sucesso!' });
+            } else {
+                let errorLog = 'Sem logs.';
+                try {
+                    if (fs.existsSync(logFile)) {
+                        errorLog = fs.readFileSync(logFile, 'utf8').split('\n').slice(-40).join('\n');
+                    }
+                } catch(le) {}
+                return res.json({ success: false, message: 'MariaDB falhou ao reiniciar.', log: errorLog });
+            }
+        }
+
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// Novo endpoint para gerar token phpMyAdmin SSO
+app.post('/api/phpmyadmin/token', (req, res) => {
+    const { database } = req.body;
+    try {
+        const token = crypto.randomUUID();
+        
+        // Armazena com expiração estrita de 60 segundos
+        ssoTokens.set(token, {
+            database: database || '',
+            expiresAt: Date.now() + 60 * 1000,
+            used: false
+        });
+
+        // Limpa tokens velhos expirados
+        for (const [k, v] of ssoTokens.entries()) {
+            if (Date.now() > v.expiresAt) ssoTokens.delete(k);
+        }
+
+        const host = req.hostname || '127.0.0.1';
+        // phpMyAdmin vhost configurado no nginx na porta 8080
+        const url = `http://${host}:8080/phpmyadmin/autologin.php?token=${token}`;
+
+        res.json({ success: true, token, url });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// Novo endpoint para validar token phpMyAdmin SSO (usado pelo gateway php)
+app.get('/api/phpmyadmin/validate', (req, res) => {
+    const { token } = req.query;
+    if (!token) return res.status(400).json({ success: false, error: 'TOKEN_MISSING' });
+
+    const data = ssoTokens.get(token);
+    if (!data) return res.status(401).json({ success: false, error: 'TOKEN_INVALID_OR_NOT_FOUND' });
+    
+    if (Date.now() > data.expiresAt) {
+        ssoTokens.delete(token);
+        return res.status(401).json({ success: false, error: 'TOKEN_EXPIRED' });
+    }
+    
+    if (data.used) {
+        return res.status(401).json({ success: false, error: 'TOKEN_ALREADY_USED' });
+    }
+
+    // Marca como usado
+    data.used = true;
+
+    // Recupera dados salvos da conexão do banco
+    const dbConfig = getFullDbConfig();
+
+    res.json({
+        success: true,
+        user: dbConfig.user,
+        username: dbConfig.user,
+        password: dbConfig.password,
+        database: data.database || dbConfig.database || '',
+        host: '127.0.0.1',
+        port: dbConfig.port || 3306
+    });
+});
+
+// Mantém suporte para chamadas antigas roteando para o novo mapa ssoTokens
+app.post('/api/phpmyadmin/create-token', (req, res) => {
+    const { database } = req.body;
+    try {
+        const token = crypto.randomUUID();
+        ssoTokens.set(token, {
+            database: database || '',
+            expiresAt: Date.now() + 5 * 60 * 1000, // 5 min para legados
+            used: false
+        });
+        const host = req.hostname || '127.0.0.1';
+        const url = `http://${host}:8080/phpmyadmin/autologin.php?token=${token}`;
+        res.json({ ok: true, url });
+    } catch(e) {
+        res.status(500).json({ ok: false, error: e.message });
+    }
+});
+
+app.post('/api/phpmyadmin/validate-token', (req, res) => {
+    const { token } = req.body;
+    const data = ssoTokens.get(token);
+    if (!data) return res.status(401).json({ ok: false, error: 'TOKEN_INVALID' });
+    const dbConfig = getFullDbConfig();
+    res.json({
+        ok: true,
+        user: dbConfig.user,
+        password: dbConfig.password,
+        database: data.database || '',
+        host: '127.0.0.1',
+        port: 3306
+    });
+});
+
+app.get('/api/pma/sso/validate', (req, res) => {
+    const { token } = req.query;
+    const data = ssoTokens.get(token);
+    if (!data) return res.status(401).json({ success: false, error: 'TOKEN_INVALID' });
+    const dbConfig = getFullDbConfig();
+    res.json({
+        success: true,
+        user: dbConfig.user,
+        password: dbConfig.password,
+        database: data.database || '',
+        host: '127.0.0.1',
+        port: 3306
+    });
+});
+
+app.get('/api/database/verify-token', (req, res) => {
+    const { token } = req.query;
+    const data = ssoTokens.get(token);
+    if (!data) return res.status(401).json({ success: false, error: 'TOKEN_INVALID' });
+    const dbConfig = getFullDbConfig();
+    res.json({
+        success: true,
+        user: dbConfig.user,
+        password: dbConfig.password,
+        database: data.database || '',
+        host: '127.0.0.1'
+    });
+});
+
+// Endpoint Diagnóstico Completo da Stack do Banco de Dados
+app.get('/api/mariadb/diagnose', async (req, res) => {
+    try {
+        const prefix = systemConfig.prefix || process.env.PREFIX || '/data/data/com.termux/files/usr';
+        const mysqlDir = systemConfig.is_termux ? `${prefix}/var/lib/mysql` : '/var/lib/mysql';
+        const runDir = path.join(prefix, 'var', 'run', 'mysqld');
+        
+        // 1. Binários
+        const hasBinary = await runCmd('command -v mariadbd || command -v mysqld').then(r => !!r).catch(() => false);
+        const hasSafe = await runCmd('command -v mariadbd-safe || command -v mysqld_safe').then(r => !!r).catch(() => false);
+        const hasInstallDb = await runCmd('command -v mariadb-install-db || command -v mysql_install_db').then(r => !!r).catch(() => false);
+        
+        // 2. Serviço ativo e portas
+        const running = await isMariaDBRunning();
+        const port3306Active = await new Promise(resolve => {
+            const s = new net.Socket();
+            s.setTimeout(500);
+            s.on('connect', () => { s.destroy(); resolve(true); });
+            s.on('timeout', () => { s.destroy(); resolve(false); });
+            s.on('error', () => { s.destroy(); resolve(false); });
+            s.connect(3306, '127.0.0.1');
+        });
+        const socketFile = path.join(runDir, 'mysqld.sock');
+        const socketExists = fs.existsSync(socketFile);
+        
+        // 3. Estrutura de arquivos e permissões
+        const mysqlDirExists = fs.existsSync(mysqlDir);
+        let mysqlDirOwner = 'desconhecido';
+        try {
+            if (mysqlDirExists) {
+                const statOut = await runCmd(`ls -ld "${mysqlDir}" | awk '{print $3":"$4}'`);
+                mysqlDirOwner = statOut.trim();
+            }
+        } catch(e) {}
+        
+        // 4. PHP e phpMyAdmin
+        const phpRunning = await runCmd('pgrep -f "php-fpm"').then(r => !!r).catch(() => false);
+        const pmaDir = path.join(prefix, 'share', 'phpmyadmin');
+        const pmaExists = fs.existsSync(pmaDir);
+        const configIncExists = fs.existsSync(path.join(pmaDir, 'config.inc.php'));
+        const autologinExists = fs.existsSync(path.join(pmaDir, 'autologin.php'));
+        
+        // 5. Nginx
+        const nginxRunning = await runCmd('pgrep -x "nginx"').then(r => !!r).catch(() => false);
+        const pmaVhostFile = path.join(prefix, 'etc', 'nginx', 'conf.d', 'phpmyadmin.conf');
+        const pmaVhostExists = fs.existsSync(pmaVhostFile);
+        
+        // 6. Teste de SSO local
+        const testToken = crypto.randomUUID();
+        ssoTokens.set(testToken, { database: '', expiresAt: Date.now() + 10000, used: false });
+        let tokenValidationOk = false;
+        try {
+            const resp = await axios.get(`http://127.0.0.1:${PORT}/api/phpmyadmin/validate?token=${testToken}`, { timeout: 1500 });
+            tokenValidationOk = resp.data && resp.data.success === true;
+        } catch(e) {}
+        ssoTokens.delete(testToken);
+
+        res.json({
+            success: true,
+            diagnostics: {
+                binaries: { installed: hasBinary, safeDaemon: hasSafe, installDbTool: hasInstallDb },
+                service: { running, port3306Active, socketExists, socketFile },
+                folders: { mysqlDirExists, mysqlDir, mysqlDirOwner, runDir },
+                php: { phpRunning, pmaExists, configIncExists, autologinExists },
+                nginx: { nginxRunning, pmaVhostExists, pmaVhostFile },
+                sso: { tokenValidationOk }
+            }
+        });
+    } catch(err) {
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 

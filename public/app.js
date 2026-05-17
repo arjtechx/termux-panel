@@ -673,12 +673,32 @@ async function deleteDb(name) {
 
 async function mariadbAction(action) {
     const msg = document.getElementById('mariadb-msg');
-    if (msg) msg.textContent = `Executando ${action}...`;
-    await safeFetch(`${API_BASE}/mariadb/toggle`, 'POST');
-    setTimeout(async () => {
+    if (msg) msg.innerHTML = `<span style="color:var(--text-muted);"><i data-lucide="loader" class="spin" style="width:12px;height:12px;display:inline-block;vertical-align:middle;margin-right:4px;"></i> Executando ação "${action}" no MariaDB...</span>`;
+    if (window.lucide) lucide.createIcons();
+
+    try {
+        const res = await safeFetch(`${API_BASE}/database/service`, 'POST', { action });
         await fetchDbStatus();
-        if (msg) msg.textContent = `Ação "${action}" concluída.`;
-    }, 2000);
+        
+        if (res && res.success) {
+            if (msg) {
+                msg.innerHTML = `<span style="color:var(--success); font-weight:600;">✅ ${res.message || `Ação "${action}" concluída com sucesso.`}</span>`;
+            }
+        } else {
+            if (msg) {
+                let errorHtml = `<span style="color:var(--danger); font-weight:600;">❌ Falha na ação "${action}": ${res?.message || 'Erro desconhecido.'}</span>`;
+                if (res?.log) {
+                    errorHtml += `<br><pre style="background:rgba(0,0,0,0.4); padding:10px; margin-top:8px; border-radius:6px; font-family:monospace; font-size:0.75rem; text-align:left; max-height:220px; overflow-y:auto; border:1px solid rgba(255,255,255,0.15); white-space:pre-wrap; color:#f87171;">${res.log}</pre>`;
+                }
+                msg.innerHTML = errorHtml;
+            }
+        }
+    } catch (e) {
+        await fetchDbStatus();
+        if (msg) {
+            msg.innerHTML = `<span style="color:var(--danger); font-weight:600;">❌ Erro de rede ao executar "${action}": ${e.message}</span>`;
+        }
+    }
 }
 
 async function testDbConnection() {
@@ -740,11 +760,157 @@ async function saveDbSetup() {
 //  PHPMYADMIN SSO
 // ============================================================
 async function openPhpMyAdmin(dbName = null) {
-    const data = await safeFetch(`${API_BASE}/phpmyadmin/create-token`, 'POST', { database: dbName });
-    if (data && data.ok && data.url) {
-        window.open(data.url, '_blank');
-    } else {
-        alert("Falha ao gerar o token de acesso SSO.");
+    try {
+        const data = await safeFetch(`${API_BASE}/phpmyadmin/token`, 'POST', { database: dbName });
+        if (data && data.success && data.url) {
+            window.open(data.url, '_blank');
+        } else {
+            alert(`Falha ao gerar o token de acesso SSO: ${data?.error || 'Erro desconhecido.'}`);
+        }
+    } catch (e) {
+        alert(`Erro de rede ao conectar com o painel: ${e.message}`);
+    }
+}
+
+// ============================================================
+//  MARIADB & PHPMYADMIN DIAGNOSTICS
+// ============================================================
+async function checkMariaDBDiagnostics() {
+    const btn = document.getElementById('btn-run-diagnostics');
+    const resultDiv = document.getElementById('mariadb-diag-result');
+    if (!resultDiv) return;
+
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `<i data-lucide="loader" class="spin" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;"></i> Analisando Stack...`;
+    if (window.lucide) lucide.createIcons();
+
+    resultDiv.classList.remove('hidden');
+    resultDiv.innerHTML = `
+        <div style="text-align:center; padding:20px; color:var(--text-muted);">
+            <i data-lucide="loader" class="spin" style="width:24px;height:24px;margin:0 auto 10px;display:block;"></i>
+            Efetuando varredura e testes de integridade na stack de banco de dados...
+        </div>
+    `;
+    if (window.lucide) lucide.createIcons();
+
+    try {
+        const res = await safeFetch(`${API_BASE}/mariadb/diagnose`);
+        if (res && res.success && res.diagnostics) {
+            const d = res.diagnostics;
+            
+            const badge = (status) => status 
+                ? `<span style="background:rgba(16,185,129,0.15); color:#34d399; font-weight:600; padding:2px 8px; border-radius:12px; font-size:0.75rem; border:1px solid rgba(16,185,129,0.3); display:inline-flex; align-items:center; gap:4px;">✅ OK</span>`
+                : `<span style="background:rgba(239,68,68,0.15); color:#f87171; font-weight:600; padding:2px 8px; border-radius:12px; font-size:0.75rem; border:1px solid rgba(239,68,68,0.3); display:inline-flex; align-items:center; gap:4px;">❌ Falha</span>`;
+
+            resultDiv.innerHTML = `
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px;">
+                    <div style="background:rgba(255,255,255,0.02); padding:14px; border-radius:6px; border:1px solid rgba(255,255,255,0.05);">
+                        <h4 style="margin-top:0; margin-bottom:10px; font-size:0.875rem; display:flex; align-items:center; gap:6px; color:var(--primary);">
+                            <i data-lucide="binary" style="width:14px;height:14px;"></i> Binários do Sistema
+                        </h4>
+                        <div style="font-size:0.82rem; display:flex; flex-direction:column; gap:6px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <span>MariaDB Daemon:</span> ${badge(d.binaries.installed)}
+                            </div>
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <span>Safe Wrapper Daemon:</span> ${badge(d.binaries.safeDaemon)}
+                            </div>
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <span>Install DB Tool:</span> ${badge(d.binaries.installDbTool)}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="background:rgba(255,255,255,0.02); padding:14px; border-radius:6px; border:1px solid rgba(255,255,255,0.05);">
+                        <h4 style="margin-top:0; margin-bottom:10px; font-size:0.875rem; display:flex; align-items:center; gap:6px; color:var(--primary);">
+                            <i data-lucide="activity" style="width:14px;height:14px;"></i> Status do Serviço
+                        </h4>
+                        <div style="font-size:0.82rem; display:flex; flex-direction:column; gap:6px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <span>Processo Ativo:</span> ${badge(d.service.running)}
+                            </div>
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <span>Porta TCP 3306 Ativa:</span> ${badge(d.service.port3306Active)}
+                            </div>
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <span>Socket Unix Criado:</span> ${badge(d.service.socketExists)}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="background:rgba(255,255,255,0.02); padding:14px; border-radius:6px; border:1px solid rgba(255,255,255,0.05);">
+                        <h4 style="margin-top:0; margin-bottom:10px; font-size:0.875rem; display:flex; align-items:center; gap:6px; color:var(--primary);">
+                            <i data-lucide="folder" style="width:14px;height:14px;"></i> Permissões & Pastas
+                        </h4>
+                        <div style="font-size:0.82rem; display:flex; flex-direction:column; gap:6px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <span>Pasta de Dados MariaDB:</span> ${badge(d.folders.mysqlDirExists)}
+                            </div>
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <span>Dono da Pasta de Dados:</span> <span style="font-family:monospace; font-size:0.75rem;">${d.folders.mysqlDirOwner}</span>
+                            </div>
+                            <div style="font-size:0.72rem; color:var(--text-muted); margin-top:4px; word-break:break-all;">
+                                Path: ${d.folders.mysqlDir}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="background:rgba(255,255,255,0.02); padding:14px; border-radius:6px; border:1px solid rgba(255,255,255,0.05);">
+                        <h4 style="margin-top:0; margin-bottom:10px; font-size:0.875rem; display:flex; align-items:center; gap:6px; color:var(--primary);">
+                            <i data-lucide="globe" style="width:14px;height:14px;"></i> phpMyAdmin & PHP
+                        </h4>
+                        <div style="font-size:0.82rem; display:flex; flex-direction:column; gap:6px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <span>PHP-FPM Ativo:</span> ${badge(d.php.phpRunning)}
+                            </div>
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <span>Diretório phpMyAdmin:</span> ${badge(d.php.pmaExists)}
+                            </div>
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <span>config.inc.php SSO:</span> ${badge(d.php.configIncExists)}
+                            </div>
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <span>autologin.php SSO:</span> ${badge(d.php.autologinExists)}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="background:rgba(255,255,255,0.02); padding:14px; border-radius:6px; border:1px solid rgba(255,255,255,0.05);">
+                        <h4 style="margin-top:0; margin-bottom:10px; font-size:0.875rem; display:flex; align-items:center; gap:6px; color:var(--primary);">
+                            <i data-lucide="hard-drive" style="width:14px;height:14px;"></i> Nginx & Gateway
+                        </h4>
+                        <div style="font-size:0.82rem; display:flex; flex-direction:column; gap:6px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <span>NGINX Ativo:</span> ${badge(d.nginx.nginxRunning)}
+                            </div>
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <span>Vhost Nginx phpMyAdmin:</span> ${badge(d.nginx.pmaVhostExists)}
+                            </div>
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <span>Loop Validador SSO:</span> ${badge(d.sso.tokenValidationOk)}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        } else {
+            resultDiv.innerHTML = `
+                <div style="color:var(--danger); text-align:center; padding:10px; font-weight:600;">
+                    ❌ Falha ao rodar diagnóstico: ${res?.error || 'Erro no servidor.'}
+                </div>
+            `;
+        }
+    } catch(e) {
+        resultDiv.innerHTML = `
+            <div style="color:var(--danger); text-align:center; padding:10px; font-weight:600;">
+                ❌ Erro de rede ao requisitar diagnósticos: ${e.message}
+            </div>
+        `;
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+        if (window.lucide) lucide.createIcons();
     }
 }
 

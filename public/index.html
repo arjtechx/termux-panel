@@ -364,6 +364,25 @@
                     <div id="mariadb-msg" style="font-size:0.8rem; color:var(--text-muted);"></div>
                 </div>
 
+                <!-- Diagnóstico Completo de Stack de Banco -->
+                <div class="card" style="margin-bottom:20px; padding:20px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:10px;">
+                        <h3 class="card-title" style="margin-bottom:0; display:flex; align-items:center;">
+                            <i data-lucide="activity" style="color:var(--primary); margin-right:8px;"></i>
+                            Diagnóstico da Stack de Banco
+                        </h3>
+                        <button class="btn btn-primary btn-sm" onclick="checkMariaDBDiagnostics()" id="btn-run-diagnostics">
+                            <i data-lucide="search"></i> Rodar Diagnóstico
+                        </button>
+                    </div>
+                    <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:16px;">
+                        Verifique a integridade física dos binários, permissões de pastas, serviço MariaDB, sockets, PHP-FPM, Nginx e validadores de token SSO em um clique.
+                    </p>
+                    <div id="mariadb-diag-result" class="hidden" style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:8px;">
+                        <!-- Dynamic diagnostic results will go here -->
+                    </div>
+                </div>
+
                 <div class="two-col" style="margin-bottom: 20px;">
                     <!-- Criar Banco -->
                     <div class="card">
