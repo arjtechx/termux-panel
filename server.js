@@ -3858,9 +3858,16 @@ app.post('/api/filebrowser/reinstall', async (req, res) => {
     }
 });
 
+let portRetryCount = 0;
 server.on('error', (e) => {
     if (e.code === 'EADDRINUSE') {
-        console.warn(`[WARN] A porta ${PORT} já está sendo utilizada por outro processo!`);
+        portRetryCount++;
+        if (portRetryCount > 3) {
+            console.error(`[ERR] Não foi possível liberar a porta ${PORT} após 3 tentativas. Encerrando.`);
+            process.exit(1);
+        }
+
+        console.warn(`[WARN] A porta ${PORT} já está sendo utilizada por outro processo! (Tentativa ${portRetryCount}/3)`);
         console.log(`[INFO] Tentando liberar a porta ${PORT} automaticamente...`);
         const { execSync } = require('child_process');
         try {
@@ -3877,18 +3884,29 @@ server.on('error', (e) => {
                     }
                 }
             } else {
-                // Linux / Android (Termux): Encontra e derruba o processo na porta
+                // Linux / Android (Termux): Encontra e derruba o processo na porta usando pgrep + process.kill nativo
+                let pids = [];
                 try {
-                    console.log(`[INFO] Matando processo antigo utilizando porta ${PORT} no Termux/Linux...`);
-                    execSync(`fuser -k ${PORT}/tcp`);
-                } catch(e1) {
-                    // Fallback usando lsof + kill
-                    try {
-                        const pid = execSync(`lsof -t -i:${PORT}`).toString().trim();
-                        if (pid && pid !== process.pid.toString()) {
-                            execSync(`kill -9 ${pid}`);
+                    const myPid = process.pid;
+                    const output = execSync('pgrep -f "server.js"').toString().trim();
+                    pids = output.split('\n')
+                        .map(p => parseInt(p.trim()))
+                        .filter(p => !isNaN(p) && p !== myPid);
+                } catch(pe) {
+                    // pgrep lança erro se não achar nada (o que é normal)
+                }
+
+                if (pids.length > 0) {
+                    console.log(`[INFO] Matando processos antigos (PIDs: ${pids.join(', ')}) no Termux/Linux...`);
+                    for (const pid of pids) {
+                        try {
+                            process.kill(pid, 'SIGKILL');
+                        } catch(kErr) {
+                            console.error(`[ERR] Falha ao matar PID ${pid}:`, kErr.message);
                         }
-                    } catch(e2) {}
+                    }
+                } else {
+                    console.log('[INFO] Nenhum outro processo node server.js foi detectado via pgrep.');
                 }
             }
             console.log(`[OK] Porta ${PORT} liberada com sucesso! Reiniciando escuta do servidor em 1.5s...`);
