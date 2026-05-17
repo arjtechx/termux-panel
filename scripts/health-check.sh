@@ -126,12 +126,24 @@ if pgrep -x "mariadbd" > /dev/null 2>&1 || pgrep -x "mysqld" > /dev/null 2>&1; t
 else
     log_warn "Processo MariaDB não está em execução"
     log_fix "Iniciando MariaDB em background..."
-    nohup mariadbd-safe --datadir="$MARIADB_DATA" > /dev/null 2>&1 &
-    sleep 3
+    
+    # Garante o diretório de socket do MariaDB para evitar crashes
+    mkdir -p "$PREFIX/var/run/mysqld"
+    chmod 777 "$PREFIX/var/run/mysqld" 2>/dev/null
+    
+    # Inicia usando o script mysqld_safe correto do Termux
+    mysqld_safe --datadir="$MARIADB_DATA" > /tmp/mariadb_start.log 2>&1 &
+    sleep 4
     if pgrep -x "mariadbd" > /dev/null 2>&1 || pgrep -x "mysqld" > /dev/null 2>&1; then
         log_ok "MariaDB iniciado com sucesso"
     else
         log_err "Não foi possível iniciar o MariaDB"
+        if [ -f /tmp/mariadb_start.log ]; then
+            log_info "Erros de inicialização do MariaDB:"
+            cat /tmp/mariadb_start.log | while IFS= read -r line; do
+                echo -e "  ${RED}→ $line${NC}"
+            done
+        fi
     fi
 fi
 
@@ -164,12 +176,14 @@ if pgrep -x "php-fpm" > /dev/null 2>&1; then
 else
     log_warn "PHP-FPM não está em execução"
     log_fix "Iniciando PHP-FPM..."
-    php-fpm -D 2>/dev/null
+    mkdir -p "$PREFIX/var/run" "$PREFIX/tmp"
+    
+    PHPOUT=$(php-fpm --daemonize 2>&1)
     sleep 2
     if pgrep -x "php-fpm" > /dev/null 2>&1; then
         log_ok "PHP-FPM iniciado"
     else
-        log_err "Falha ao iniciar PHP-FPM"
+        log_err "Falha ao iniciar PHP-FPM: $PHPOUT"
     fi
 fi
 
@@ -440,12 +454,12 @@ else
     log_warn "NGINX não está em execução"
     log_fix "Testando configuração e iniciando NGINX..."
     if nginx -t 2>/dev/null; then
-        nginx 2>/dev/null
+        NGOUT=$(nginx 2>&1)
         sleep 2
         if pgrep -x "nginx" > /dev/null 2>&1; then
             log_ok "NGINX iniciado com sucesso"
         else
-            log_err "Falha ao iniciar NGINX"
+            log_err "Falha ao iniciar NGINX: $NGOUT"
         fi
     else
         log_err "Config NGINX com erros — não iniciado"

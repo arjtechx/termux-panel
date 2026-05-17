@@ -2,6 +2,15 @@
 
 ---
 
+## 🏆 MARCO v1.2.4 — 2026-05-17 (Correções Críticas de Inicialização do Termux)
+
+### ✅ Novidades da Versão
+- **Reparo da Inicialização de Banco no MariaDB:** Corrigido o executável de background de `mariadbd-safe` para `mysqld_safe` (compatível com a distribuição do Termux). Além disso, adicionada a criação forçada do diretório de sockets `/data/data/com.termux/files/usr/var/run/mysqld` para evitar crashes por falta de pasta.
+- **Melhoria da Inicialização do PHP-FPM:** Corrigida a inicialização no `health-check.sh` usando a flag oficial `--daemonize` (em vez de `-D`), garantindo o carregamento correto dos pools e sockets do PHP.
+- **Relatório de Diagnóstico de Inicialização Avançado:** Todos os comandos de inicialização em falha no `health-check.sh` (NGINX, MariaDB, PHP-FPM) agora capturam e exibem as mensagens exatas de erro (`stdout` e `stderr`) diretamente na tela do usuário, eliminando a ocultação silenciosa de falhas.
+
+---
+
 ## 🏆 MARCO v1.2.3 — 2026-05-17 (Nginx Conf.d Auto-inclusion Fix)
 
 ### ✅ Novidades da Versão
