@@ -4,6 +4,9 @@
 #  Baixa da última GitHub Release e aplica a atualização
 # =============================================================
 
+# Silencia intromissões do Termius no terminal
+export _termius_integration_installed="yes"
+
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PANEL_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
 CONFIG_FILE="$PANEL_DIR/config/update.json"

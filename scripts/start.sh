@@ -4,6 +4,9 @@
 #  Auto-detecta o diretório do painel
 # =============================================================
 
+# Silencia intromissões do Termius no terminal
+export _termius_integration_installed="yes"
+
 # Auto-detecta a pasta do painel a partir do local deste script
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PANEL_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
