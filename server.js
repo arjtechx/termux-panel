@@ -1931,7 +1931,10 @@ app.use('/__filebrowser', (req, res, next) => {
 }, createProxyMiddleware({
     target: 'http://127.0.0.1:8095',
     changeOrigin: true,
-    ws: true
+    ws: true,
+    pathRewrite: {
+        '^/': '/__filebrowser/'
+    }
 }));
 
 // --- NO-IP Logic ---
@@ -3770,7 +3773,11 @@ app.get('/api/mariadb/diagnose', async (req, res) => {
         let nginxConfigTestOk = false;
         let nginxConfigTestOutput = 'Nenhum teste executado';
         try {
-            const testOut = await runCmd('nginx -t 2>&1');
+            const testOut = await new Promise(resolve => {
+                exec('nginx -t 2>&1', (err, stdout, stderr) => {
+                    resolve(stdout || stderr || '');
+                });
+            });
             nginxConfigTestOutput = testOut;
             if (isTermux) {
                 nginxConfigTestOk = testOut.includes('syntax is ok') && testOut.includes('test is successful');
