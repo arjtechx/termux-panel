@@ -2659,9 +2659,29 @@ app.post('/api/database/service', async (req, res) => {
 });
 
 // Novo endpoint para gerar token phpMyAdmin SSO
-app.post('/api/phpmyadmin/token', (req, res) => {
+app.post('/api/phpmyadmin/token', async (req, res) => {
     const { database } = req.body;
     try {
+        // Se a base de dados foi informada, vamos verificar se ela realmente existe
+        if (database) {
+            const sanitizedDb = database.replace(/[^a-zA-Z0-9_]/g, '');
+            let exists = false;
+            try {
+                const conn = await getDbConn();
+                const [rows] = await conn.query('SHOW DATABASES');
+                await conn.end();
+                exists = rows.some(r => r.Database.toLowerCase() === sanitizedDb.toLowerCase());
+            } catch (e) {
+                console.error('Erro ao verificar existência do banco:', e.message);
+                // Se houver falha de rede/conexão momentânea com o mysql, permite continuar
+                exists = true;
+            }
+            
+            if (!exists) {
+                return res.status(404).json({ success: false, error: `Banco de dados '${sanitizedDb}' não encontrado.` });
+            }
+        }
+
         const token = crypto.randomUUID();
         
         // Armazena com expiração estrita de 60 segundos
@@ -2678,7 +2698,7 @@ app.post('/api/phpmyadmin/token', (req, res) => {
 
         const host = req.hostname || '127.0.0.1';
         // phpMyAdmin vhost configurado no nginx na porta 8080
-        const url = `http://${host}:8080/phpmyadmin/autologin.php?token=${token}`;
+        const url = `http://${host}:8080/phpmyadmin/autologin.php?token=${token}${database ? '&db=' + encodeURIComponent(database) : ''}`;
 
         res.json({ success: true, token, url });
     } catch (err) {

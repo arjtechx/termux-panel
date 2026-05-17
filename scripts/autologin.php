@@ -64,6 +64,15 @@ if (!$data || empty($data['success'])) {
     die("Acesso Negado: {$errMsg}.");
 }
 
+// Função de logs de depuração para o SSO
+function logSSODebug($msg) {
+    try {
+        $logFile = __DIR__ . '/sso_debug.log';
+        $timestamp = date('Y-m-d H:i:s');
+        file_put_contents($logFile, "[$timestamp] $msg\n", FILE_APPEND);
+    } catch (\Throwable $e) {}
+}
+
 // CORREÇÃO 3 — Garantir session_start antes de qualquer output e após checagem de estado da sessão
 if (session_status() === PHP_SESSION_NONE) {
     // Usamos a sessão PMA_single_signon para bater 100% com o setup-pma-sso.sh e com a config do phpMyAdmin
@@ -71,14 +80,53 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
+logSSODebug("--- NOVA TENTATIVA DE AUTO-LOGIN SSO ---");
+logSSODebug("Token recebido: " . ($token ? substr($token, 0, 8) . "..." : "NENHUM"));
+
 // Define as credenciais obtidas de forma segura
 $_SESSION['PMA_single_signon_user'] = $data['username'] ?? $data['user'] ?? '';
 $_SESSION['PMA_single_signon_password'] = $data['password'] ?? '';
 $_SESSION['PMA_single_signon_host'] = $data['host'] ?? '127.0.0.1';
 $_SESSION['PMA_single_signon_port'] = $data['port'] ?? 3306;
 
-// Redireciona o usuário para o painel principal do phpMyAdmin
-header('Location: index.php');
+logSSODebug("Sessão SSO criada para o usuário: " . ($_SESSION['PMA_single_signon_user'] ?: 'root'));
+
+// Sanitiza e valida o parâmetro de banco (db)
+$db = '';
+if (!empty($_GET['db'])) {
+    $db = preg_replace('/[^a-zA-Z0-9_]/', '', $_GET['db']);
+    logSSODebug("Banco recebido (via GET): $db");
+} elseif (!empty($data['database'])) {
+    $db = preg_replace('/[^a-zA-Z0-9_]/', '', $data['database']);
+    logSSODebug("Banco obtido (via Token payload): $db");
+}
+
+// Sanitiza e valida o parâmetro de destino específico (target)
+$target = '';
+if (!empty($_GET['target'])) {
+    $target = preg_replace('/[^a-zA-Z0-9_\.]/', '', $_GET['target']);
+    logSSODebug("Página-alvo (target) recebida: $target");
+}
+
+// Constrói a URL final de redirecionamento focado
+$redirectUrl = 'index.php';
+$params = [];
+
+if (!empty($db)) {
+    $params['db'] = $db;
+}
+if (!empty($target)) {
+    $params['target'] = $target;
+}
+
+if (!empty($params)) {
+    $redirectUrl .= '?' . http_build_query($params);
+}
+
+logSSODebug("Redirecionamento gerado: $redirectUrl");
+logSSODebug("----------------------------------------");
+
+header("Location: " . $redirectUrl);
 
 // CORREÇÃO 4 — Finalizar buffer
 ob_end_flush();

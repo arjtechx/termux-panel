@@ -624,7 +624,8 @@ async function fetchDatabases() {
                 <td>🗄 <strong>${name}</strong> ${isSystem ? '<span style="font-size:0.7rem;color:var(--text-muted)">(sistema)</span>' : ''}</td>
                 <td>${size}</td>
                 <td>
-                    <button class="btn btn-sm btn-primary" onclick="openPhpMyAdmin('${name}')" title="Acesso Automático">↗ phpMyAdmin</button>
+                    <button class="btn btn-sm btn-primary" onclick="openPhpMyAdmin('${name}')" title="Acesso Automático ao Banco">↗ phpMyAdmin</button>
+                    <button class="btn btn-sm btn-secondary" onclick="openPhpMyAdmin('${name}', 'tbl_structure.php')" style="margin-left:4px" title="Abrir Estrutura de Tabelas">📊 Tabelas</button>
                     <button class="btn btn-sm btn-secondary" onclick="document.getElementById('dbBackupName').value='${name}'; createDbBackup()" style="margin-left:4px">⬇ Backup</button>
                     ${!isSystem ? `<button class="btn btn-sm btn-danger" onclick="deleteDb('${name}')" style="margin-left:4px">🗑 Drop</button>` : ''}
                 </td>
@@ -759,11 +760,15 @@ async function saveDbSetup() {
 // ============================================================
 //  PHPMYADMIN SSO
 // ============================================================
-async function openPhpMyAdmin(dbName = null) {
+async function openPhpMyAdmin(dbName = null, targetPage = null) {
     try {
         const data = await safeFetch(`${API_BASE}/phpmyadmin/token`, 'POST', { database: dbName });
         if (data && data.success && data.url) {
-            window.open(data.url, '_blank');
+            let finalUrl = data.url;
+            if (targetPage) {
+                finalUrl += `&target=${encodeURIComponent(targetPage)}`;
+            }
+            window.open(finalUrl, '_blank');
         } else {
             alert(`Falha ao gerar o token de acesso SSO: ${data?.error || 'Erro desconhecido.'}`);
         }
