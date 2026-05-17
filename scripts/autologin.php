@@ -1,10 +1,13 @@
 <?php
-declare(strict_types=1);
-
 /**
  * phpMyAdmin SSO Auto-Login Gateway
- * v2.0.0 - Robust Dynamic Config & Secure Token Validation
+ * v2.1.0 - Robust Session Handling, Error Suppression & Buffering
  */
+
+// CORREÇÃO 1 — Desativar warnings e iniciar buffer no topo do arquivo
+error_reporting(0);
+ini_set('display_errors', '0');
+ob_start();
 
 $token = $_GET['token'] ?? '';
 
@@ -45,7 +48,8 @@ curl_setopt_array($ch, [
 $response = curl_exec($ch);
 $error = curl_error($ch);
 $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-curl_close($ch);
+
+// CORREÇÃO 2 — Remover curl_close($ch) pois o recurso é fechado automaticamente ou deprecated em versões novas PHP
 
 if ($response === false || $httpCode !== 200) {
     header('HTTP/1.1 403 Forbidden');
@@ -60,9 +64,10 @@ if (!$data || empty($data['success'])) {
     die("Acesso Negado: {$errMsg}.");
 }
 
-// Inicia sessão PMA
-session_name('PMA_single_signon');
+// CORREÇÃO 3 — Garantir session_start antes de qualquer output e após checagem de estado da sessão
 if (session_status() === PHP_SESSION_NONE) {
+    // Usamos a sessão PMA_single_signon para bater 100% com o setup-pma-sso.sh e com a config do phpMyAdmin
+    session_name('PMA_single_signon');
     session_start();
 }
 
@@ -74,4 +79,7 @@ $_SESSION['PMA_single_signon_port'] = $data['port'] ?? 3306;
 
 // Redireciona o usuário para o painel principal do phpMyAdmin
 header('Location: index.php');
+
+// CORREÇÃO 4 — Finalizar buffer
+ob_end_flush();
 exit;
