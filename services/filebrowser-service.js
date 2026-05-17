@@ -10,12 +10,7 @@ class FileBrowserService {
         this.binDir = path.join(__dirname, '..', 'bin');
         this.dataDir = path.join(__dirname, '..', 'data', 'filebrowser');
         this.dbPath = path.join(this.dataDir, 'database.db');
-        
-        const isTermux = !!process.env.PREFIX;
-        this.binPath = isTermux 
-            ? path.join(process.env.PREFIX, 'bin', 'filebrowser')
-            : path.join(this.binDir, os.platform() === 'win32' ? 'filebrowser.exe' : 'filebrowser');
-            
+        this.binPath = path.join(this.binDir, os.platform() === 'win32' ? 'filebrowser.exe' : 'filebrowser');
         this.port = 8095;
         this.process = null;
         this.defaultRoot = process.env.PREFIX ? '/data/data/com.termux/files/home' : os.homedir();
@@ -66,7 +61,7 @@ class FileBrowserService {
 
     getPlatformInfo() {
         let arch = os.arch();
-        let platform = os.platform(); // 'linux', 'win32', 'darwin'
+        let platform = os.platform(); // 'linux', 'win32', 'darwin', 'android'
 
         // Mapear Node.js arch para FileBrowser arch
         if (arch === 'x64') arch = 'amd64';
@@ -75,23 +70,12 @@ class FileBrowserService {
 
         // Mapear platform Node.js para platform FileBrowser
         if (platform === 'win32') platform = 'windows';
+        if (platform === 'android') platform = 'linux'; // Android/Termux roda perfeitamente o binário estático de Linux!
 
         return { platform, arch };
     }
 
     async installBinary() {
-        const isTermux = !!process.env.PREFIX;
-        if (isTermux) {
-            console.log('[INFO] Ambiente Termux detectado. Instalando filebrowser nativo via pkg...');
-            try {
-                execSync('pkg install filebrowser -y');
-                console.log('[OK] FileBrowser nativo instalado via pkg com sucesso.');
-                return;
-            } catch(e) {
-                console.error('[ERR] Falha ao instalar filebrowser via pkg, tentando download alternativo:', e.message);
-            }
-        }
-
         const { platform, arch } = this.getPlatformInfo();
         const ext = platform === 'windows' ? 'zip' : 'tar.gz';
         
