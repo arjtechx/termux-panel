@@ -1354,21 +1354,18 @@ app.post('/api/system/settings/autostart/toggle', (req, res) => {
             content = fs.readFileSync(bashrcPath, 'utf8');
         }
         
-        const lineToAdd = 'bash ~/termux-panel/scripts/start.sh';
-        const hasLine = content.includes(lineToAdd);
+        const lineToAdd = 'pgrep -f "server.js" >/dev/null 2>&1 || bash ~/termux-panel/scripts/start.sh';
         
         if (active) {
-            if (!hasLine) {
-                // Adiciona quebra de linha se necessário
-                const prefix = content.length > 0 && !content.endsWith('\n') ? '\n' : '';
-                fs.appendFileSync(bashrcPath, `${prefix}${lineToAdd}\n`);
-            }
+            // Limpa qualquer linha antiga relacionada ao start.sh para evitar duplicados
+            let lines = content.split('\n').filter(l => !l.includes('termux-panel/scripts/start.sh'));
+            content = lines.join('\n');
+            const prefix = content.length > 0 && !content.endsWith('\n') ? '\n' : '';
+            fs.writeFileSync(bashrcPath, `${content}${prefix}${lineToAdd}\n`);
         } else {
-            if (hasLine) {
-                const lines = content.split('\n');
-                const clean = lines.filter(l => !l.includes('termux-panel/scripts/start.sh')).join('\n');
-                fs.writeFileSync(bashrcPath, clean);
-            }
+            const lines = content.split('\n');
+            const clean = lines.filter(l => !l.includes('termux-panel/scripts/start.sh')).join('\n');
+            fs.writeFileSync(bashrcPath, clean);
         }
         
         res.json({ success: true, active });
