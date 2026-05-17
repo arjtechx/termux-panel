@@ -143,6 +143,7 @@ class FileBrowserService {
             if (!fs.existsSync(this.dbPath)) {
                 console.log('[INFO] Inicializando banco de dados SQLite do FileBrowser...');
                 execSync(`"${this.binPath}" config init -d "${this.dbPath}"`);
+                execSync(`"${this.binPath}" config set --auth.method noauth -d "${this.dbPath}"`);
             }
             this.applyTheme();
         } catch(e) {
@@ -215,7 +216,7 @@ class FileBrowserService {
             fs.writeFileSync(tmpCssPath, customCss);
             
             // FileBrowser v2 lê a pasta de branding e busca custom.css nela automaticamente!
-            execSync(`"${this.binPath}" config set --branding.theme dark --branding.name "Termux cPanel" --branding.files "${this.dataDir}" -d "${this.dbPath}"`);
+            execSync(`"${this.binPath}" config set --branding.theme dark --branding.name "Termux cPanel" --branding.files "${this.dataDir}" --auth.method noauth -d "${this.dbPath}"`);
             console.log('[OK] FileBrowser theme integrado com sucesso.');
         } catch(e) {
             console.log('[WARN] Falha ao injetar CSS customizado:', e.message);
