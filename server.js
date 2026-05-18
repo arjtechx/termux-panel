@@ -2014,21 +2014,6 @@ app.get('/api/database/verify-token', (req, res) => {
     });
 });
 
-// --- FileBrowser Proxy Seguro ---
-app.use('/__filebrowser', (req, res, next) => {
-
-    // if (!req.session || !req.session.authenticated) {
-    //     return res.status(401).send('<body style="background:#11111b; color:#cdd6f4; font-family:sans-serif; text-align:center; padding-top:50px;">Acesso negado. Faça login no painel principal.</body>');
-    // }
-    next();
-}, createProxyMiddleware({
-    target: 'http://127.0.0.1:8095',
-    changeOrigin: true,
-    ws: true,
-    pathRewrite: {
-        '^/': '/__filebrowser/'
-    }
-}));
 
 // --- NO-IP Logic ---
 async function startNoipUpdater() {
