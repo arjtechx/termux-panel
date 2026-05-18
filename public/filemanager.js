@@ -1,203 +1,253 @@
 let currentFmPath = '';
+let fmRootMode = false;
 
-async function loadFiles(targetPath = currentFmPath) {
-    const listEl = document.getElementById('fm-file-list');
-    const loadingEl = document.getElementById('fm-loading');
-    const pathInput = document.getElementById('fm-current-path');
-    
-    try {
-        loadingEl.style.display = 'flex';
-        const url = targetPath ? `/api/files/list?path=${encodeURIComponent(targetPath)}` : '/api/files/list';
-        const res = await fetch(url);
-        const data = await res.json();
-        
-        if (!data.success) {
-            alert('Erro: ' + (data.error || 'Não foi possível carregar o diretório'));
-            loadingEl.style.display = 'none';
-            return;
-        }
-
-        currentFmPath = data.path;
-        pathInput.value = currentFmPath;
-        
-        listEl.innerHTML = '';
-        
-        if (data.files.length === 0) {
-            listEl.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: var(--text-muted);">Pasta vazia</td></tr>';
-        } else {
-            data.files.forEach(file => {
-                const icon = file.isDir ? 'folder' : 'file';
-                const iconColor = file.isDir ? 'var(--primary)' : 'var(--text-color)';
-                const sizeStr = file.isDir ? '--' : fmFormatSize(file.size);
-                const dateStr = fmFormatDate(file.mtime);
-                
-                const tr = document.createElement('tr');
-                tr.style.borderBottom = '1px solid var(--border-color)';
-                
-                // Clicar no nome ou ícone navega se for diretório
-                const nameCellHtml = file.isDir 
-                    ? `<a href="#" onclick="loadFiles('${currentFmPath}/${file.name}'.replace(/\\/\\//g, '/')); return false;" style="color: var(--primary); text-decoration: none; font-weight: 500;">${file.name}</a>`
-                    : `<span>${file.name}</span>`;
-                
-                // Ações
-                const downloadAction = !file.isDir 
-                    ? `<a href="/api/files/download?path=${encodeURIComponent(currentFmPath + '/' + file.name)}" class="btn-icon-ghost" title="Download" target="_blank"><i data-lucide="download"></i></a>`
-                    : '';
-
-                tr.innerHTML = `
-                    <td style="padding: 12px; text-align: center;"><i data-lucide="${icon}" style="color: ${iconColor}; width: 18px; height: 18px;"></i></td>
-                    <td style="padding: 12px;">${nameCellHtml}</td>
-                    <td style="padding: 12px; color: var(--text-muted); font-size: 0.85rem;">${sizeStr}</td>
-                    <td style="padding: 12px; color: var(--text-muted); font-size: 0.85rem;">${dateStr}</td>
-                    <td style="padding: 12px; text-align: right;">
-                        ${downloadAction}
-                        <button class="btn-icon-ghost" onclick="fmRenameFile('${file.name}')" title="Renomear"><i data-lucide="edit-2"></i></button>
-                        <button class="btn-icon-ghost" onclick="fmDeleteFile('${file.name}')" style="color: var(--danger);" title="Excluir"><i data-lucide="trash-2"></i></button>
-                    </td>
-                `;
-                listEl.appendChild(tr);
-            });
-            lucide.createIcons();
-        }
-    } catch (e) {
-        alert('Erro ao carregar arquivos: ' + e.message);
-    } finally {
-        loadingEl.style.display = 'none';
-    }
-}
-
-function fmUpDir() {
-    if (currentFmPath === '/') return;
-    const parts = currentFmPath.split('/').filter(p => p);
-    parts.pop();
-    const newPath = '/' + parts.join('/');
-    loadFiles(newPath);
-}
-
-async function fmCreateFolder() {
-    const folderName = prompt('Nome da nova pasta:');
-    if (!folderName) return;
-    
-    const targetPath = (currentFmPath.endsWith('/') ? currentFmPath : currentFmPath + '/') + folderName;
-    
-    try {
-        const res = await fetch('/api/files/mkdir', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ targetPath })
-        });
-        const data = await res.json();
-        if (data.success) {
-            loadFiles();
-        } else {
-            alert('Erro: ' + data.error);
-        }
-    } catch (e) {
-        alert('Erro ao criar pasta: ' + e.message);
-    }
-}
-
-async function fmUploadFiles(event) {
-    const files = event.target.files;
-    if (!files || files.length === 0) return;
-    
-    const formData = new FormData();
-    formData.append('path', currentFmPath);
-    for (let i = 0; i < files.length; i++) {
-        formData.append('files', files[i]);
-    }
-    
-    const loadingEl = document.getElementById('fm-loading');
-    loadingEl.style.display = 'flex';
-    loadingEl.innerHTML = '<span>Fazendo upload...</span>';
-    
-    try {
-        const res = await fetch('/api/files/upload', {
-            method: 'POST',
-            body: formData
-        });
-        const data = await res.json();
-        if (data.success) {
-            loadFiles();
-        } else {
-            alert('Erro: ' + data.error);
-        }
-    } catch (e) {
-        alert('Erro no upload: ' + e.message);
-    } finally {
-        loadingEl.innerHTML = '<span>Carregando...</span>';
-        loadingEl.style.display = 'none';
-        event.target.value = ''; // Reset input
-    }
-}
-
-async function fmDeleteFile(fileName) {
-    if (!confirm(`Tem certeza que deseja excluir '${fileName}'?`)) return;
-    
-    const targetPath = (currentFmPath.endsWith('/') ? currentFmPath : currentFmPath + '/') + fileName;
-    
-    try {
-        const res = await fetch(`/api/files/delete?path=${encodeURIComponent(targetPath)}`, { method: 'DELETE' });
-        const data = await res.json();
-        if (data.success) {
-            loadFiles();
-        } else {
-            alert('Erro: ' + data.error);
-        }
-    } catch (e) {
-        alert('Erro ao excluir: ' + e.message);
-    }
-}
-
-async function fmRenameFile(oldName) {
-    const newName = prompt(`Renomear '${oldName}' para:`, oldName);
-    if (!newName || newName === oldName) return;
-    
-    const basePath = currentFmPath.endsWith('/') ? currentFmPath : currentFmPath + '/';
-    const oldPath = basePath + oldName;
-    const newPath = basePath + newName;
-    
-    try {
-        const res = await fetch('/api/files/rename', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ oldPath, newPath })
-        });
-        const data = await res.json();
-        if (data.success) {
-            loadFiles();
-        } else {
-            alert('Erro: ' + data.error);
-        }
-    } catch (e) {
-        alert('Erro ao renomear: ' + e.message);
-    }
-}
-
-function fmFormatSize(bytes) {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
-
-function fmFormatDate(isoString) {
-    const date = new Date(isoString);
-    return date.toLocaleString();
-}
-
-// Inicializa o file manager se a tab estiver aberta (ou espera o usuário clicar)
+// ─── INICIALIZAÇÃO ───────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-    // Escuta cliques nos botões de navegação para carregar a pasta ao entrar na aba
+    // Dispara ao clicar na aba Arquivos
     document.querySelectorAll('.nav-link, .mobile-nav-item').forEach(link => {
-        link.addEventListener('click', (e) => {
-            const target = e.currentTarget.getAttribute('data-target');
-            if (target === 'tab-files') {
-                if (document.getElementById('fm-file-list').innerHTML.includes('Carregando')) {
-                    loadFiles();
-                }
+        link.addEventListener('click', () => {
+            if (link.getAttribute('data-target') === 'tab-files') {
+                setTimeout(() => {
+                    if (!currentFmPath) loadFiles();
+                }, 100);
             }
         });
     });
+
+    // Se a aba já está ativa na carga
+    if (document.getElementById('tab-files')?.classList.contains('active')) {
+        loadFiles();
+    }
 });
+
+// ─── CARREGAR ARQUIVOS ───────────────────────────────────────
+async function loadFiles(targetPath) {
+    if (targetPath === undefined) {
+        targetPath = currentFmPath || '';
+    }
+
+    const listEl  = document.getElementById('fm-file-list');
+    const pathEl  = document.getElementById('fm-current-path');
+    const loadEl  = document.getElementById('fm-loading');
+    const errorEl = document.getElementById('fm-error');
+
+    if (errorEl) errorEl.style.display = 'none';
+    if (loadEl)  loadEl.style.display  = 'flex';
+    if (listEl)  listEl.innerHTML = '';
+
+    try {
+        const url  = targetPath ? `/api/files/list?path=${encodeURIComponent(targetPath)}` : '/api/files/list';
+        const opts = {};
+        if (fmRootMode) opts.headers = { 'X-FM-Root': '1' };
+
+        const res  = await fetch(url, opts);
+        const data = await res.json();
+
+        if (!data.success) {
+            showFmError('❌ ' + (data.error || 'Erro ao listar diretório'));
+            return;
+        }
+
+        currentFmPath      = data.path;
+        if (pathEl) pathEl.value = currentFmPath;
+
+        // ─── Renderiza linha "subir" ────────────────────────
+        let rows = '';
+        if (currentFmPath && currentFmPath !== '/') {
+            rows += `<tr class="fm-row" ondblclick="fmUpDir()">
+                <td style="padding:10px 12px;text-align:center;"><i data-lucide="corner-left-up" style="width:16px;height:16px;color:var(--text-muted)"></i></td>
+                <td style="padding:10px 12px;color:var(--text-muted);font-style:italic;" colspan="4">..</td>
+            </tr>`;
+        }
+
+        if (data.files.length === 0) {
+            rows += `<tr><td colspan="5" style="text-align:center;padding:30px;color:var(--text-muted);">📂 Pasta vazia</td></tr>`;
+        }
+
+        data.files.forEach(f => {
+            const icon     = f.isDir ? 'folder' : getFileIcon(f.name);
+            const iconClr  = f.isDir ? 'var(--primary)' : 'var(--text-muted)';
+            const size     = f.isDir ? '—' : fmSize(f.size);
+            const mtime    = fmDate(f.mtime);
+            const fullPath = (currentFmPath.endsWith('/') ? currentFmPath : currentFmPath + '/') + f.name;
+
+            const nav  = f.isDir
+                ? `ondblclick="loadFiles('${escapePath(fullPath)}')" style="cursor:pointer;"`
+                : '';
+            const name = f.isDir
+                ? `<a href="#" onclick="loadFiles('${escapePath(fullPath)}');return false;" style="color:var(--primary);text-decoration:none;font-weight:500;">${escapeHtml(f.name)}</a>`
+                : escapeHtml(f.name);
+
+            const dlBtn = !f.isDir
+                ? `<a href="/api/files/download?path=${encodeURIComponent(fullPath)}" class="btn-icon-ghost" title="Download" target="_blank"><i data-lucide="download"></i></a>`
+                : '';
+
+            rows += `
+            <tr class="fm-row" ${nav}>
+                <td style="padding:10px 12px;text-align:center;width:42px;"><i data-lucide="${icon}" style="color:${iconClr};width:17px;height:17px;"></i></td>
+                <td style="padding:10px 12px;">${name}</td>
+                <td style="padding:10px 12px;color:var(--text-muted);font-size:.83rem;width:110px;">${size}</td>
+                <td style="padding:10px 12px;color:var(--text-muted);font-size:.83rem;width:175px;">${mtime}</td>
+                <td style="padding:10px 12px;text-align:right;white-space:nowrap;width:130px;">
+                    ${dlBtn}
+                    <button class="btn-icon-ghost" onclick="fmRenameFile('${escapePath(f.name)}')" title="Renomear"><i data-lucide="edit-2"></i></button>
+                    <button class="btn-icon-ghost" onclick="fmDeleteFile('${escapePath(fullPath)}')" style="color:var(--danger);" title="Excluir"><i data-lucide="trash-2"></i></button>
+                </td>
+            </tr>`;
+        });
+
+        listEl.innerHTML = rows;
+        if (window.lucide) lucide.createIcons();
+
+    } catch (e) {
+        showFmError('❌ Erro de rede: ' + e.message);
+    } finally {
+        if (loadEl) loadEl.style.display = 'none';
+    }
+}
+
+// ─── ATALHOS RÁPIDOS ─────────────────────────────────────────
+const FM_SHORTCUTS = [
+    { label: '🏠 Home',        path: '' },
+    { label: '📦 Termux',      path: '/data/data/com.termux/files' },
+    { label: '🔧 usr/bin',     path: '/data/data/com.termux/files/usr/bin' },
+    { label: '🌐 nginx/www',   path: '/data/data/com.termux/files/usr/share/nginx/html' },
+    { label: '💾 Storage',     path: '/sdcard' },
+    { label: '📂 Download',    path: '/sdcard/Download' },
+    { label: '🤖 Raiz /data',  path: '/data' },
+    { label: '⚙️ / (Raiz)',    path: '/' },
+];
+
+function fmNavigateShortcut(path) {
+    loadFiles(path || '');
+}
+
+// ─── ROOT MODE ───────────────────────────────────────────────
+function fmToggleRoot() {
+    fmRootMode = !fmRootMode;
+    const btn = document.getElementById('fm-root-btn');
+    if (btn) {
+        btn.style.background  = fmRootMode ? 'var(--danger)' : '';
+        btn.style.color       = fmRootMode ? '#fff' : '';
+        btn.title             = fmRootMode ? 'Modo Root ATIVO — Clique para desativar' : 'Ativar Modo Root (su)';
+        btn.innerHTML         = `<i data-lucide="shield${fmRootMode ? '-alert' : ''}"></i> ${fmRootMode ? 'Root ON' : 'Root'}`;
+    }
+    if (window.lucide) lucide.createIcons();
+    loadFiles();
+}
+
+// ─── SUBIR PASTA ────────────────────────────────────────────
+function fmUpDir() {
+    if (!currentFmPath || currentFmPath === '/') return;
+    const parts = currentFmPath.replace(/\/$/, '').split('/');
+    parts.pop();
+    loadFiles(parts.join('/') || '/');
+}
+
+// ─── NOVA PASTA ──────────────────────────────────────────────
+async function fmCreateFolder() {
+    const name = prompt('Nome da nova pasta:');
+    if (!name) return;
+    const base = currentFmPath.endsWith('/') ? currentFmPath : currentFmPath + '/';
+    try {
+        const r = await fetch('/api/files/mkdir', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ targetPath: base + name })
+        });
+        const d = await r.json();
+        if (d.success) loadFiles();
+        else alert('Erro: ' + d.error);
+    } catch(e) { alert('Erro: ' + e.message); }
+}
+
+// ─── UPLOAD ──────────────────────────────────────────────────
+async function fmUploadFiles(event) {
+    const files = event.target.files;
+    if (!files?.length) return;
+
+    const loadEl = document.getElementById('fm-loading');
+    if (loadEl) { loadEl.innerHTML = '<span>⬆️ Enviando arquivos...</span>'; loadEl.style.display = 'flex'; }
+
+    const fd = new FormData();
+    fd.append('path', currentFmPath);
+    for (const f of files) fd.append('files', f);
+
+    try {
+        const r = await fetch('/api/files/upload', { method: 'POST', body: fd });
+        const d = await r.json();
+        if (!d.success) alert('Erro upload: ' + d.error);
+    } catch(e) { alert('Erro: ' + e.message); }
+    finally {
+        if (loadEl) { loadEl.innerHTML = '<span>Carregando...</span>'; loadEl.style.display = 'none'; }
+        event.target.value = '';
+        loadFiles();
+    }
+}
+
+// ─── EXCLUIR ─────────────────────────────────────────────────
+async function fmDeleteFile(fullPath) {
+    const name = fullPath.split('/').pop();
+    if (!confirm(`Excluir "${name}"?`)) return;
+    try {
+        const r = await fetch(`/api/files/delete?path=${encodeURIComponent(fullPath)}`, { method: 'DELETE' });
+        const d = await r.json();
+        if (d.success) loadFiles();
+        else alert('Erro: ' + d.error);
+    } catch(e) { alert('Erro: ' + e.message); }
+}
+
+// ─── RENOMEAR ────────────────────────────────────────────────
+async function fmRenameFile(oldName) {
+    const newName = prompt(`Renomear "${oldName}" para:`, oldName);
+    if (!newName || newName === oldName) return;
+    const base = currentFmPath.endsWith('/') ? currentFmPath : currentFmPath + '/';
+    try {
+        const r = await fetch('/api/files/rename', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ oldPath: base + oldName, newPath: base + newName })
+        });
+        const d = await r.json();
+        if (d.success) loadFiles();
+        else alert('Erro: ' + d.error);
+    } catch(e) { alert('Erro: ' + e.message); }
+}
+
+// ─── HELPERS ─────────────────────────────────────────────────
+function showFmError(msg) {
+    const el = document.getElementById('fm-error');
+    const li = document.getElementById('fm-file-list');
+    if (el) { el.textContent = msg; el.style.display = 'block'; }
+    if (li) li.innerHTML = '';
+    const ld = document.getElementById('fm-loading');
+    if (ld) ld.style.display = 'none';
+}
+
+function escapePath(p) { return p.replace(/'/g, "\\'"); }
+function escapeHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function fmSize(b) {
+    if (!b) return '0 B';
+    const u = ['B','KB','MB','GB'];
+    const i = Math.floor(Math.log(b) / Math.log(1024));
+    return (b / Math.pow(1024, i)).toFixed(1) + ' ' + (u[i]||'GB');
+}
+
+function fmDate(iso) {
+    return iso ? new Date(iso).toLocaleString('pt-BR') : '—';
+}
+
+function getFileIcon(name) {
+    const ext = (name.split('.').pop() || '').toLowerCase();
+    const map = {
+        'js':'file-code','ts':'file-code','py':'file-code','php':'file-code',
+        'html':'file-code','css':'file-code','sh':'terminal','bash':'terminal',
+        'json':'file-json','xml':'file-code','md':'file-text','txt':'file-text',
+        'jpg':'image','jpeg':'image','png':'image','gif':'image','webp':'image',
+        'mp4':'video','mkv':'video','avi':'video','mp3':'music','wav':'music',
+        'zip':'archive','tar':'archive','gz':'archive','rar':'archive',
+        'pdf':'file-text','db':'database','sql':'database'
+    };
+    return map[ext] || 'file';
+}

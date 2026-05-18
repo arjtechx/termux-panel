@@ -4042,30 +4042,60 @@ const multerUpload = multer({ dest: path.join(os.tmpdir(), 'termux-panel-uploads
 
 app.get('/api/files/list', async (req, res) => {
     try {
-        const defaultPath = process.env.HOME || (process.env.PREFIX ? '/data/data/com.termux/files/home' : '/');
-        const targetPath = req.query.path || defaultPath;
-        if (!fs.existsSync(targetPath)) return res.status(404).json({ error: 'Diretório não encontrado: ' + targetPath });
-        
-        const files = fs.readdirSync(targetPath, { withFileTypes: true });
-        const result = files.map(dirent => {
-            const p = path.join(targetPath, dirent.name);
-            let stat;
-            try { stat = fs.statSync(p); } catch(e) { stat = { size: 0, mtime: new Date() }; }
-            return {
-                name: dirent.name,
-                isDir: dirent.isDirectory(),
-                size: stat.size,
-                mtime: stat.mtime
-            };
-        }).sort((a, b) => {
+        const defaultPath = process.env.HOME || '/data/data/com.termux/files/home';
+        const targetPath  = req.query.path || defaultPath;
+        const rootMode    = req.headers['x-fm-root'] === '1';
+
+        // Verifica se o diretório existe
+        if (!fs.existsSync(targetPath)) {
+            return res.status(404).json({ success: false, error: 'Diretório não encontrado: ' + targetPath });
+        }
+
+        let files;
+
+        if (rootMode) {
+            // Modo Root: tenta listar via `su -c ls` para acessar pastas protegidas
+            try {
+                const { stdout } = await new Promise((resolve, reject) => {
+                    require('child_process').exec(
+                        `su -c "ls -la '${targetPath.replace(/'/g, "'\\''")}'"`,
+                        { timeout: 5000 },
+                        (err, stdout, stderr) => err ? reject(err) : resolve({ stdout, stderr })
+                    );
+                });
+                // Parse da saída do ls -la
+                const lines = stdout.split('\n').filter(l => l && !l.startsWith('total') && !l.startsWith('d.') === false || l.match(/^[d\-lrwxs]/));
+                files = lines.filter(l => l.match(/^[d\-lrwxs]/)).map(line => {
+                    const parts = line.split(/\s+/);
+                    const isDir = line[0] === 'd';
+                    const name = parts.slice(8).join(' ');
+                    if (!name || name === '.' || name === '..') return null;
+                    return { name, isDir, size: parseInt(parts[4]) || 0, mtime: new Date().toISOString() };
+                }).filter(Boolean);
+            } catch(suErr) {
+                return res.json({ success: false, error: 'Root (su) não disponível: ' + suErr.message });
+            }
+        } else {
+            // Modo Normal: usa fs nativo
+            const dirents = fs.readdirSync(targetPath, { withFileTypes: true });
+            files = dirents.map(d => {
+                const p = path.join(targetPath, d.name);
+                let stat = { size: 0, mtime: new Date() };
+                try { stat = fs.statSync(p); } catch(e) { /* sem permissão */ }
+                return { name: d.name, isDir: d.isDirectory(), size: stat.size, mtime: stat.mtime };
+            });
+        }
+
+        // Ordena: pastas primeiro, depois alfabético
+        files.sort((a, b) => {
             if (a.isDir && !b.isDir) return -1;
             if (!a.isDir && b.isDir) return 1;
             return a.name.localeCompare(b.name);
         });
-        
-        res.json({ success: true, path: targetPath, files: result });
+
+        res.json({ success: true, path: targetPath, files });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
