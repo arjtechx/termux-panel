@@ -4047,8 +4047,9 @@ const multerUpload = multer({ dest: path.join(os.tmpdir(), 'termux-panel-uploads
 
 app.get('/api/files/list', async (req, res) => {
     try {
-        const targetPath = req.query.path || (process.env.PREFIX ? '/data/data/com.termux/files/home' : '/');
-        if (!fs.existsSync(targetPath)) return res.status(404).json({ error: 'Diretório não encontrado' });
+        const defaultPath = process.env.HOME || (process.env.PREFIX ? '/data/data/com.termux/files/home' : '/');
+        const targetPath = req.query.path || defaultPath;
+        if (!fs.existsSync(targetPath)) return res.status(404).json({ error: 'Diretório não encontrado: ' + targetPath });
         
         const files = fs.readdirSync(targetPath, { withFileTypes: true });
         const result = files.map(dirent => {

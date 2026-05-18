@@ -1,4 +1,4 @@
-let currentFmPath = '/';
+let currentFmPath = '';
 
 async function loadFiles(targetPath = currentFmPath) {
     const listEl = document.getElementById('fm-file-list');
@@ -7,7 +7,8 @@ async function loadFiles(targetPath = currentFmPath) {
     
     try {
         loadingEl.style.display = 'flex';
-        const res = await fetch(`/api/files/list?path=${encodeURIComponent(targetPath)}`);
+        const url = targetPath ? `/api/files/list?path=${encodeURIComponent(targetPath)}` : '/api/files/list';
+        const res = await fetch(url);
         const data = await res.json();
         
         if (!data.success) {
