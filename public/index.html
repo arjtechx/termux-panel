@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Termux cPanel | Professional</title>
     <link rel="stylesheet" href="style.css?v=4.0">
+    <link rel="stylesheet" href="filemanager.css?v=0.0.11">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.1.0/css/xterm.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fira+Code&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/xterm@5.1.0/lib/xterm.js"></script>
@@ -207,68 +208,291 @@
             <!-- === TAB: ARQUIVOS === -->
             <div id="tab-files" class="tab-pane">
                 <div class="page-header" style="margin-bottom: 15px;">
-                    <h1>Gerenciador de Arquivos</h1>
-                    <span class="badge" style="background: var(--success); color: #fff; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 0.8rem;">100% Nativo</span>
-                </div>
-
-                <!-- File Manager Main Content Wrapper -->
-                <div id="fm-content-wrapper">
-                    <!-- Atalhos Rápidos -->
-                    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
-                        <button class="btn btn-secondary btn-sm" onclick="fmNavigateShortcut('')" title="Pasta Home do Termux">🏠 Home</button>
-                        <button class="btn btn-secondary btn-sm" onclick="fmNavigateShortcut('/data/data/com.termux/files')" title="Termux Files">📦 Termux</button>
-                        <button class="btn btn-secondary btn-sm" onclick="fmNavigateShortcut('/data/data/com.termux/files/usr/bin')">🔧 usr/bin</button>
-                        <button class="btn btn-secondary btn-sm" onclick="fmNavigateShortcut('/data/data/com.termux/files/usr/share/nginx/html')">🌐 www</button>
-                        <button class="btn btn-secondary btn-sm" onclick="fmNavigateShortcut('/sdcard')">💾 SDCard</button>
-                        <button class="btn btn-secondary btn-sm" onclick="fmNavigateShortcut('/sdcard/Download')">📂 Download</button>
-                        <button class="btn btn-secondary btn-sm" onclick="fmNavigateShortcut('/data')">🤖 /data</button>
-                        <button class="btn btn-secondary btn-sm" onclick="fmNavigateShortcut('/')">⚙️ / Raiz</button>
-                        <button id="fm-root-btn" class="btn btn-secondary btn-sm" onclick="fmToggleRoot()" title="Ativar Modo Root (su)">
-                            <i data-lucide="shield"></i> Root
+                    <div>
+                        <h1>Gerenciador de Arquivos</h1>
+                        <p style="color:var(--text-muted); font-size:0.875rem; margin-top:2px;">Navegue, crie, edite e gerencie arquivos nativamente no Termux</p>
+                    </div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap">
+                        <button class="btn btn-secondary btn-sm" onclick="fmTerminalHere()">
+                            <i data-lucide="terminal"></i> Terminal Aqui
+                        </button>
+                        <button class="btn btn-secondary btn-sm" onclick="loadFiles()">
+                            <i data-lucide="refresh-cw"></i> Atualizar
                         </button>
                     </div>
+                </div>
 
-                    <!-- Toolbar -->
-                    <div class="card" style="display:flex;gap:10px;margin-bottom:15px;padding:12px;align-items:center;flex-wrap:wrap;">
-                        <div style="display:flex;align-items:center;flex:1;background:var(--bg-lighter);padding:6px 12px;border-radius:6px;border:1px solid var(--border-color);min-width:200px;">
-                            <i data-lucide="folder" style="color:var(--primary);margin-right:8px;flex-shrink:0;"></i>
-                            <input type="text" id="fm-current-path" value="" placeholder="Carregando..."
-                                style="width:100%;background:transparent;border:none;outline:none;font-family:monospace;font-size:0.9rem;color:var(--text-color);"
-                                onkeydown="if(event.key==='Enter')loadFiles(this.value)">
+                <div class="fm-shell">
+                    <!-- Coluna da Esquerda: Atalhos e Upload -->
+                    <aside class="fm-left fm-panel">
+                        <div class="fm-panel-pad">
+                            <div class="fm-section-title">Atalhos rápidos</div>
+                            <button class="fm-shortcut" onclick="fmNavigateShortcut('')"><i data-lucide="home"></i> Home <small>~</small></button>
+                            <button class="fm-shortcut" onclick="fmNavigateShortcut('/data/data/com.termux/files')"><i data-lucide="box"></i> Termux <small>/files</small></button>
+                            <button class="fm-shortcut" onclick="fmNavigateShortcut('/data/data/com.termux/files/usr/bin')"><i data-lucide="wrench"></i> usr/bin</button>
+                            <button class="fm-shortcut" onclick="fmNavigateShortcut('/data/data/com.termux/files/usr/share/nginx/html')"><i data-lucide="globe"></i> nginx/www</button>
+                            <button class="fm-shortcut" onclick="fmNavigateShortcut('/sdcard')"><i data-lucide="hard-drive"></i> Storage</button>
+                            <button class="fm-shortcut" onclick="fmNavigateShortcut('/sdcard/Download')"><i data-lucide="download"></i> Download</button>
+                            <button class="fm-shortcut" onclick="fmNavigateShortcut('/data')"><i data-lucide="cpu"></i> /data</button>
+                            <button class="fm-shortcut" onclick="fmNavigateShortcut('/')"><i data-lucide="settings"></i> / (Raiz)</button>
+                            
+                            <div class="fm-section-title">Modo Avançado</div>
+                            <button id="fm-root-btn" class="fm-shortcut" onclick="fmToggleRoot()">
+                                <i data-lucide="shield"></i> Root (su) <small>OFF</small>
+                            </button>
+
+                            <!-- Drop Zone de Upload -->
+                            <div class="fm-drop" id="fm-drop-zone" onclick="fmTriggerUpload()">
+                                <i data-lucide="upload-cloud" style="width:28px;height:28px;color:var(--primary);"></i>
+                                <b>Upload múltiplo</b>
+                                <p style="font-size:0.75rem;margin-top:4px;">Arraste arquivos aqui ou clique para selecionar</p>
+                                <input type="file" id="fm-upload-input" multiple style="display:none;" onchange="fmUploadFiles(event)">
+                                <div class="fm-progress-wrap" id="fm-upload-progress-wrap">
+                                    <div class="fm-progress-bar" id="fm-upload-progress"></div>
+                                </div>
+                            </div>
                         </div>
-                        <button class="btn btn-primary btn-sm" onclick="fmUpDir()" title="Subir diretório"><i data-lucide="corner-left-up"></i></button>
-                        <button class="btn btn-secondary btn-sm" onclick="loadFiles()" title="Atualizar"><i data-lucide="refresh-cw"></i></button>
-                        <button class="btn btn-secondary btn-sm" onclick="fmCreateFolder()"><i data-lucide="folder-plus"></i> Nova Pasta</button>
-                        <label class="btn btn-secondary btn-sm" style="cursor:pointer;margin:0;display:inline-flex;align-items:center;gap:6px;">
-                            <i data-lucide="upload"></i> Upload
-                            <input type="file" id="fm-upload-input" multiple style="display:none;" onchange="fmUploadFiles(event)">
-                        </label>
-                    </div>
+                    </aside>
 
-                    <!-- Mensagem de erro -->
-                    <div id="fm-error" style="display:none;background:var(--danger-bg,#ff000022);border:1px solid var(--danger);color:var(--danger);padding:12px 16px;border-radius:8px;margin-bottom:12px;font-family:monospace;"></div>
-
-                    <!-- Tabela de arquivos -->
-                    <div class="card" style="padding:0;overflow-x:auto;min-height:400px;position:relative;">
-                        <div id="fm-loading" style="position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.4);display:none;align-items:center;justify-content:center;z-index:10;border-radius:8px;">
-                            <span style="color:#fff;font-size:1rem;">⏳ Carregando...</span>
+                    <!-- Coluna Central: Listagem, Toolbar, Breadcrumb -->
+                    <section class="fm-main fm-panel">
+                        <!-- Barra Superior (Caminho e Busca) -->
+                        <div class="fm-top">
+                            <div class="fm-path-wrap">
+                                <button class="btn btn-secondary btn-sm" onclick="fmUpDir()" title="Subir Diretório"><i data-lucide="corner-left-up"></i></button>
+                                <input type="text" id="fm-current-path" class="fm-path-input" placeholder="Carregando caminho..." onkeydown="if(event.key==='Enter')loadFiles(this.value)">
+                            </div>
+                            <div class="fm-search-wrap">
+                                <i data-lucide="search"></i>
+                                <input type="text" class="fm-search-input" placeholder="Buscar no diretório..." oninput="handleSearch(this.value)">
+                            </div>
                         </div>
-                        <table style="width:100%;border-collapse:collapse;text-align:left;">
-                            <thead style="background:var(--surface2);border-bottom:1px solid var(--border-color);">
-                                <tr>
-                                    <th style="padding:12px;width:40px;"></th>
-                                    <th style="padding:12px;">Nome</th>
-                                    <th style="padding:12px;width:110px;">Tamanho</th>
-                                    <th style="padding:12px;width:175px;">Modificado em</th>
-                                    <th style="padding:12px;width:135px;text-align:right;">Ações</th>
-                                </tr>
-                            </thead>
-                            <tbody id="fm-file-list">
-                                <tr><td colspan="5" style="text-align:center;padding:40px;color:var(--text-muted);">Clique na aba Arquivos para carregar...</td></tr>
-                            </tbody>
-                        </table>
+
+                        <!-- Breadcrumb -->
+                        <div class="fm-breadcrumb" id="fm-breadcrumb-container">
+                            <span class="fm-slash">Aguardando cPanel...</span>
+                        </div>
+
+                        <!-- Toolbar Operacional -->
+                        <div class="fm-toolbar">
+                            <button class="btn btn-primary btn-sm" onclick="fmOpenCreateFileModal()"><i data-lucide="file-plus"></i> Novo Arquivo</button>
+                            <button class="btn btn-primary btn-sm" onclick="fmOpenMkdirModal()"><i data-lucide="folder-plus"></i> Nova Pasta</button>
+                            <button class="btn btn-secondary btn-sm" onclick="fmCopySelected()"><i data-lucide="copy"></i> Copiar</button>
+                            <button class="btn btn-secondary btn-sm" onclick="fmMoveSelected()"><i data-lucide="move"></i> Recortar</button>
+                            <button class="btn btn-secondary btn-sm" onclick="fmPasteClipboard()"><i data-lucide="clipboard"></i> Colar</button>
+                            <button class="btn btn-secondary btn-sm" onclick="fmOpenCompressModal()"><i data-lucide="archive"></i> Compactar</button>
+                            <button class="btn btn-danger btn-sm" onclick="fmDeleteSelected()"><i data-lucide="trash-2"></i> Excluir Selecionados</button>
+                            
+                            <span class="fm-spacer"></span>
+
+                            <div class="fm-view-toggle">
+                                <button class="active" id="fm-view-list-btn" onclick="setFmView('list')" title="Exibição em Lista"><i data-lucide="list"></i></button>
+                                <button id="fm-view-grid-btn" onclick="setFmView('grid')" title="Exibição em Grade"><i data-lucide="layout-grid"></i></button>
+                            </div>
+                        </div>
+
+                        <!-- Container de Lista (Tabela) -->
+                        <div id="fm-list-wrapper" class="fm-table-wrap">
+                            <div id="fm-loading" style="display:none;" class="fm-loading-row">
+                                <div class="fm-spinner"></div>
+                                <span style="font-size:0.85rem;color:var(--text-muted);">Sincronizando com o Termux...</span>
+                            </div>
+                            <table class="fm-table">
+                                <thead>
+                                    <tr>
+                                        <th><input type="checkbox" class="fm-check" onchange="selectAllFiles(this.checked)"></th>
+                                        <th>Nome</th>
+                                        <th>Tamanho</th>
+                                        <th>Permissão</th>
+                                        <th>Modificado em</th>
+                                        <th style="text-align:right;">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="fm-file-list">
+                                    <tr><td colspan="6" style="text-align:center;padding:40px;color:var(--text-muted);">Selecione a aba para sincronizar os arquivos.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Container de Grade -->
+                        <div id="fm-grid-wrapper" class="fm-grid" style="display:none;">
+                            <!-- Inserido dinamicamente por filemanager.js -->
+                        </div>
+                    </section>
+
+                    <!-- Coluna da Direita: Detalhes -->
+                    <aside class="fm-right fm-panel">
+                        <div class="fm-panel-pad" id="fm-details-panel">
+                            <div class="fm-detail-placeholder">
+                                <i data-lucide="mouse-pointer-click"></i>
+                                <p>Selecione um arquivo para ver detalhes e ações rápidas</p>
+                            </div>
+                        </div>
+                    </aside>
+                </div>
+
+                <!-- ─── MODAIS OPERACIONAIS DO FILEMANAGER ─── -->
+
+                <!-- Modal Criar Pasta -->
+                <div class="fm-modal" id="fm-mkdir-modal">
+                    <div class="fm-modal-box">
+                        <div class="fm-modal-head">
+                            <span><i data-lucide="folder-plus"></i> Criar Nova Pasta</span>
+                            <button class="btn-icon-ghost" onclick="closeFmModal('fm-mkdir-modal')"><i data-lucide="x"></i></button>
+                        </div>
+                        <div class="fm-modal-body">
+                            <label>Nome da Pasta</label>
+                            <input type="text" id="fm-mkdir-name" placeholder="ex: public_html" onkeydown="if(event.key==='Enter')fmSubmitMkdir()">
+                        </div>
+                        <div class="fm-modal-foot">
+                            <button class="btn btn-secondary btn-sm" onclick="closeFmModal('fm-mkdir-modal')">Cancelar</button>
+                            <button class="btn btn-success btn-sm" onclick="fmSubmitMkdir()">Criar</button>
+                        </div>
                     </div>
                 </div>
+
+                <!-- Modal Criar Arquivo -->
+                <div class="fm-modal" id="fm-createfile-modal">
+                    <div class="fm-modal-box">
+                        <div class="fm-modal-head">
+                            <span><i data-lucide="file-plus"></i> Criar Novo Arquivo</span>
+                            <button class="btn-icon-ghost" onclick="closeFmModal('fm-createfile-modal')"><i data-lucide="x"></i></button>
+                        </div>
+                        <div class="fm-modal-body">
+                            <label>Nome do Arquivo (com extensão)</label>
+                            <input type="text" id="fm-createfile-name" placeholder="ex: index.php" onkeydown="if(event.key==='Enter')fmSubmitCreateFile()">
+                        </div>
+                        <div class="fm-modal-foot">
+                            <button class="btn btn-secondary btn-sm" onclick="closeFmModal('fm-createfile-modal')">Cancelar</button>
+                            <button class="btn btn-success btn-sm" onclick="fmSubmitCreateFile()">Criar</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Modal Chmod -->
+                <div class="fm-modal" id="fm-chmod-modal">
+                    <div class="fm-modal-box">
+                        <div class="fm-modal-head">
+                            <span><i data-lucide="key"></i> Alterar Permissões (Chmod)</span>
+                            <button class="btn-icon-ghost" onclick="closeFmModal('fm-chmod-modal')"><i data-lucide="x"></i></button>
+                        </div>
+                        <div class="fm-modal-body">
+                            <label>Permissões (Octal)</label>
+                            <input type="text" id="fm-chmod-mode" placeholder="ex: 755" maxlength="4" onkeydown="if(event.key==='Enter')fmSubmitChmod()">
+                            <p style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;">Padrão comum: 644 para arquivos, 755 para diretórios/executáveis.</p>
+                        </div>
+                        <div class="fm-modal-foot">
+                            <button class="btn btn-secondary btn-sm" onclick="closeFmModal('fm-chmod-modal')">Cancelar</button>
+                            <button class="btn btn-success btn-sm" onclick="fmSubmitChmod()">Aplicar</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Modal Renomear -->
+                <div class="fm-modal" id="fm-rename-modal">
+                    <div class="fm-modal-box">
+                        <div class="fm-modal-head">
+                            <span><i data-lucide="edit-2"></i> Renomear Item</span>
+                            <button class="btn-icon-ghost" onclick="closeFmModal('fm-rename-modal')"><i data-lucide="x"></i></button>
+                        </div>
+                        <div class="fm-modal-body">
+                            <label>Novo Nome</label>
+                            <input type="text" id="fm-rename-name" placeholder="ex: novo_nome.txt" onkeydown="if(event.key==='Enter')fmSubmitRename()">
+                        </div>
+                        <div class="fm-modal-foot">
+                            <button class="btn btn-secondary btn-sm" onclick="closeFmModal('fm-rename-modal')">Cancelar</button>
+                            <button class="btn btn-success btn-sm" onclick="fmSubmitRename()">Renomear</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Modal Compactar -->
+                <div class="fm-modal" id="fm-compress-modal">
+                    <div class="fm-modal-box">
+                        <div class="fm-modal-head">
+                            <span><i data-lucide="archive"></i> Compactar Arquivos</span>
+                            <button class="btn-icon-ghost" onclick="closeFmModal('fm-compress-modal')"><i data-lucide="x"></i></button>
+                        </div>
+                        <div class="fm-modal-body">
+                            <label>Nome do Arquivo Compactado (.tar.gz será anexado automaticamente)</label>
+                            <input type="text" id="fm-compress-name" placeholder="ex: backup-arquivos" onkeydown="if(event.key==='Enter')fmSubmitCompress()">
+                        </div>
+                        <div class="fm-modal-foot">
+                            <button class="btn btn-secondary btn-sm" onclick="closeFmModal('fm-compress-modal')">Cancelar</button>
+                            <button class="btn btn-success btn-sm" onclick="fmSubmitCompress()">Compactar</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Modal Preview de Imagem -->
+                <div class="fm-modal" id="fm-preview-modal">
+                    <div class="fm-modal-box" style="width:min(600px, 94vw);">
+                        <div class="fm-modal-head">
+                            <span id="fm-preview-title">Visualização</span>
+                            <button class="btn-icon-ghost" onclick="closeFmModal('fm-preview-modal')"><i data-lucide="x"></i></button>
+                        </div>
+                        <div class="fm-modal-body" id="fm-preview-body" style="padding:0;min-height:200px;">
+                            <!-- Injetado dinamicamente -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Modal Editor Fullscreen -->
+                <div class="fm-modal" id="fm-editor-modal">
+                    <div class="fm-modal-box wide">
+                        <div class="fm-modal-head">
+                            <span style="display:flex;align-items:center;gap:8px;">
+                                <i data-lucide="file-code" style="color:var(--primary);"></i>
+                                <b id="fm-editor-title">editor.txt</b>
+                                <span id="fm-editor-lang-badge" class="fm-editor-lang">TXT</span>
+                                <span id="fm-editor-unsaved" class="fm-unsaved" style="display:none;">● Modificado (Não Salvo)</span>
+                            </span>
+                            <div style="display:flex;gap:6px;align-items:center;">
+                                <button class="btn btn-primary btn-sm" onclick="fmSaveEditorContent()"><i data-lucide="save"></i> Salvar (Ctrl+S)</button>
+                                <button class="btn btn-secondary btn-sm" onclick="fmFormatJson()"><i data-lucide="braces"></i> Formatar JSON</button>
+                                <button class="btn btn-secondary btn-sm" onclick="fmCloseEditor()"><i data-lucide="x"></i> Fechar</button>
+                            </div>
+                        </div>
+                        <div class="fm-editor-wrap">
+                            <textarea id="fm-editor-textarea" class="fm-code-area" spellcheck="false" placeholder="Carregando conteúdo do arquivo do Termux..."></textarea>
+                            <aside class="fm-editor-side">
+                                <div class="fm-section-title" style="margin-top:0;">Editor cPanel</div>
+                                <div class="fm-editor-info">
+                                    <p style="margin-bottom:8px;">Suporta edição direta de arquivos de texto de até 300KB.</p>
+                                    <p style="margin-bottom:8px;font-weight:600;color:var(--primary);">Dica de Produtividade:</p>
+                                    <p>Pressione <code>Ctrl + S</code> em qualquer momento para salvar seu progresso rapidamente.</p>
+                                </div>
+                            </aside>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Menu de Contexto (Right Click) -->
+                <div class="fm-ctx-menu" id="fm-ctx-menu">
+                    <button class="fm-ctx-item" id="fm-ctx-open" onclick="fmCtxTrigger('open')"><i data-lucide="folder-open"></i> Abrir pasta</button>
+                    <button class="fm-ctx-item" id="fm-ctx-edit" onclick="fmCtxTrigger('edit')"><i data-lucide="edit-3"></i> Editar código</button>
+                    <button class="fm-ctx-item" id="fm-ctx-download" onclick="fmCtxTrigger('download')"><i data-lucide="download"></i> Baixar arquivo</button>
+                    <button class="fm-ctx-item" id="fm-ctx-extract" onclick="fmCtxTrigger('extract')"><i data-lucide="package-open"></i> Extrair aqui</button>
+                    <div class="fm-ctx-sep"></div>
+                    <button class="fm-ctx-item" onclick="fmCtxTrigger('rename')"><i data-lucide="edit-2"></i> Renomear</button>
+                    <button class="fm-ctx-item" onclick="fmCtxTrigger('copy')"><i data-lucide="copy"></i> Copiar</button>
+                    <button class="fm-ctx-item" onclick="fmCtxTrigger('move')"><i data-lucide="scissors"></i> Recortar</button>
+                    <button class="fm-ctx-item" onclick="fmCtxTrigger('chmod')"><i data-lucide="key"></i> Chmod</button>
+                    <div class="fm-ctx-sep"></div>
+                    <button class="fm-ctx-item danger" onclick="fmCtxTrigger('delete')"><i data-lucide="trash-2"></i> Excluir</button>
+                </div>
+
+                <!-- Barra de Ações Mobile -->
+                <div class="fm-mobile-bar">
+                    <button class="fm-ico" onclick="fmOpenCreateFileModal()" title="Novo Arquivo"><i data-lucide="file-plus"></i></button>
+                    <button class="fm-ico" onclick="fmOpenMkdirModal()" title="Nova Pasta"><i data-lucide="folder-plus"></i></button>
+                    <button class="fm-ico" onclick="fmTriggerUpload()" title="Upload"><i data-lucide="upload"></i></button>
+                    <button class="fm-ico" onclick="fmTerminalHere()" title="Terminal"><i data-lucide="terminal"></i></button>
+                    <button class="fm-ico" onclick="loadFiles()" title="Atualizar"><i data-lucide="refresh-cw"></i></button>
+                </div>
+
+                <!-- Container de Notificações Toast -->
+                <div class="fm-toast-container" id="fm-toast-container"></div>
             </div>
 
             <!-- === TAB: TERMINAL === -->
@@ -1039,7 +1263,7 @@
 </div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.0.7"></script>
+<script src="filemanager.js?v=0.0.11"></script>
 <script src="app.js?v=4.0"></script>
 </body>
 </html>
