@@ -122,6 +122,9 @@ app.use('/api/cron', cronRoutes);
 const databaseRoutes = require('./src/routes/databaseRoutes');
 app.use('/', databaseRoutes);
 
+const fileRoutes = require('./src/routes/fileRoutes');
+app.use('/api/files', fileRoutes);
+
 
 
 const healthRoutes = require('./src/routes/healthRoutes');
