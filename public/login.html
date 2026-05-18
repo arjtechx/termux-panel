@@ -7,136 +7,539 @@
     <link rel="stylesheet" href="style.css">
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
+        :root {
+            --login-bg: #eef3f8;
+            --login-panel: rgba(255, 255, 255, 0.9);
+            --login-panel-solid: #ffffff;
+            --login-ink: #172033;
+            --login-muted: #64748b;
+            --login-placeholder: #94a3b8;
+            --login-line: rgba(148, 163, 184, 0.32);
+            --login-accent: #0f766e;
+            --login-accent-strong: #115e59;
+            --login-accent-soft: rgba(15, 118, 110, 0.12);
+            --login-warning: #d97706;
+            --login-danger: #dc2626;
+            --login-shadow: 0 24px 70px rgba(15, 23, 42, 0.14);
+        }
+
+        body[data-theme="dark"],
+        body.dark-neon {
+            --login-bg: #111318;
+            --login-panel: rgba(24, 28, 36, 0.92);
+            --login-panel-solid: #181c24;
+            --login-ink: #f1f5f9;
+            --login-muted: #a3adbd;
+            --login-placeholder: #7b8494;
+            --login-line: rgba(148, 163, 184, 0.2);
+            --login-accent: #14b8a6;
+            --login-accent-strong: #2dd4bf;
+            --login-accent-soft: rgba(20, 184, 166, 0.14);
+            --login-shadow: 0 28px 80px rgba(0, 0, 0, 0.35);
+        }
+
         body {
-            height: 100vh;
+            min-height: 100vh;
+            height: auto;
+            display: grid;
+            place-items: center;
+            overflow: auto;
+            padding: 32px 18px;
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.22)),
+                repeating-linear-gradient(90deg, rgba(15, 118, 110, 0.055) 0 1px, transparent 1px 72px),
+                repeating-linear-gradient(0deg, rgba(15, 118, 110, 0.045) 0 1px, transparent 1px 72px),
+                var(--login-bg);
+            color: var(--login-ink);
+        }
+
+        body[data-theme="dark"],
+        body.dark-neon {
+            background:
+                linear-gradient(180deg, rgba(17, 19, 24, 0.9), rgba(17, 19, 24, 0.78)),
+                repeating-linear-gradient(90deg, rgba(20, 184, 166, 0.06) 0 1px, transparent 1px 72px),
+                repeating-linear-gradient(0deg, rgba(20, 184, 166, 0.045) 0 1px, transparent 1px 72px),
+                var(--login-bg);
+        }
+
+        .login-shell {
+            width: min(960px, 100%);
+            display: grid;
+            grid-template-columns: minmax(0, 1.05fr) minmax(360px, 0.95fr);
+            overflow: hidden;
+            border: 1px solid var(--login-line);
+            border-radius: 18px;
+            background: var(--login-panel);
+            box-shadow: var(--login-shadow);
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+        }
+
+        .login-info {
+            position: relative;
+            padding: 38px;
+            background:
+                linear-gradient(135deg, rgba(15, 118, 110, 0.12), rgba(99, 102, 241, 0.06)),
+                var(--login-panel-solid);
+            border-right: 1px solid var(--login-line);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            min-height: 520px;
+        }
+
+        .brand-mark {
             display: flex;
             align-items: center;
-            justify-content: center;
-            background: linear-gradient(135deg, #f1f3f6 0%, #e2e8f0 100%);
+            gap: 12px;
+            font-weight: 800;
+            font-size: 1.05rem;
+            letter-spacing: 0;
         }
-        
-        body.dark-neon {
-            background: linear-gradient(135deg, #020203 0%, #0a0a0c 100%);
+
+        .brand-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            display: grid;
+            place-items: center;
+            color: #ffffff;
+            background: var(--login-accent);
+            box-shadow: 0 12px 28px rgba(15, 118, 110, 0.24);
+        }
+
+        .login-copy {
+            max-width: 430px;
+            margin-top: 72px;
+        }
+
+        .eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--login-accent-strong);
+            background: var(--login-accent-soft);
+            border: 1px solid rgba(15, 118, 110, 0.16);
+            border-radius: 999px;
+            padding: 7px 11px;
+            font-size: 0.78rem;
+            font-weight: 700;
+            margin-bottom: 18px;
+        }
+
+        .login-copy h1 {
+            color: var(--login-ink);
+            font-size: clamp(2rem, 4vw, 3.1rem);
+            line-height: 1.05;
+            letter-spacing: 0;
+            margin: 0 0 16px;
+        }
+
+        .login-copy p {
+            color: var(--login-muted);
+            font-size: 1rem;
+            max-width: 36rem;
+        }
+
+        .status-strip {
+            margin-top: 36px;
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .status-pill {
+            border: 1px solid var(--login-line);
+            border-radius: 10px;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.46);
+        }
+
+        body[data-theme="dark"] .status-pill,
+        body.dark-neon .status-pill {
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        .status-pill i {
+            width: 17px;
+            height: 17px;
+            color: var(--login-accent);
+            margin-bottom: 8px;
+        }
+
+        .status-pill span {
+            display: block;
+            color: var(--login-muted);
+            font-size: 0.74rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0;
+        }
+
+        .status-pill strong {
+            display: block;
+            color: var(--login-ink);
+            font-size: 0.95rem;
+            margin-top: 2px;
         }
 
         .login-card {
-            background: rgba(255, 255, 255, 0.8);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            padding: 40px;
-            border-radius: 24px;
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
-            width: 100%;
-            max-width: 400px;
-            text-align: center;
+            padding: 38px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            background: var(--login-panel);
         }
 
-        body.dark-neon .login-card {
-            background: rgba(10, 10, 12, 0.8);
-            border: 1px solid rgba(0, 242, 255, 0.1);
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+        .login-card-header {
+            margin-bottom: 26px;
         }
 
-        .login-header h1 {
-            font-size: 1.5rem;
-            margin-bottom: 10px;
-            color: var(--primary-color);
+        .login-card-header h2 {
+            color: var(--login-ink);
+            font-size: 1.6rem;
+            line-height: 1.2;
+            margin-bottom: 8px;
+            letter-spacing: 0;
         }
 
-        .login-header p {
-            color: var(--text-secondary);
-            font-size: 0.9rem;
-            margin-bottom: 30px;
+        .login-card-header p {
+            color: var(--login-muted);
+            font-size: 0.92rem;
         }
 
         .form-group {
-            margin-bottom: 20px;
-            text-align: left;
+            margin-bottom: 16px;
         }
 
         .form-group label {
-            display: block;
-            font-size: 0.85rem;
-            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--login-ink);
+            font-size: 0.84rem;
+            font-weight: 700;
             margin-bottom: 8px;
-            color: var(--text-secondary);
         }
 
-        .form-group input {
+        .form-group label i {
+            width: 15px;
+            height: 15px;
+            color: var(--login-accent);
+        }
+
+        .input-shell {
+            position: relative;
+        }
+
+        .input-shell input {
             width: 100%;
-            padding: 12px 15px;
-            border-radius: 12px;
-            border: 1px solid var(--border-color);
-            background: var(--surface-color);
-            color: var(--text-primary);
-            font-size: 1rem;
-            transition: var(--transition);
+            min-height: 48px;
+            border: 1px solid var(--login-line);
+            border-radius: 10px;
+            background: var(--login-panel-solid);
+            color: var(--login-ink);
+            font-size: 0.98rem;
+            padding: 12px 14px;
+            outline: none;
+            transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
         }
 
-        .form-group input:focus {
-            outline: none;
-            border-color: var(--primary-color);
-            box-shadow: 0 0 10px var(--primary-glow);
+        .input-shell input::placeholder {
+            color: var(--login-placeholder);
+        }
+
+        .input-shell input:focus {
+            border-color: var(--login-accent);
+            box-shadow: 0 0 0 4px var(--login-accent-soft);
+        }
+
+        .password-input input {
+            padding-right: 48px;
+        }
+
+        .password-toggle {
+            position: absolute;
+            right: 7px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 36px;
+            height: 36px;
+            display: grid;
+            place-items: center;
+            border: 0;
+            border-radius: 8px;
+            color: var(--login-muted);
+            background: transparent;
+            cursor: pointer;
+            transition: background 0.18s ease, color 0.18s ease;
+        }
+
+        .password-toggle:hover {
+            color: var(--login-accent);
+            background: var(--login-accent-soft);
+        }
+
+        .password-toggle i {
+            width: 18px;
+            height: 18px;
         }
 
         .btn-login {
             width: 100%;
-            padding: 14px;
-            background: var(--primary-color);
-            color: #fff;
-            border: none;
-            border-radius: 12px;
-            font-size: 1rem;
-            font-weight: 700;
+            min-height: 50px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 6px;
+            border: 0;
+            border-radius: 10px;
+            background: var(--login-accent);
+            color: #ffffff;
+            font-size: 0.98rem;
+            font-weight: 800;
             cursor: pointer;
-            transition: var(--transition);
-            margin-top: 10px;
+            transition: transform 0.18s ease, filter 0.18s ease, box-shadow 0.18s ease;
+            box-shadow: 0 14px 30px rgba(15, 118, 110, 0.22);
         }
 
         .btn-login:hover {
-            filter: brightness(1.1);
-            transform: translateY(-2px);
+            transform: translateY(-1px);
+            filter: brightness(1.04);
+        }
+
+        .btn-login:disabled {
+            cursor: wait;
+            opacity: 0.76;
+            transform: none;
+        }
+
+        .btn-login i {
+            width: 18px;
+            height: 18px;
+        }
+
+        .spin {
+            animation: login-spin 0.8s linear infinite;
+        }
+
+        @keyframes login-spin {
+            to { transform: rotate(360deg); }
         }
 
         .error-msg {
-            color: var(--danger-color);
-            font-size: 0.85rem;
-            margin-top: 15px;
+            min-height: 20px;
             display: none;
+            align-items: center;
+            gap: 8px;
+            color: var(--login-danger);
+            background: rgba(220, 38, 38, 0.08);
+            border: 1px solid rgba(220, 38, 38, 0.18);
+            border-radius: 10px;
+            padding: 10px 12px;
+            font-size: 0.86rem;
+            font-weight: 700;
+            margin-top: 14px;
+        }
+
+        .error-msg.show {
+            display: flex;
+        }
+
+        .login-footer {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--login-muted);
+            font-size: 0.78rem;
+            margin-top: 18px;
+        }
+
+        .login-footer i {
+            width: 15px;
+            height: 15px;
+            color: var(--login-warning);
+        }
+
+        @media (max-width: 820px) {
+            body {
+                display: block;
+                padding: 18px;
+            }
+
+            .login-shell {
+                grid-template-columns: 1fr;
+            }
+
+            .login-info {
+                min-height: auto;
+                padding: 28px;
+                border-right: 0;
+                border-bottom: 1px solid var(--login-line);
+            }
+
+            .login-copy {
+                margin-top: 34px;
+            }
+
+            .status-strip {
+                margin-top: 26px;
+            }
+
+            .login-card {
+                padding: 28px;
+            }
+        }
+
+        @media (max-width: 520px) {
+            body {
+                padding: 12px;
+            }
+
+            .login-shell {
+                border-radius: 14px;
+            }
+
+            .login-info,
+            .login-card {
+                padding: 22px;
+            }
+
+            .status-strip {
+                grid-template-columns: 1fr;
+            }
+
+            .login-copy h1 {
+                font-size: 2rem;
+            }
         }
     </style>
 </head>
-<body class="light-pro">
-    <div class="login-card">
-        <div class="login-header">
-            <h1>☁️ Termux cPanel</h1>
-            <p>Faça login para gerenciar seu servidor</p>
-        </div>
-        <form id="loginForm">
-            <div class="form-group">
-                <label for="username">Usuário</label>
-                <input type="text" id="username" placeholder="Seu usuário" required>
+<body>
+    <main class="login-shell" aria-label="Login do painel">
+        <section class="login-info" aria-label="Resumo do painel">
+            <div>
+                <div class="brand-mark">
+                    <span class="brand-icon"><i data-lucide="square-terminal"></i></span>
+                    <span>Termux <b>cPanel</b></span>
+                </div>
+
+                <div class="login-copy">
+                    <span class="eyebrow"><i data-lucide="shield-check"></i> Acesso protegido</span>
+                    <h1>Entre no painel de gerenciamento</h1>
+                    <p>Controle seu servidor, serviços, arquivos, bancos e atualizações em uma área administrativa centralizada.</p>
+                </div>
             </div>
-            <div class="form-group">
-                <label for="password">Senha</label>
-                <input type="password" id="password" placeholder="Sua senha" required>
+
+            <div class="status-strip" aria-label="Recursos principais">
+                <div class="status-pill">
+                    <i data-lucide="server-cog"></i>
+                    <span>Sistema</span>
+                    <strong>Serviços</strong>
+                </div>
+                <div class="status-pill">
+                    <i data-lucide="database"></i>
+                    <span>Banco</span>
+                    <strong>MariaDB</strong>
+                </div>
+                <div class="status-pill">
+                    <i data-lucide="download-cloud"></i>
+                    <span>Painel</span>
+                    <strong>Atualizações</strong>
+                </div>
             </div>
-            <button type="submit" class="btn-login">Acessar Painel</button>
-            <div id="errorMsg" class="error-msg">Usuário ou senha incorretos.</div>
-        </form>
-    </div>
+        </section>
+
+        <section class="login-card" aria-label="Formulário de entrada">
+            <div class="login-card-header">
+                <h2>Bem-vindo de volta</h2>
+                <p>Use suas credenciais para continuar.</p>
+            </div>
+
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="username"><i data-lucide="user-round"></i> Usuário</label>
+                    <div class="input-shell">
+                        <input type="text" id="username" name="username" placeholder="Digite seu usuário" autocomplete="username" required autofocus>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="password"><i data-lucide="lock-keyhole"></i> Senha</label>
+                    <div class="input-shell password-input">
+                        <input type="password" id="password" name="password" placeholder="Digite sua senha" autocomplete="current-password" required>
+                        <button type="button" class="password-toggle" id="passwordToggle" aria-label="Mostrar senha" title="Mostrar senha">
+                            <i data-lucide="eye"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn-login" id="loginButton">
+                    <i data-lucide="log-in"></i>
+                    <span>Acessar painel</span>
+                </button>
+
+                <div id="errorMsg" class="error-msg" role="alert">
+                    <i data-lucide="circle-alert"></i>
+                    <span>Usuário ou senha incorretos.</span>
+                </div>
+            </form>
+
+            <div class="login-footer">
+                <i data-lucide="key-round"></i>
+                <span>As credenciais podem ser alteradas nas configurações do painel.</span>
+            </div>
+        </section>
+    </main>
 
     <script>
-        // Sincronizar tema com o localStorage
         const savedTheme = localStorage.getItem('theme') || 'light-pro';
         document.body.className = savedTheme;
+        if (savedTheme === 'dark' || savedTheme === 'dark-neon') {
+            document.body.setAttribute('data-theme', 'dark');
+        }
+
+        const passwordInput = document.getElementById('password');
+        const passwordToggle = document.getElementById('passwordToggle');
+        const loginButton = document.getElementById('loginButton');
+        const errorMsg = document.getElementById('errorMsg');
+        const errorText = errorMsg.querySelector('span');
+
+        function refreshIcons() {
+            if (window.lucide) lucide.createIcons();
+        }
+
+        function showError(message) {
+            errorText.textContent = message;
+            errorMsg.classList.add('show');
+            refreshIcons();
+        }
+
+        function setLoading(isLoading) {
+            loginButton.disabled = isLoading;
+            loginButton.querySelector('span').textContent = isLoading ? 'Entrando...' : 'Acessar painel';
+            loginButton.querySelector('i').setAttribute('data-lucide', isLoading ? 'loader-circle' : 'log-in');
+            loginButton.querySelector('i').classList.toggle('spin', isLoading);
+            refreshIcons();
+        }
+
+        passwordToggle.addEventListener('click', () => {
+            const isPassword = passwordInput.type === 'password';
+            passwordInput.type = isPassword ? 'text' : 'password';
+            passwordToggle.setAttribute('aria-label', isPassword ? 'Ocultar senha' : 'Mostrar senha');
+            passwordToggle.setAttribute('title', isPassword ? 'Ocultar senha' : 'Mostrar senha');
+            passwordToggle.querySelector('i').setAttribute('data-lucide', isPassword ? 'eye-off' : 'eye');
+            refreshIcons();
+        });
 
         document.getElementById('loginForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const user = document.getElementById('username').value;
-            const pass = document.getElementById('password').value;
-            const errorMsg = document.getElementById('errorMsg');
+            const user = document.getElementById('username').value.trim();
+            const pass = passwordInput.value;
+
+            errorMsg.classList.remove('show');
+            setLoading(true);
 
             try {
                 const res = await fetch('/api/login', {
@@ -148,15 +551,18 @@
                 const data = await res.json();
                 if (data.success) {
                     window.location.href = '/index.html';
-                } else {
-                    errorMsg.style.display = 'block';
-                    errorMsg.textContent = data.error || 'Erro ao fazer login';
+                    return;
                 }
+
+                showError(data.error || 'Usuário ou senha incorretos.');
             } catch (err) {
-                errorMsg.style.display = 'block';
-                errorMsg.textContent = 'Erro de conexão com o servidor';
+                showError('Erro de conexão com o servidor.');
+            } finally {
+                setLoading(false);
             }
         });
+
+        refreshIcons();
     </script>
 </body>
 </html>
