@@ -58,81 +58,7 @@ const BASE_DIR = process.env.HOME || __dirname;
 //  DETECÇÃO DE AMBIENTE UNIVERSAL
 //  Suporta: Termux, WSL, Ubuntu/Debian, Fedora/RHEL, Arch, Alpine, macOS
 // ============================================================
-let systemConfig = {}; // preenchido pela IIFE abaixo
-(function detectEnvironment() {
-    const _plat = process.platform;
-
-    // Termux: PREFIX contém 'com.termux'
-    const _isTermux = !!(process.env.PREFIX && process.env.PREFIX.includes('com.termux'));
-
-    // WSL: Linux com /proc/version mencionando microsoft
-    let _isWSL = false;
-    try {
-        if (_plat === 'linux' && fs.existsSync('/proc/version')) {
-            const _pv = fs.readFileSync('/proc/version', 'utf8').toLowerCase();
-            _isWSL = _pv.includes('microsoft') || _pv.includes('wsl');
-        }
-    } catch (_) {}
-
-    const _isMac = _plat === 'darwin';
-
-    // Detecta distro Linux
-    let _pkg = 'apt', _distro = 'debian';
-    if (_plat === 'linux' && !_isTermux) {
-        try {
-            if (fs.existsSync('/etc/os-release')) {
-                const _or = fs.readFileSync('/etc/os-release', 'utf8').toLowerCase();
-                if (_or.includes('arch') || _or.includes('manjaro'))                     { _distro = 'arch';     _pkg = 'pacman'; }
-                else if (_or.includes('fedora') || _or.includes('centos') || _or.includes('rhel')) { _distro = 'fedora';   _pkg = 'dnf';    }
-                else if (_or.includes('alpine'))                                         { _distro = 'alpine';   _pkg = 'apk';    }
-                else if (_or.includes('opensuse'))                                       { _distro = 'opensuse'; _pkg = 'zypper'; }
-                else                                                                     { _distro = 'debian';   _pkg = 'apt';    }
-            }
-        } catch (_) {}
-    }
-
-    const _prefix = _isTermux
-        ? (process.env.PREFIX || '/data/data/com.termux/files/usr')
-        : _isMac ? '/usr/local' : '/usr';
-
-    // Detecta socket PHP-FPM disponível
-    let _phpSock = `${_prefix}/var/run/php-fpm.sock`;
-    if (!_isTermux) {
-        const phpCandidates = [
-            '/run/php/php8.2-fpm.sock', '/run/php/php8.1-fpm.sock', '/run/php/php8.0-fpm.sock',
-            '/var/run/php/php8.1-fpm.sock', '/var/run/php-fpm/php-fpm.sock', '/var/run/php-fpm.sock'
-        ];
-        for (const s of phpCandidates) { if (fs.existsSync(s)) { _phpSock = s; break; } }
-    }
-
-    // Monta systemConfig com base na detecção
-    systemConfig = {
-        type:           _isTermux ? 'termux' : (_isWSL ? 'wsl' : (_isMac ? 'macos' : (_plat === 'linux' ? 'linux' : 'windows'))),
-        is_termux:      _isTermux,
-        is_wsl:         _isWSL,
-        is_macos:       _isMac,
-        is_linux:       _plat === 'linux' && !_isTermux,
-        has_root:       !_isTermux,
-        package_manager: _isTermux ? 'pkg' : (_isMac ? 'brew' : _pkg),
-        distro:         _isTermux ? 'termux' : (_isWSL ? 'wsl' : (_isMac ? 'macos' : _distro)),
-        prefix:         _prefix,
-        storage_path:   _isTermux ? '/data' : '/',
-        nginx_conf_dir: _isTermux ? `${_prefix}/etc/nginx/conf.d` : (_isMac ? '/usr/local/etc/nginx/servers' : '/etc/nginx/conf.d'),
-        mysql_data_dir: _isTermux ? `${_prefix}/var/lib/mysql` : '/var/lib/mysql',
-        php_fpm_sock:   _phpSock,
-    };
-
-    // Preserva has_root do arquivo salvo (configurável pelo usuário)
-    try {
-        if (fs.existsSync(SYSTEM_FILE)) {
-            const _saved = JSON.parse(fs.readFileSync(SYSTEM_FILE, 'utf8'));
-            if (typeof _saved.has_root === 'boolean') systemConfig.has_root = _saved.has_root;
-        }
-        fs.writeFileSync(SYSTEM_FILE, JSON.stringify(systemConfig, null, 4));
-    } catch(_) {}
-
-    console.log(`[ENV] Ambiente detectado: ${systemConfig.type} | Distro: ${systemConfig.distro} | Pkg: ${systemConfig.package_manager} | Prefix: ${systemConfig.prefix}`);
-})();
+const systemConfig = require('./src/utils/env');
 
 const BACKUP_DIR = path.join(BASE_DIR, 'backups');
 
@@ -157,29 +83,7 @@ app.use(session({
 }));
 
 // Auth Middleware
-function checkAuth(req, res, next) {
-    if (
-        req.path === '/login' || 
-        req.path === '/login.html' || 
-        req.path.startsWith('/api/login') || 
-        req.path.startsWith('/socket.io/') || 
-        req.path.endsWith('.css') || 
-        req.path.endsWith('.js') ||
-        req.path === '/api/phpmyadmin/validate-token' ||
-        req.path === '/api/pma/sso/validate' ||
-        req.path === '/api/database/verify-token' ||
-        req.path === '/api/phpmyadmin/validate'
-    ) {
-        return next();
-    }
-    if (req.session && req.session.authenticated) {
-        return next();
-    }
-    if (req.path.startsWith('/api')) {
-        return res.status(401).json({ error: 'Unauthorized' });
-    }
-    res.redirect('/login.html');
-}
+const { checkAuth } = require('./src/utils/auth');
 
 app.use(checkAuth);
 app.use(express.static(path.join(__dirname, 'public')));
@@ -285,62 +189,7 @@ io.on('connection', (socket) => {
     });
 });
 
-// Restaura permissões caso arquivos de log/config sejam tocados pelo root
-async function chownToUser(pathsArray) {
-    if (!systemConfig.has_root || !systemConfig.is_termux || !pathsArray || pathsArray.length === 0) return;
-    try {
-        let uid = typeof process.getuid === 'function' ? process.getuid() : null;
-        let gid = typeof process.getgid === 'function' ? process.getgid() : null;
-        let owner = (uid !== null && gid !== null) ? `${uid}:${gid}` : os.userInfo().username;
-        if (!owner) return;
-        
-        const safePaths = pathsArray.map(p => `"${p.replace(/"/g, '\\"')}"`).join(' ');
-        await runCmd(`chown -R ${owner} ${safePaths}`, true);
-    } catch (e) {
-        console.error("chownToUser falhou:", e);
-    }
-}
-
-// Utils to run commands safely
-function runCmd(cmd, needsRoot = false) {
-    return new Promise((resolve, reject) => {
-        if (needsRoot) {
-            if (!systemConfig.has_root) {
-                return reject(new Error('Esta ação requer privilégios de Superusuário (Root).'));
-            }
-            if (systemConfig.is_termux) {
-                cmd = `su -c ${JSON.stringify(cmd)}`;
-            } else {
-                cmd = `sudo ${cmd}`;
-            }
-        }
-        exec(cmd, (error, stdout, stderr) => {
-            if (error && !needsRoot) resolve('');
-            else if (error && needsRoot) reject(error);
-            else resolve(stdout.trim());
-        });
-    });
-}
-
-function checkPortStatus(port) {
-    return new Promise((resolve) => {
-        const socket = new net.Socket();
-        socket.setTimeout(2000);
-        socket.on('connect', () => {
-            socket.destroy();
-            resolve('Online');
-        });
-        socket.on('timeout', () => {
-            socket.destroy();
-            resolve('Offline');
-        });
-        socket.on('error', () => {
-            socket.destroy();
-            resolve('Offline');
-        });
-        socket.connect(port, '127.0.0.1');
-    });
-}
+const { chownToUser, runCmd, checkPortStatus } = require('./src/utils/shell');
 
 app.get('/api/env', (req, res) => {
     res.json(systemConfig);
@@ -4037,123 +3886,8 @@ server.once('listening', () => {
     console.log(`- Rede:  http://0.0.0.0:${PORT}`);
 });
 
-// --- API NATIVA DO GERENCIADOR DE ARQUIVOS ---
-const multerUpload = multer({ dest: path.join(os.tmpdir(), 'termux-panel-uploads') });
-
-app.get('/api/files/list', async (req, res) => {
-    try {
-        const defaultPath = process.env.HOME || '/data/data/com.termux/files/home';
-        const targetPath  = req.query.path || defaultPath;
-        const rootMode    = req.headers['x-fm-root'] === '1';
-
-        // Verifica se o diretório existe
-        if (!fs.existsSync(targetPath)) {
-            return res.status(404).json({ success: false, error: 'Diretório não encontrado: ' + targetPath });
-        }
-
-        let files;
-
-        if (rootMode) {
-            // Modo Root: tenta listar via `su -c ls` para acessar pastas protegidas
-            try {
-                const { stdout } = await new Promise((resolve, reject) => {
-                    require('child_process').exec(
-                        `su -c "ls -la '${targetPath.replace(/'/g, "'\\''")}'"`,
-                        { timeout: 5000 },
-                        (err, stdout, stderr) => err ? reject(err) : resolve({ stdout, stderr })
-                    );
-                });
-                // Parse da saída do ls -la
-                const lines = stdout.split('\n').filter(l => l && !l.startsWith('total') && !l.startsWith('d.') === false || l.match(/^[d\-lrwxs]/));
-                files = lines.filter(l => l.match(/^[d\-lrwxs]/)).map(line => {
-                    const parts = line.split(/\s+/);
-                    const isDir = line[0] === 'd';
-                    const name = parts.slice(8).join(' ');
-                    if (!name || name === '.' || name === '..') return null;
-                    return { name, isDir, size: parseInt(parts[4]) || 0, mtime: new Date().toISOString() };
-                }).filter(Boolean);
-            } catch(suErr) {
-                return res.json({ success: false, error: 'Root (su) não disponível: ' + suErr.message });
-            }
-        } else {
-            // Modo Normal: usa fs nativo
-            const dirents = fs.readdirSync(targetPath, { withFileTypes: true });
-            files = dirents.map(d => {
-                const p = path.join(targetPath, d.name);
-                let stat = { size: 0, mtime: new Date() };
-                try { stat = fs.statSync(p); } catch(e) { /* sem permissão */ }
-                return { name: d.name, isDir: d.isDirectory(), size: stat.size, mtime: stat.mtime };
-            });
-        }
-
-        // Ordena: pastas primeiro, depois alfabético
-        files.sort((a, b) => {
-            if (a.isDir && !b.isDir) return -1;
-            if (!a.isDir && b.isDir) return 1;
-            return a.name.localeCompare(b.name);
-        });
-
-        res.json({ success: true, path: targetPath, files });
-    } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
-    }
-});
-
-app.get('/api/files/download', (req, res) => {
-    const targetPath = req.query.path;
-    if (fs.existsSync(targetPath)) {
-        res.download(targetPath);
-    } else {
-        res.status(404).send('Arquivo não encontrado');
-    }
-});
-
-app.post('/api/files/upload', multerUpload.array('files'), (req, res) => {
-    try {
-        const targetDir = req.body.path;
-        if (!fs.existsSync(targetDir)) return res.status(400).json({ error: 'Diretório destino não existe' });
-        
-        req.files.forEach(file => {
-            const destPath = path.join(targetDir, file.originalname);
-            fs.renameSync(file.path, destPath);
-        });
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-app.post('/api/files/mkdir', (req, res) => {
-    try {
-        const { targetPath } = req.body;
-        if (!fs.existsSync(targetPath)) fs.mkdirSync(targetPath, { recursive: true });
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-app.delete('/api/files/delete', (req, res) => {
-    try {
-        const targetPath = req.query.path;
-        if (fs.existsSync(targetPath)) {
-            fs.rmSync(targetPath, { recursive: true, force: true });
-        }
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-app.post('/api/files/rename', (req, res) => {
-    try {
-        const { oldPath, newPath } = req.body;
-        if (fs.existsSync(oldPath)) fs.renameSync(oldPath, newPath);
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
+const fileRoutes = require('./src/routes/fileRoutes');
+app.use('/api/files', fileRoutes);
 
 server.listen(PORT, '0.0.0.0');
 
