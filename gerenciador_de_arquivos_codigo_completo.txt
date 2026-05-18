@@ -1,17 +1,24 @@
 ================================================================================
            CÓDIGO FONTE COMPLETO DO GERENCIADOR DE ARQUIVOS (100% NATIVO)
+                         Termux cPanel — Versão 0.1.9+
 ================================================================================
 
 Este arquivo contém toda a implementação do Gerenciador de Arquivos do Termux cPanel,
-dividido perfeitamente entre o Backend (Node.js) e o Frontend (Javascript/HTML).
+dividido entre o Backend (Node.js) e o Frontend (Javascript/HTML).
 
 ESTRUTURA:
-Parte 1: BACKEND - Rotas da API (/src/routes/fileRoutes.js)
-Parte 2: FRONTEND - Lógica da Interface (/public/filemanager.js)
+  Parte 1: BACKEND  — Rotas da API   (/src/routes/fileRoutes.js)
+  Parte 2: FRONTEND — Lógica JS      (/public/filemanager.js)
+  Parte 3: INTEGRAÇÃO — Como conectar tudo  (server.js + app.js)
 
---------------------------------------------------------------------------------
-PARTE 1: BACKEND - Rotas da API (/src/routes/fileRoutes.js)
---------------------------------------------------------------------------------
+BUGS CORRIGIDOS ATÉ ESTA VERSÃO:
+  [v0.1.8] portRetryCount não declarado → servidor travava ao iniciar
+  [v0.1.9] fileRoutes não montado em server.js → rota /api/files não existia
+  [v0.1.9+] loadFiles() vazia no app.js sobrescrevia a real do filemanager.js
+
+================================================================================
+PARTE 1: BACKEND — Rotas da API (/src/routes/fileRoutes.js)
+================================================================================
 
 const express = require('express');
 const router = express.Router();
@@ -22,6 +29,8 @@ const multer = require('multer');
 
 const multerUpload = multer({ dest: path.join(os.tmpdir(), 'termux-panel-uploads') });
 
+// GET /api/files/list?path=<caminho>
+// Header X-FM-Root: 1  → usa su para modo root
 router.get('/list', async (req, res) => {
     try {
         const defaultPath = process.env.HOME || '/data/data/com.termux/files/home';
@@ -38,7 +47,7 @@ router.get('/list', async (req, res) => {
             try {
                 const { stdout } = await new Promise((resolve, reject) => {
                     require('child_process').exec(
-                        `su -c "ls -la '${targetPath.replace(/'/g, "'\\''")}'"`,
+                        `su -c "ls -la '${targetPath.replace(/'/g, "'\\''")}'\"`,
                         { timeout: 5000 },
                         (err, stdout, stderr) => err ? reject(err) : resolve({ stdout, stderr })
                     );
@@ -76,6 +85,7 @@ router.get('/list', async (req, res) => {
     }
 });
 
+// GET /api/files/download?path=<caminho>
 router.get('/download', (req, res) => {
     const targetPath = req.query.path;
     if (fs.existsSync(targetPath)) {
@@ -85,6 +95,7 @@ router.get('/download', (req, res) => {
     }
 });
 
+// POST /api/files/upload  (multipart/form-data, campo: files[], campo: path)
 router.post('/upload', multerUpload.array('files'), (req, res) => {
     try {
         const targetDir = req.body.path;
@@ -100,6 +111,7 @@ router.post('/upload', multerUpload.array('files'), (req, res) => {
     }
 });
 
+// POST /api/files/mkdir  body: { targetPath }
 router.post('/mkdir', (req, res) => {
     try {
         const { targetPath } = req.body;
@@ -110,6 +122,7 @@ router.post('/mkdir', (req, res) => {
     }
 });
 
+// DELETE /api/files/delete?path=<caminho>
 router.delete('/delete', (req, res) => {
     try {
         const targetPath = req.query.path;
@@ -122,6 +135,7 @@ router.delete('/delete', (req, res) => {
     }
 });
 
+// POST /api/files/rename  body: { oldPath, newPath }
 router.post('/rename', (req, res) => {
     try {
         const { oldPath, newPath } = req.body;
@@ -135,9 +149,9 @@ router.post('/rename', (req, res) => {
 module.exports = router;
 
 
---------------------------------------------------------------------------------
-PARTE 2: FRONTEND - Lógica da Interface (/public/filemanager.js)
---------------------------------------------------------------------------------
+================================================================================
+PARTE 2: FRONTEND — Lógica da Interface (/public/filemanager.js)
+================================================================================
 
 let currentFmPath = '';
 let fmRootMode = false;
@@ -410,3 +424,67 @@ function getFileIcon(name) {
     };
     return map[ext] || 'file';
 }
+
+
+================================================================================
+PARTE 3: INTEGRAÇÃO — Como conectar tudo corretamente
+================================================================================
+
+--- Em server.js (OBRIGATÓRIO) ---
+
+// Deve existir EXATAMENTE este bloco para a API funcionar:
+const fileRoutes = require('./src/routes/fileRoutes');
+app.use('/api/files', fileRoutes);
+
+// ATENÇÃO: declarar portRetryCount ANTES do server.on('error'):
+let portRetryCount = 0;
+server.on('error', (e) => {
+    if (e.code === 'EADDRINUSE') {
+        portRetryCount++;
+        // ...
+    }
+});
+
+
+--- Em app.js (ATENÇÃO CRÍTICA) ---
+
+// NÃO deve existir uma função loadFiles() vazia em app.js!
+// A função real está definida em filemanager.js.
+// O switchTab em app.js já chama loadFiles() corretamente:
+
+function switchTab(targetId) {
+    // ...
+    if (targetId === 'tab-files') loadFiles();  // ← chama a função de filemanager.js
+    // ...
+}
+
+// Se houver uma função loadFiles() stub/vazia no app.js, REMOVA-A:
+// async function loadFiles(dir) {
+//     // O FileBrowser embutido autogerencia o carregamento.   ← REMOVA ISSO!
+// }
+
+
+--- Em index.html ---
+
+// A ordem dos scripts IMPORTA. filemanager.js deve vir ANTES de app.js:
+<script src="/socket.io/socket.io.js"></script>
+<script src="filemanager.js?v=0.1.9"></script>   <!-- primeiro -->
+<script src="app.js?v=4.0"></script>              <!-- depois -->
+
+
+================================================================================
+ENDPOINTS DA API (RESUMO)
+================================================================================
+
+GET    /api/files/list?path=<dir>        Lista arquivos de um diretório
+                                          Header X-FM-Root: 1 → usa su (root)
+GET    /api/files/download?path=<file>   Baixa um arquivo
+POST   /api/files/upload                 Upload (multipart, campos: files[], path)
+POST   /api/files/mkdir                  Cria pasta  body: { targetPath }
+DELETE /api/files/delete?path=<file>     Apaga arquivo/pasta
+POST   /api/files/rename                 Renomeia    body: { oldPath, newPath }
+
+
+================================================================================
+FIM DO DOCUMENTO — Atualizado em: 2026-05-18 | Versão do Painel: 0.1.9+
+================================================================================
