@@ -1941,6 +1941,10 @@ async function safeFetch(url, method = 'GET', body = null, timeoutMs = 8000) {
         if (body) opts.body = JSON.stringify(body);
         const res = await fetch(url, opts);
         clearTimeout(timer);
+        if (res.status === 401) {
+            window.location.href = '/login.html';
+            return null;
+        }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return await res.json();
     } catch(e) {

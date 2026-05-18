@@ -75,6 +75,10 @@ async function loadFiles(targetPath) {
         if (fmRootMode) opts.headers = { 'X-FM-Root': '1' };
 
         const res = await fetch(url, opts);
+        if (res.status === 401) {
+            window.location.href = '/login.html';
+            return;
+        }
         const data = await res.json();
 
         if (!data.success) {
