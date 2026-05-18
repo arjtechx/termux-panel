@@ -1590,17 +1590,18 @@ async function checkSystemUpdates() {
     const repoInput    = document.getElementById('github-repo-input');
     const notesWrapper = document.getElementById('update-release-notes-wrapper');
 
-    if (statusText) statusText.innerHTML = 'Verificando...';
+    if (statusText) statusText.innerHTML = '<span style="color:var(--text-muted)">🔄 Verificando...</span>';
 
-    // Carrega config do repositório GitHub
+    // Sempre recarrega config do repositório do servidor
     const cfg = await safeFetch(`${API_BASE}/system/update/config`);
-    if (cfg && repoInput && !repoInput.value) {
+    if (cfg && repoInput) {
         repoInput.value = cfg.github_repo || '';
     }
 
-    const data = await safeFetch(`${API_BASE}/update/status`);
+    // force=1 ignora o cache de 5 minutos para sempre buscar resultado fresco
+    const data = await safeFetch(`${API_BASE}/update/status?force=1`);
     if (!data) {
-        if (statusText) statusText.innerHTML = '<span style="color:var(--danger)">Erro ao verificar</span>';
+        if (statusText) statusText.innerHTML = '<span style="color:var(--danger)">❌ Erro ao verificar — servidor offline ou sem conexão</span>';
         return;
     }
 
@@ -1609,7 +1610,7 @@ async function checkSystemUpdates() {
     const hasUpdate = data.hasUpdate || false;
 
     if (versionCur) versionCur.textContent = `v${currentVersion}`;
-    if (versionLat) versionLat.textContent = latestVersion !== currentVersion ? `v${latestVersion}` : '—';
+    if (versionLat) versionLat.textContent = latestVersion !== currentVersion ? `v${latestVersion}` : '— (atualizado)';
 
     if (hasUpdate) {
         if (statusText) statusText.innerHTML = '<span style="color:var(--success)">✅ Nova versão disponível!</span>';
@@ -1617,15 +1618,16 @@ async function checkSystemUpdates() {
     } else {
         const methodLabels = {
             up_to_date:       '✅ Atualizado via GitHub Releases',
-            failed_check:     '⚠️ GitHub indisponível — verifique o repositório',
+            failed_check:     '⚠️ GitHub indisponível — verifique conexão e repositório',
             update_available: '⚠️ Nova versão disponível!'
         };
         const label = methodLabels[data.status] || '✅ Atualizado';
         if (statusText) statusText.innerHTML = `<span style="color:var(--text-muted)">${label}</span>`;
-        if (btnRun) btnRun.classList.remove('hidden'); // Permite forçar re-instalação
+        if (btnRun) btnRun.classList.remove('hidden');
     }
 
-    if (cfg?.github_repo) {
+    // Se tem repo configurado, carrega as versões disponíveis
+    if (cfg?.github_repo || data.repo) {
         fetchAvailableVersions();
     }
 }

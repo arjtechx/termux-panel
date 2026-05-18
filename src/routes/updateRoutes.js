@@ -368,12 +368,15 @@ router.get('/api/update/status', async (req, res) => {
         const config = getUpdateConfig();
         const repo = config.github_repo || 'arjtechx/termux-panel';
 
-        const cached = readUpdateCache();
-        
-        if (cached && cached.repo === repo && cached.installed === installed && !req.query.force) {
-            const age = Date.now() - new Date(cached.lastChecked).getTime();
-            if (age < 5 * 60 * 1000) {
-                return res.json(cached);
+        // Retorna do cache SOMENTE se não estiver forçando nova checagem
+        const forceCheck = req.query.force === '1' || req.query.force === 'true';
+        if (!forceCheck) {
+            const cached = readUpdateCache();
+            if (cached && cached.repo === repo && cached.installed === installed) {
+                const age = Date.now() - new Date(cached.lastChecked).getTime();
+                if (age < 5 * 60 * 1000) {
+                    return res.json(cached);
+                }
             }
         }
 
