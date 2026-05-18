@@ -320,6 +320,23 @@
             height: 18px;
         }
 
+        .button-spinner {
+            width: 18px;
+            height: 18px;
+            display: none;
+            border: 2px solid rgba(255, 255, 255, 0.38);
+            border-top-color: #ffffff;
+            border-radius: 999px;
+        }
+
+        .btn-login.is-loading .button-spinner {
+            display: inline-block;
+        }
+
+        .btn-login.is-loading .button-icon {
+            display: none;
+        }
+
         .spin {
             animation: login-spin 0.8s linear infinite;
         }
@@ -573,7 +590,8 @@
                 </div>
 
                 <button type="submit" class="btn-login" id="loginButton">
-                    <i data-lucide="log-in"></i>
+                    <span class="button-spinner spin" aria-hidden="true"></span>
+                    <span class="button-icon" aria-hidden="true"><i data-lucide="log-in"></i></span>
                     <span>Acessar painel</span>
                 </button>
 
@@ -649,10 +667,8 @@
 
         function setLoading(isLoading) {
             loginButton.disabled = isLoading;
-            loginButton.querySelector('span').textContent = isLoading ? 'Entrando...' : 'Acessar painel';
-            loginButton.querySelector('i').setAttribute('data-lucide', isLoading ? 'loader-circle' : 'log-in');
-            loginButton.querySelector('i').classList.toggle('spin', isLoading);
-            refreshIcons();
+            loginButton.classList.toggle('is-loading', isLoading);
+            loginButton.querySelector('span:last-child').textContent = isLoading ? 'Entrando...' : 'Acessar painel';
         }
 
         function updateLoading(progress) {
@@ -705,7 +721,7 @@
             passwordInput.type = isPassword ? 'text' : 'password';
             passwordToggle.setAttribute('aria-label', isPassword ? 'Ocultar senha' : 'Mostrar senha');
             passwordToggle.setAttribute('title', isPassword ? 'Ocultar senha' : 'Mostrar senha');
-            passwordToggle.querySelector('i').setAttribute('data-lucide', isPassword ? 'eye-off' : 'eye');
+            passwordToggle.innerHTML = `<i data-lucide="${isPassword ? 'eye-off' : 'eye'}"></i>`;
             refreshIcons();
         });
 
