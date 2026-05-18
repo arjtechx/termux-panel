@@ -698,7 +698,7 @@ router.get('/api/update/install', async (req, res) => {
         // Substituir apenas arquivos da aplicação
         sendLog('INFO', `Instalando atualização...`);
         try {
-            const itemsToCopy = ['public', 'scripts', 'server.js', 'package.json', 'package-lock.json', 'README.md', 'install.sh'];
+            const itemsToCopy = ['public', 'scripts', 'server.js', 'package.json', 'package-lock.json', 'README.md', 'install.sh', 'src', 'services'];
             for (const item of itemsToCopy) {
                 const srcPath = path.join(extractDir, item);
                 const destPath = path.join(__dirname, item);
