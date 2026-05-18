@@ -184,13 +184,20 @@ OLDPID=$(lsof -t -i:$PORT 2>/dev/null)
 if [ -n "$OLDPID" ]; then
     kill -9 "$OLDPID" 2>/dev/null
 else
-    pkill -f "server.js" 2>/dev/null || true
+    for PID in $(pgrep -f 'node .*server\.js|node server\.js|node.*termux-panel/server\.js' 2>/dev/null); do
+        CWD="$(readlink "/proc/$PID/cwd" 2>/dev/null || true)"
+        CMDLINE="$(tr '\0' ' ' < "/proc/$PID/cmdline" 2>/dev/null || true)"
+        if [ "$CWD" != "$PANEL_DIR" ] && ! printf '%s' "$CMDLINE" | grep -F "$PANEL_DIR/server.js" >/dev/null 2>&1; then
+            continue
+        fi
+        kill -9 "$PID" 2>/dev/null || true
+    done
 fi
 
-# Se não há loop de auto-restart ativo, inicia em background
+# Se nao ha loop de auto-restart ativo, inicia pelo start.sh com lock anti-duplicidade
 sleep 2
 if ! lsof -t -i:$PORT > /dev/null 2>&1; then
-    nohup node "$PANEL_DIR/server.js" > "$PANEL_DIR/panel.log" 2>&1 &
+    nohup bash "$PANEL_DIR/scripts/start.sh" > "$PANEL_DIR/panel.log" 2>&1 &
     PID_BG=$!
     ok "Painel reiniciado em background. PID: $PID_BG"
 fi

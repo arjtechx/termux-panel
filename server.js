@@ -83,6 +83,10 @@ app.post('/api/login', (req, res) => {
         const auth = readAuthConfig();
         if (user === auth.user && pass === auth.pass) {
             req.session.authenticated = true;
+            setTimeout(() => {
+                cleanupDuplicatePanelProcesses().catch(() => {});
+                cleanupDuplicateTermuxApiProcesses(true).catch(() => {});
+            }, 250);
             res.json({ success: true });
         } else {
             res.status(401).json({ error: 'Credenciais inválidas' });
@@ -203,7 +207,92 @@ io.on('connection', (socket) => {
     });
 });
 
-const { chownToUser, runCmd, checkPortStatus } = require('./src/utils/shell');
+const { chownToUser, runCmd, runCmdTimeout, checkPortStatus } = require('./src/utils/shell');
+
+let batteryProbeInFlight = null;
+let lastBatteryTemperature = null;
+let lastBatteryProbeAt = 0;
+let lastTermuxProcessCleanupAt = 0;
+
+async function cleanupDuplicateTermuxApiProcesses(force = false) {
+    if (!systemConfig.is_termux) return { killed: [] };
+    const now = Date.now();
+    if (!force && now - lastTermuxProcessCleanupAt < 15000) return { skipped: true, killed: [] };
+    lastTermuxProcessCleanupAt = now;
+
+    const script = `
+patterns='termux-battery-status|termux-api BatteryStatus'
+pids=$(pgrep -f "$patterns" 2>/dev/null | sort -n)
+keep=$(printf '%s\\n' "$pids" | tail -n 1)
+killed=''
+for pid in $pids; do
+  [ -z "$pid" ] && continue
+  [ "$pid" = "$$" ] && continue
+  [ "$pid" = "$keep" ] && continue
+  kill -9 "$pid" 2>/dev/null && killed="$killed $pid"
+done
+printf '%s' "$killed"
+`;
+
+    const out = await runCmdTimeout(script, 3000).catch(() => '');
+    return { killed: out.trim().split(/\s+/).filter(Boolean) };
+}
+
+async function cleanupDuplicatePanelProcesses() {
+    if (!systemConfig.is_termux && !systemConfig.is_linux && !systemConfig.is_wsl) return { killed: [] };
+    const keepPid = process.pid;
+    const panelDir = __dirname.replace(/'/g, "'\\''");
+    const script = `
+panel_dir='${panelDir}'
+pids=$(pgrep -f 'node .*server\\.js|node server\\.js|node.*termux-panel/server\\.js' 2>/dev/null | sort -n)
+killed=''
+for pid in $pids; do
+  [ -z "$pid" ] && continue
+  [ "$pid" = "${keepPid}" ] && continue
+  cwd=$(readlink "/proc/$pid/cwd" 2>/dev/null || true)
+  cmd=$(tr '\\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+  if [ "$cwd" != "$panel_dir" ] && ! printf '%s' "$cmd" | grep -F "$panel_dir/server.js" >/dev/null 2>&1; then
+    continue
+  fi
+  kill "$pid" 2>/dev/null || true
+  sleep 1
+  kill -9 "$pid" 2>/dev/null && killed="$killed $pid"
+done
+printf '%s' "$killed"
+`;
+    const out = await runCmdTimeout(script, 5000).catch(() => '');
+    return { killed: out.trim().split(/\s+/).filter(Boolean) };
+}
+
+async function readTermuxBatteryTemperature() {
+    if (!systemConfig.is_termux) return null;
+
+    const cacheFresh = Date.now() - lastBatteryProbeAt < 12000;
+    if (cacheFresh && lastBatteryTemperature) return lastBatteryTemperature;
+
+    if (batteryProbeInFlight) {
+        return lastBatteryTemperature;
+    }
+
+    batteryProbeInFlight = (async () => {
+        await cleanupDuplicateTermuxApiProcesses();
+        try {
+            const raw = await runCmdTimeout('termux-battery-status', 3500);
+            const bat = JSON.parse(raw || '{}');
+            if (bat.temperature) {
+                lastBatteryTemperature = `${bat.temperature}Â°C`;
+                lastBatteryProbeAt = Date.now();
+            }
+        } catch (_) {
+            await cleanupDuplicateTermuxApiProcesses(true);
+        } finally {
+            batteryProbeInFlight = null;
+        }
+        return lastBatteryTemperature;
+    })();
+
+    return batteryProbeInFlight;
+}
 
 app.get('/api/env', (req, res) => {
     res.json(systemConfig);
@@ -263,8 +352,8 @@ app.get('/api/status', async (req, res) => {
         // Temperatura
         if (systemConfig.is_termux) {
             try {
-                const bat = JSON.parse(await runCmd('termux-battery-status') || '{}');
-                if (bat.temperature) status.temperature = `${bat.temperature}°C`;
+                const temp = await readTermuxBatteryTemperature();
+                if (temp) status.temperature = temp;
             } catch(_) {}
         } else if (systemConfig.is_linux || systemConfig.is_wsl) {
             try {
@@ -394,6 +483,16 @@ app.post('/api/processes/:pid/kill', async (req, res) => {
     }
 });
 
+app.post('/api/processes/cleanup-duplicates', async (req, res) => {
+    try {
+        const termuxApi = await cleanupDuplicateTermuxApiProcesses(true);
+        const panel = await cleanupDuplicatePanelProcesses();
+        res.json({ success: true, termuxApi, panel });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 let portRetryCount = 0;
 
 server.on('error', (e) => {
@@ -421,11 +520,11 @@ server.on('error', (e) => {
                     }
                 }
             } else {
-                // Linux / Android (Termux): Encontra e derruba o processo na porta usando pgrep + process.kill nativo
+                // Linux / Android (Termux): derruba apenas o processo que ocupa a porta do painel.
                 let pids = [];
                 try {
                     const myPid = process.pid;
-                    const output = execSync('pgrep -f "server.js"').toString().trim();
+                    const output = execSync(`lsof -t -i:${PORT} 2>/dev/null || true`).toString().trim();
                     pids = output.split('\n')
                         .map(p => parseInt(p.trim()))
                         .filter(p => !isNaN(p) && p !== myPid);
@@ -466,4 +565,3 @@ server.once('listening', () => {
 });
 
 server.listen(PORT, '0.0.0.0');
-

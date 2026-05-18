@@ -165,10 +165,10 @@ function switchTab(targetId) {
     if (targetId === 'tab-noip')     fetchNoipStatus();
     if (targetId === 'tab-cloudflared') fetchCloudflaredTunnels();
     if (targetId === 'tab-docs')     loadDocumentation();
-    if (targetId === 'tab-health') {
+    if (targetId === 'tab-settings') {
+        loadSettings();
         checkSystemUpdates();
     }
-    if (targetId === 'tab-settings') loadSettings();
 }
 
 function initMobileNav() {
@@ -431,6 +431,15 @@ async function killProcess(pid) {
     // Rota correta: POST /api/processes/:pid/kill
     await safeFetch(`${API_BASE}/processes/${pid}/kill`, 'POST');
     fetchProcesses();
+}
+
+async function cleanupDuplicateProcesses() {
+    const data = await safeFetch(`${API_BASE}/processes/cleanup-duplicates`, 'POST', null, 10000);
+    if (data?.success) {
+        fetchProcesses();
+    } else {
+        alert(data?.error || 'Falha ao limpar processos duplicados.');
+    }
 }
 
 // ============================================================

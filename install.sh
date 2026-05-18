@@ -622,8 +622,23 @@ while true; do
         4) remove_dependencies_menu ;;
         5)
             detect_os 2>/dev/null
-            fuser -k 8088/tcp 2>/dev/null
-            pkill -9 -f "node server.js" 2>/dev/null
+            PORT=8088
+            if [ -f "config/server.json" ]; then
+                PORT=$(python3 -c "import json; print(json.load(open('config/server.json')).get('port', 8088))" 2>/dev/null || echo 8088)
+            fi
+            fuser -k "$PORT/tcp" 2>/dev/null
+            PANEL_DIR="$(pwd)"
+            for PID in $(pgrep -f 'node .*server\.js|node server\.js|node.*termux-panel/server\.js' 2>/dev/null); do
+                CWD="$(readlink "/proc/$PID/cwd" 2>/dev/null || true)"
+                CMDLINE="$(tr '\0' ' ' < "/proc/$PID/cmdline" 2>/dev/null || true)"
+                if [ "$CWD" != "$PANEL_DIR" ] && ! printf '%s' "$CMDLINE" | grep -F "$PANEL_DIR/server.js" >/dev/null 2>&1; then
+                    continue
+                fi
+                kill -9 "$PID" 2>/dev/null || true
+            done
+            for PID in $(pgrep -f 'termux-battery-status|termux-api BatteryStatus' 2>/dev/null); do
+                kill -9 "$PID" 2>/dev/null || true
+            done
             sleep 1
             node server.js
             break

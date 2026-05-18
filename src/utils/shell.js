@@ -38,6 +38,25 @@ function runCmd(cmd, needsRoot = false) {
     });
 }
 
+function runCmdTimeout(cmd, timeoutMs = 5000, needsRoot = false) {
+    return new Promise((resolve, reject) => {
+        if (needsRoot) {
+            if (!systemConfig.has_root) {
+                return reject(new Error('Esta aÃ§Ã£o requer privilÃ©gios de SuperusuÃ¡rio (Root).'));
+            }
+            if (systemConfig.is_termux) {
+                cmd = `su -c ${JSON.stringify(cmd)}`;
+            } else {
+                cmd = `sudo ${cmd}`;
+            }
+        }
+        exec(cmd, { timeout: timeoutMs, killSignal: 'SIGKILL' }, (error, stdout) => {
+            if (error && needsRoot) reject(error);
+            else resolve((stdout || '').trim());
+        });
+    });
+}
+
 function checkPortStatus(port) {
     return new Promise((resolve) => {
         const socket = new net.Socket();
@@ -61,5 +80,6 @@ function checkPortStatus(port) {
 module.exports = {
     chownToUser,
     runCmd,
+    runCmdTimeout,
     checkPortStatus
 };

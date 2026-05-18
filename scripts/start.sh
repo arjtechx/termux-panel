@@ -10,6 +10,9 @@ export _termius_integration_installed="yes"
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PANEL_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
 PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
+RUNTIME_DIR="$PANEL_DIR/.runtime"
+START_LOCK_DIR="$RUNTIME_DIR/start.lock"
+START_LOCK_PID="$START_LOCK_DIR/pid"
 
 GREEN="\033[0;32m"
 YELLOW="\033[1;33m"
@@ -31,6 +34,56 @@ log "Diretório: $PANEL_DIR"
 echo ""
 
 mkdir -p "$PANEL_DIR/logs"
+mkdir -p "$RUNTIME_DIR"
+
+# Garante que exista apenas um loop start.sh cuidando do painel.
+if ! mkdir "$START_LOCK_DIR" 2>/dev/null; then
+    OLD_START_PID="$(cat "$START_LOCK_PID" 2>/dev/null || true)"
+    if [ -n "$OLD_START_PID" ] && kill -0 "$OLD_START_PID" 2>/dev/null; then
+        warn "Loop start.sh anterior detectado (PID: $OLD_START_PID). Encerrando duplicado..."
+        kill "$OLD_START_PID" 2>/dev/null || true
+        sleep 1
+        kill -9 "$OLD_START_PID" 2>/dev/null || true
+    fi
+    rm -rf "$START_LOCK_DIR"
+    mkdir "$START_LOCK_DIR" 2>/dev/null || {
+        err "NÃ£o foi possÃ­vel criar lock de inicializaÃ§Ã£o."
+        exit 1
+    }
+fi
+echo "$$" > "$START_LOCK_PID"
+trap 'rm -rf "$START_LOCK_DIR"' EXIT INT TERM
+
+cleanup_termux_api_duplicates() {
+    # termux-battery-status pode travar e acumular subprocessos se chamado em paralelo.
+    PIDS="$(pgrep -f 'termux-battery-status|termux-api BatteryStatus' 2>/dev/null | sort -n)"
+    KEEP="$(printf '%s\n' "$PIDS" | tail -n 1)"
+    for PID in $PIDS; do
+        [ -z "$PID" ] && continue
+        [ "$PID" = "$KEEP" ] && continue
+        kill -9 "$PID" 2>/dev/null || true
+    done
+}
+
+cleanup_panel_duplicates() {
+    CURRENT_PID="${1:-}"
+    PIDS="$(pgrep -f 'node .*server\.js|node server\.js|node.*termux-panel/server\.js' 2>/dev/null | sort -n)"
+    for PID in $PIDS; do
+        [ -z "$PID" ] && continue
+        [ "$PID" = "$CURRENT_PID" ] && continue
+        CWD="$(readlink "/proc/$PID/cwd" 2>/dev/null || true)"
+        CMDLINE="$(tr '\0' ' ' < "/proc/$PID/cmdline" 2>/dev/null || true)"
+        if [ "$CWD" != "$PANEL_DIR" ] && ! printf '%s' "$CMDLINE" | grep -F "$PANEL_DIR/server.js" >/dev/null 2>&1; then
+            continue
+        fi
+        log "Encerrando instÃ¢ncia duplicada do painel (PID: $PID)..."
+        kill "$PID" 2>/dev/null || true
+        sleep 1
+        kill -9 "$PID" 2>/dev/null || true
+    done
+}
+
+cleanup_termux_api_duplicates
 
 # Verifica server.js
 if [ ! -f "$PANEL_DIR/server.js" ]; then
@@ -179,9 +232,9 @@ if [ -n "$OLDPID" ]; then
     sleep 1
 else
     fuser -k $PORT/tcp >/dev/null 2>&1 || true
-    pkill -9 -f "node.*server.js" 2>/dev/null || true
-    sleep 1
 fi
+cleanup_panel_duplicates
+sleep 1
 
 ok "Auto-restart ativado — painel reinicia se cair."
 log "Acesse: http://0.0.0.0:${PORT}"
@@ -195,6 +248,8 @@ fi
 
 # Loop de auto-restart
 while true; do
+    cleanup_termux_api_duplicates
+    cleanup_panel_duplicates
     node "$PANEL_DIR/server.js"
     warn "Servidor encerrado. Reiniciando em 3s..."
     sleep 3
