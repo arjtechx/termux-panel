@@ -65,17 +65,14 @@ prioritize_pid() {
     if [ -n "$pid" ] && [ -d "/proc/$pid" ]; then
         echo -e "${BLUE}  → Configurando $name (PID: $pid)...${NC}"
         
-        # OOM Score Adjust para -1000 (Imunidade total ao Low Memory Killer)
-        su -c "echo -1000 > /proc/$pid/oom_score_adj" >/dev/null 2>&1
+        # OOM Score Adjust para -900 (Imunidade segura contra Low Memory Killer sem acionar limites rígidos)
+        su -c "echo -900 > /proc/$pid/oom_score_adj" >/dev/null 2>&1
         
-        # CPU Renice para -20 (Prioridade máxima de processamento)
-        su -c "renice -n -20 -p $pid" >/dev/null 2>&1
+        # CPU Renice moderado para -10 (Prioridade alta de CPU, sem abusar dos limites do scheduler)
+        su -c "renice -n -10 -p $pid" >/dev/null 2>&1
         
-        # I/O Ionice para Real-Time Class 1 (Prioridade máxima de leitura/escrita)
-        su -c "ionice -c 1 -n 0 -p $pid" >/dev/null 2>&1
-        
-        # Desativa suspensão do cgroup do Android para esse processo
-        su -c "echo 0 > /sys/fs/cgroup/uid_0/pid_$pid/cgroup.procs" >/dev/null 2>&1
+        # I/O Ionice para classe Best-Effort alta (Evita IO blocking)
+        su -c "ionice -c 2 -n 0 -p $pid" >/dev/null 2>&1
     fi
 }
 
