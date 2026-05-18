@@ -12,26 +12,6 @@ const mysql = require('mysql2/promise');
 const net = require('net');
 const crypto = require('crypto');
 
-// Auto-instala dependências ausentes antes do require principal (evita falhas de deploy no Termux)
-try {
-    require('multer');
-} catch (e) {
-    if (e.code === 'MODULE_NOT_FOUND') {
-        console.log('[WARN] Biblioteca multer ausente. Instalando automaticamente...');
-        const { execSync } = require('child_process');
-        try {
-            execSync('npm install multer --no-save', { stdio: 'inherit' });
-            console.log('[OK] multer instalado com sucesso! Reiniciando servidor para aplicar as alterações...');
-            process.exit(0); // Sai limpo (código 0) e deixa o loop do terminal reiniciar o servidor com o cache do Node limpo!
-        } catch (err) {
-            console.error('[ERR] Falha ao auto-instalar dependência:', err.message);
-            process.exit(1);
-        }
-    }
-}
-
-const multer = require('multer');
-
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });

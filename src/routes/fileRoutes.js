@@ -3,10 +3,22 @@ const router = express.Router();
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const multer = require('multer');
 const { exec } = require('child_process');
 
-const multerUpload = multer({ dest: path.join(os.tmpdir(), 'termux-panel-uploads') });
+let multerUpload;
+try {
+    const multer = require('multer');
+    multerUpload = multer({ dest: path.join(os.tmpdir(), 'termux-panel-uploads') });
+} catch (err) {
+    multerUpload = {
+        array: () => (req, res) => {
+            res.status(503).json({
+                success: false,
+                error: 'Upload indisponível: dependência multer não instalada. Execute npm install para restaurar uploads.'
+            });
+        }
+    };
+}
 
 // ── UTILITÁRIOS ─────────────────────────────────────────────
 
