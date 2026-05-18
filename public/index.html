@@ -211,63 +211,83 @@
                     <span class="badge" style="background: var(--success); color: #fff; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 0.8rem;">100% Nativo</span>
                 </div>
 
-                <!-- Atalhos Rápidos -->
-                <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
-                    <button class="btn btn-secondary btn-sm" onclick="fmNavigateShortcut('')" title="Pasta Home do Termux">🏠 Home</button>
-                    <button class="btn btn-secondary btn-sm" onclick="fmNavigateShortcut('/data/data/com.termux/files')" title="Termux Files">📦 Termux</button>
-                    <button class="btn btn-secondary btn-sm" onclick="fmNavigateShortcut('/data/data/com.termux/files/usr/bin')">🔧 usr/bin</button>
-                    <button class="btn btn-secondary btn-sm" onclick="fmNavigateShortcut('/data/data/com.termux/files/usr/share/nginx/html')">🌐 www</button>
-                    <button class="btn btn-secondary btn-sm" onclick="fmNavigateShortcut('/sdcard')">💾 SDCard</button>
-                    <button class="btn btn-secondary btn-sm" onclick="fmNavigateShortcut('/sdcard/Download')">📂 Download</button>
-                    <button class="btn btn-secondary btn-sm" onclick="fmNavigateShortcut('/data')">🤖 /data</button>
-                    <button class="btn btn-secondary btn-sm" onclick="fmNavigateShortcut('/')">⚙️ / Raiz</button>
-                    <button id="fm-root-btn" class="btn btn-secondary btn-sm" onclick="fmToggleRoot()" title="Ativar Modo Root (su)">
-                        <i data-lucide="shield"></i> Root
-                    </button>
+                <!-- Gaming Style Loader (Retro Terminal and Progress) -->
+                <div id="fm-gaming-loader" class="gaming-loader-card">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div class="loader-title">🎮 INICIALIZANDO SUBSISTEMA DE ARQUIVOS...</div>
+                        <button class="btn btn-secondary btn-sm" onclick="retryLoadFiles()" id="fm-retry-btn" style="display: none; padding: 4px 8px;">
+                            🔄 Recuperar Conexão
+                        </button>
+                    </div>
+                    <div class="gaming-terminal" id="fm-loader-terminal">
+                        <p class="log-line text-primary">&gt; Estabelecendo link seguro com o Host...</p>
+                    </div>
+                    <div class="gaming-bar-container">
+                        <div class="gaming-bar-progress" id="fm-loader-progress" style="width: 0%"></div>
+                        <div class="gaming-bar-text" id="fm-loader-pct">0%</div>
+                    </div>
+                    <div class="loader-status" id="fm-loader-status-text">Buscando inodes...</div>
                 </div>
 
-                <!-- Toolbar -->
-                <div class="card" style="display:flex;gap:10px;margin-bottom:15px;padding:12px;align-items:center;flex-wrap:wrap;">
-                    <div style="display:flex;align-items:center;flex:1;background:var(--bg-lighter);padding:6px 12px;border-radius:6px;border:1px solid var(--border-color);min-width:200px;">
-                        <i data-lucide="folder" style="color:var(--primary);margin-right:8px;flex-shrink:0;"></i>
-                        <input type="text" id="fm-current-path" value="" placeholder="Carregando..."
-                            style="width:100%;background:transparent;border:none;outline:none;font-family:monospace;font-size:0.9rem;color:var(--text-color);"
-                            onkeydown="if(event.key==='Enter')loadFiles(this.value)">
+                <!-- File Manager Main Content Wrapper (Hidden during loading) -->
+                <div id="fm-content-wrapper" style="display: none;">
+                    <!-- Atalhos Rápidos -->
+                    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
+                        <button class="btn btn-secondary btn-sm" onclick="fmNavigateShortcut('')" title="Pasta Home do Termux">🏠 Home</button>
+                        <button class="btn btn-secondary btn-sm" onclick="fmNavigateShortcut('/data/data/com.termux/files')" title="Termux Files">📦 Termux</button>
+                        <button class="btn btn-secondary btn-sm" onclick="fmNavigateShortcut('/data/data/com.termux/files/usr/bin')">🔧 usr/bin</button>
+                        <button class="btn btn-secondary btn-sm" onclick="fmNavigateShortcut('/data/data/com.termux/files/usr/share/nginx/html')">🌐 www</button>
+                        <button class="btn btn-secondary btn-sm" onclick="fmNavigateShortcut('/sdcard')">💾 SDCard</button>
+                        <button class="btn btn-secondary btn-sm" onclick="fmNavigateShortcut('/sdcard/Download')">📂 Download</button>
+                        <button class="btn btn-secondary btn-sm" onclick="fmNavigateShortcut('/data')">🤖 /data</button>
+                        <button class="btn btn-secondary btn-sm" onclick="fmNavigateShortcut('/')">⚙️ / Raiz</button>
+                        <button id="fm-root-btn" class="btn btn-secondary btn-sm" onclick="fmToggleRoot()" title="Ativar Modo Root (su)">
+                            <i data-lucide="shield"></i> Root
+                        </button>
                     </div>
-                    <button class="btn btn-primary btn-sm" onclick="fmUpDir()" title="Subir diretório"><i data-lucide="corner-left-up"></i></button>
-                    <button class="btn btn-secondary btn-sm" onclick="loadFiles()" title="Atualizar"><i data-lucide="refresh-cw"></i></button>
-                    <button class="btn btn-secondary btn-sm" onclick="fmCreateFolder()"><i data-lucide="folder-plus"></i> Nova Pasta</button>
-                    <label class="btn btn-secondary btn-sm" style="cursor:pointer;margin:0;display:inline-flex;align-items:center;gap:6px;">
-                        <i data-lucide="upload"></i> Upload
-                        <input type="file" id="fm-upload-input" multiple style="display:none;" onchange="fmUploadFiles(event)">
-                    </label>
-                </div>
 
-                <!-- Mensagem de erro -->
-                <div id="fm-error" style="display:none;background:var(--danger-bg,#ff000022);border:1px solid var(--danger);color:var(--danger);padding:12px 16px;border-radius:8px;margin-bottom:12px;font-family:monospace;"></div>
-
-                <!-- Tabela de arquivos -->
-                <div class="card" style="padding:0;overflow-x:auto;min-height:400px;position:relative;">
-                    <div id="fm-loading" style="position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.4);display:none;align-items:center;justify-content:center;z-index:10;border-radius:8px;">
-                        <span style="color:#fff;font-size:1rem;">⏳ Carregando...</span>
+                    <!-- Toolbar -->
+                    <div class="card" style="display:flex;gap:10px;margin-bottom:15px;padding:12px;align-items:center;flex-wrap:wrap;">
+                        <div style="display:flex;align-items:center;flex:1;background:var(--bg-lighter);padding:6px 12px;border-radius:6px;border:1px solid var(--border-color);min-width:200px;">
+                            <i data-lucide="folder" style="color:var(--primary);margin-right:8px;flex-shrink:0;"></i>
+                            <input type="text" id="fm-current-path" value="" placeholder="Carregando..."
+                                style="width:100%;background:transparent;border:none;outline:none;font-family:monospace;font-size:0.9rem;color:var(--text-color);"
+                                onkeydown="if(event.key==='Enter')loadFiles(this.value)">
+                        </div>
+                        <button class="btn btn-primary btn-sm" onclick="fmUpDir()" title="Subir diretório"><i data-lucide="corner-left-up"></i></button>
+                        <button class="btn btn-secondary btn-sm" onclick="loadFiles()" title="Atualizar"><i data-lucide="refresh-cw"></i></button>
+                        <button class="btn btn-secondary btn-sm" onclick="fmCreateFolder()"><i data-lucide="folder-plus"></i> Nova Pasta</button>
+                        <label class="btn btn-secondary btn-sm" style="cursor:pointer;margin:0;display:inline-flex;align-items:center;gap:6px;">
+                            <i data-lucide="upload"></i> Upload
+                            <input type="file" id="fm-upload-input" multiple style="display:none;" onchange="fmUploadFiles(event)">
+                        </label>
                     </div>
-                    <table style="width:100%;border-collapse:collapse;text-align:left;">
-                        <thead style="background:var(--surface2);border-bottom:1px solid var(--border-color);">
-                            <tr>
-                                <th style="padding:12px;width:40px;"></th>
-                                <th style="padding:12px;">Nome</th>
-                                <th style="padding:12px;width:110px;">Tamanho</th>
-                                <th style="padding:12px;width:175px;">Modificado em</th>
-                                <th style="padding:12px;width:135px;text-align:right;">Ações</th>
-                            </tr>
-                        </thead>
-                        <tbody id="fm-file-list">
-                            <tr><td colspan="5" style="text-align:center;padding:40px;color:var(--text-muted);">Clique na aba Arquivos para carregar...</td></tr>
-                        </tbody>
-                    </table>
+
+                    <!-- Mensagem de erro -->
+                    <div id="fm-error" style="display:none;background:var(--danger-bg,#ff000022);border:1px solid var(--danger);color:var(--danger);padding:12px 16px;border-radius:8px;margin-bottom:12px;font-family:monospace;"></div>
+
+                    <!-- Tabela de arquivos -->
+                    <div class="card" style="padding:0;overflow-x:auto;min-height:400px;position:relative;">
+                        <div id="fm-loading" style="position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.4);display:none;align-items:center;justify-content:center;z-index:10;border-radius:8px;">
+                            <span style="color:#fff;font-size:1rem;">⏳ Carregando...</span>
+                        </div>
+                        <table style="width:100%;border-collapse:collapse;text-align:left;">
+                            <thead style="background:var(--surface2);border-bottom:1px solid var(--border-color);">
+                                <tr>
+                                    <th style="padding:12px;width:40px;"></th>
+                                    <th style="padding:12px;">Nome</th>
+                                    <th style="padding:12px;width:110px;">Tamanho</th>
+                                    <th style="padding:12px;width:175px;">Modificado em</th>
+                                    <th style="padding:12px;width:135px;text-align:right;">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="fm-file-list">
+                                <tr><td colspan="5" style="text-align:center;padding:40px;color:var(--text-muted);">Clique na aba Arquivos para carregar...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
-
 
             <!-- === TAB: TERMINAL === -->
             <div id="tab-terminal" class="tab-pane">
