@@ -211,26 +211,8 @@
                     <span class="badge" style="background: var(--success); color: #fff; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 0.8rem;">100% Nativo</span>
                 </div>
 
-                <!-- Gaming Style Loader (Retro Terminal and Progress) -->
-                <div id="fm-gaming-loader" class="gaming-loader-card">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <div class="loader-title">🎮 INICIALIZANDO SUBSISTEMA DE ARQUIVOS...</div>
-                        <button class="btn btn-secondary btn-sm" onclick="retryLoadFiles()" id="fm-retry-btn" style="display: none; padding: 4px 8px;">
-                            🔄 Recuperar Conexão
-                        </button>
-                    </div>
-                    <div class="gaming-terminal" id="fm-loader-terminal">
-                        <p class="log-line text-primary">&gt; Estabelecendo link seguro com o Host...</p>
-                    </div>
-                    <div class="gaming-bar-container">
-                        <div class="gaming-bar-progress" id="fm-loader-progress" style="width: 0%"></div>
-                        <div class="gaming-bar-text" id="fm-loader-pct">0%</div>
-                    </div>
-                    <div class="loader-status" id="fm-loader-status-text">Buscando inodes...</div>
-                </div>
-
-                <!-- File Manager Main Content Wrapper (Hidden during loading) -->
-                <div id="fm-content-wrapper" style="display: none;">
+                <!-- File Manager Main Content Wrapper -->
+                <div id="fm-content-wrapper">
                     <!-- Atalhos Rápidos -->
                     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
                         <button class="btn btn-secondary btn-sm" onclick="fmNavigateShortcut('')" title="Pasta Home do Termux">🏠 Home</button>
