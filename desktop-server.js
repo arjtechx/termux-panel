@@ -6,6 +6,8 @@ const { spawn, exec } = require('child_process');
 const PORT = 3030;
 const PROJECT_DIR = __dirname;
 
+let pendingPublishParams = null;
+
 // Helper para enviar respostas JSON
 const sendJSON = (res, statusCode, data) => {
     res.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -62,18 +64,30 @@ const server = http.createServer((req, res) => {
         return;
     }
 
-    // 3. POST /api/publish: Inicia processo SSE de deploy/bumping/tagging/pushing
+    // 3. POST /api/publish: Salva os parâmetros para a publicação
     if (pathname === '/api/publish' && req.method === 'POST') {
         let body = '';
         req.on('data', chunk => body += chunk);
         req.on('end', () => {
             try {
-                const params = JSON.parse(body);
-                startPublishing(res, params);
+                pendingPublishParams = JSON.parse(body);
+                sendJSON(res, 200, { success: true });
             } catch (err) {
                 sendJSON(res, 400, { error: 'Parâmetros JSON inválidos.' });
             }
         });
+        return;
+    }
+
+    // 4. GET /api/publish: Conecta EventSource/SSE para fazer a publicação e transmitir logs
+    if (pathname === '/api/publish' && req.method === 'GET') {
+        if (!pendingPublishParams) {
+            res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+            res.end('Nenhuma publicação pendente iniciada.');
+            return;
+        }
+        startPublishing(res, pendingPublishParams);
+        pendingPublishParams = null; // Reseta após consumir
         return;
     }
 
