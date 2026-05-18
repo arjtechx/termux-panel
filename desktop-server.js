@@ -98,8 +98,8 @@ server.listen(PORT, '127.0.0.1', () => {
 });
 
 // ============================================================
-#  NÚCLEO DO PROCESSO DE PUBLICAÇÃO VIA SSE (LOGS EM TEMPO REAL)
-# ============================================================
+//  NÚCLEO DO PROCESSO DE PUBLICAÇÃO VIA SSE (LOGS EM TEMPO REAL)
+// ============================================================
 function startPublishing(res, params) {
     res.writeHead(200, {
         'Content-Type': 'text/event-stream',
@@ -258,8 +258,8 @@ function runSequentially(steps, index, sendLog, onDone, onError) {
 }
 
 // ============================================================
-#  CONTEÚDO RENDERIZADO NO FRONTEND (DESIGN PREMIUM E INCRÍVEL)
-# ============================================================
+//  CONTEÚDO RENDERIZADO NO FRONTEND (DESIGN PREMIUM E INCRÍVEL)
+// ============================================================
 function getHTMLContent() {
     return `<!DOCTYPE html>
 <html lang="pt-BR">
