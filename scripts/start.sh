@@ -191,9 +191,15 @@ if command -v su >/dev/null 2>&1 && su -c 'echo ok' >/dev/null 2>&1; then
     bash "$PANEL_DIR/scripts/prioritize.sh" >/dev/null 2>&1 &
 fi
 
-# Loop de auto-restart
+# Loop de auto-restart com limite de memória para evitar OOM Killer do Android
 while true; do
-    node "$PANEL_DIR/server.js"
-    warn "Servidor encerrado. Reiniciando em 3s..."
-    sleep 3
+    node --max-old-space-size=256 "$PANEL_DIR/server.js"
+    EXIT_CODE=$?
+    if [ $EXIT_CODE -eq 137 ]; then
+        warn "Servidor encerrado pelo OOM Killer (sem memória). Aguardando 10s..."
+        sleep 10
+    else
+        warn "Servidor encerrado (código $EXIT_CODE). Reiniciando em 3s..."
+        sleep 3
+    fi
 done
