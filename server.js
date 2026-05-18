@@ -122,8 +122,7 @@ app.use('/api/cron', cronRoutes);
 const databaseRoutes = require('./src/routes/databaseRoutes');
 app.use('/', databaseRoutes);
 
-const fileRoutes = require('./src/routes/fileRoutes');
-app.use('/api/files', fileRoutes);
+
 
 const healthRoutes = require('./src/routes/healthRoutes');
 app.use('/api/health-check', healthRoutes);
@@ -473,9 +472,6 @@ server.once('listening', () => {
     console.log(`- Local: http://localhost:${PORT}`);
     console.log(`- Rede:  http://0.0.0.0:${PORT}`);
 });
-
-const fileRoutes = require('./src/routes/fileRoutes');
-app.use('/api/files', fileRoutes);
 
 server.listen(PORT, '0.0.0.0');
 
