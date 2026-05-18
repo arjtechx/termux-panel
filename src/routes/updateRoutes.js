@@ -7,7 +7,8 @@ const axios = require('axios');
 const systemConfig = require('../utils/env');
 const { runCmd } = require('../utils/shell');
 
-const UPDATE_SCRIPT = path.join(__dirname, 'scripts', 'update.sh');
+const BASE_DIR = path.join(__dirname, '..', '..');
+const UPDATE_SCRIPT = path.join(BASE_DIR, 'scripts', 'update.sh');
 
 // SSE: Executa atualização do painel em tempo real
 router.get('/api/system/update/run', (req, res) => {
@@ -50,7 +51,7 @@ router.get('/api/system/update/run', (req, res) => {
     req.on('close', () => proc.kill());
 });
 
-const UPDATE_CONFIG_FILE = path.join(__dirname, 'config', 'update.json');
+const UPDATE_CONFIG_FILE = path.join(BASE_DIR, 'config', 'update.json');
 
 function getUpdateConfig() {
     try {
@@ -85,7 +86,7 @@ router.post('/api/system/update/config', (req, res) => {
 // --- Panel Settings Endpoints ---
 router.get('/api/system/update/check', async (req, res) => {
     try {
-        const pjson = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+        const pjson = JSON.parse(fs.readFileSync(path.join(BASE_DIR, 'package.json'), 'utf8'));
         const config = getUpdateConfig();
         const currentVersion = pjson.version || '1.0.0';
         let hasUpdate = false;
@@ -526,7 +527,7 @@ router.get('/api/update/releases', async (req, res) => {
 // POST /api/update/check
 router.post('/api/update/check', async (req, res) => {
     try {
-        const pjson = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+        const pjson = JSON.parse(fs.readFileSync(path.join(BASE_DIR, 'package.json'), 'utf8'));
         const installed = pjson.version || '0.0.2';
         const config = getUpdateConfig();
         const repo = config.github_repo || 'arjtechx/termux-panel';
@@ -608,7 +609,7 @@ router.get('/api/update/install', async (req, res) => {
     try {
         const config = getUpdateConfig();
         const repo = config.github_repo || 'arjtechx/termux-panel';
-        const pjson = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+        const pjson = JSON.parse(fs.readFileSync(path.join(BASE_DIR, 'package.json'), 'utf8'));
         const currentVersion = pjson.version || '0.0.2';
 
         let downloadUrl = '';
@@ -631,13 +632,13 @@ router.get('/api/update/install', async (req, res) => {
 
         // Criar Backup Preventivo
         sendLog('INFO', `Criando backup automático da versão ${currentVersion}...`);
-        const backupDir = path.join(__dirname, 'backups', 'panel-backups', `version-${currentVersion}`);
+        const backupDir = path.join(BASE_DIR, 'backups', 'panel-backups', `version-${currentVersion}`);
         
         try {
             fs.mkdirSync(backupDir, { recursive: true });
             const itemsToBackup = ['public', 'scripts', 'server.js', 'package.json', 'package-lock.json'];
             for (const item of itemsToBackup) {
-                const srcPath = path.join(__dirname, item);
+                const srcPath = path.join(BASE_DIR, item);
                 const destPath = path.join(backupDir, item);
                 if (fs.existsSync(srcPath)) {
                     fs.cpSync(srcPath, destPath, { recursive: true });
@@ -650,7 +651,7 @@ router.get('/api/update/install', async (req, res) => {
 
         // Baixar pacote
         sendLog('INFO', `Baixando pacote da release...`);
-        const tempDir = path.join(__dirname, 'backups', 'tmp');
+        const tempDir = path.join(BASE_DIR, 'backups', 'tmp');
         fs.mkdirSync(tempDir, { recursive: true });
         const tempTarPath = path.join(tempDir, `update-${resolvedTag}.tar.gz`);
 
@@ -701,7 +702,7 @@ router.get('/api/update/install', async (req, res) => {
             const itemsToCopy = ['public', 'scripts', 'server.js', 'package.json', 'package-lock.json', 'README.md', 'install.sh', 'src', 'services'];
             for (const item of itemsToCopy) {
                 const srcPath = path.join(extractDir, item);
-                const destPath = path.join(__dirname, item);
+                const destPath = path.join(BASE_DIR, item);
                 if (fs.existsSync(srcPath)) {
                     fs.cpSync(srcPath, destPath, { recursive: true, force: true });
                 }
@@ -725,14 +726,14 @@ router.get('/api/update/install', async (req, res) => {
             console.log('Painel atualizado. Reiniciando...');
             try {
                 // Assegura que a pasta logs existe
-                const logsDir = path.join(__dirname, '..', '..', 'logs');
+                const logsDir = path.join(BASE_DIR, 'logs');
                 if (!fs.existsSync(logsDir)) {
                     fs.mkdirSync(logsDir, { recursive: true });
                 }
                 const logFile = path.join(logsDir, 'panel-restart.log');
                 const out = fs.openSync(logFile, 'a');
 
-                const startScript = path.join(__dirname, '..', '..', 'scripts', 'start.sh');
+                const startScript = path.join(BASE_DIR, 'scripts', 'start.sh');
                 
                 console.log('Iniciando processo desvinculado de start.sh...');
                 const child = spawn('bash', [startScript], {
@@ -743,10 +744,10 @@ router.get('/api/update/install', async (req, res) => {
             } catch(e) {
                 console.log('Falha ao iniciar start.sh, tentando server.js...', e.message);
                 try {
-                    const logsDir = path.join(__dirname, '..', '..', 'logs');
+                    const logsDir = path.join(BASE_DIR, 'logs');
                     const logFile = path.join(logsDir, 'panel-restart.log');
                     const out = fs.openSync(logFile, 'a');
-                    const serverJs = path.join(__dirname, '..', '..', 'server.js');
+                    const serverJs = path.join(BASE_DIR, 'server.js');
                     
                     const child = spawn('node', [serverJs], {
                         detached: true,
@@ -791,7 +792,7 @@ router.get('/api/update/rollback', async (req, res) => {
     }
 
     sendLog('INFO', `Iniciando rollback para a versão: ${targetVersion}...`);
-    const backupDir = path.join(__dirname, 'backups', 'panel-backups', `version-${targetVersion}`);
+    const backupDir = path.join(BASE_DIR, 'backups', 'panel-backups', `version-${targetVersion}`);
 
     if (!fs.existsSync(backupDir)) {
         sendLog('ERR', `Nenhum backup encontrado para a versão: ${targetVersion}`);
@@ -805,7 +806,7 @@ router.get('/api/update/rollback', async (req, res) => {
         
         for (const item of itemsToRestore) {
             const srcPath = path.join(backupDir, item);
-            const destPath = path.join(__dirname, item);
+            const destPath = path.join(BASE_DIR, item);
             if (fs.existsSync(srcPath)) {
                 fs.cpSync(srcPath, destPath, { recursive: true, force: true });
             }
