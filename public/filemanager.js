@@ -3,19 +3,21 @@ let fmRootMode = false;
 
 // ─── INICIALIZAÇÃO ───────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-    // Dispara ao clicar na aba Arquivos
-    document.querySelectorAll('.nav-link, .mobile-nav-item').forEach(link => {
+    console.log('📂 [FileManager] Inicializando subsistema...');
+
+    // Dispara ao clicar na aba Arquivos (Sidebar, Navbar ou Mobile)
+    document.querySelectorAll('[data-target="tab-files"]').forEach(link => {
         link.addEventListener('click', () => {
-            if (link.getAttribute('data-target') === 'tab-files') {
-                setTimeout(() => {
-                    if (!currentFmPath) loadFiles();
-                }, 100);
-            }
+            console.log('📂 [FileManager] Aba de Arquivos clicada! Carregando diretório atual...');
+            setTimeout(() => {
+                loadFiles();
+            }, 100);
         });
     });
 
-    // Se a aba já está ativa na carga
+    // Se a aba de arquivos já estiver ativa na carga da página
     if (document.getElementById('tab-files')?.classList.contains('active')) {
+        console.log('📂 [FileManager] Aba de arquivos ativa detectada na inicialização do painel!');
         loadFiles();
     }
 });
@@ -25,11 +27,16 @@ async function loadFiles(targetPath) {
     if (targetPath === undefined) {
         targetPath = currentFmPath || '';
     }
+    console.log(`📂 [FileManager] loadFiles() invocado para o caminho: "${targetPath}"`);
 
     const listEl  = document.getElementById('fm-file-list');
     const pathEl  = document.getElementById('fm-current-path');
     const errorEl = document.getElementById('fm-error');
     const loadEl  = document.getElementById('fm-loading');
+
+    if (!listEl) {
+        console.warn('⚠️ [FileManager] Elemento "#fm-file-list" não foi encontrado no DOM ainda!');
+    }
 
     if (errorEl) errorEl.style.display = 'none';
     if (loadEl)  loadEl.style.display  = 'flex';
@@ -40,8 +47,12 @@ async function loadFiles(targetPath) {
         const opts = {};
         if (fmRootMode) opts.headers = { 'X-FM-Root': '1' };
 
+        console.log(`📂 [FileManager] Buscando API endpoint: GET ${url}`);
         const res  = await fetch(url, opts);
+        console.log(`📂 [FileManager] API respondeu com status: ${res.status}`);
+        
         const data = await res.json();
+        console.log('📂 [FileManager] Payload recebido do Backend:', data);
 
         if (!data.success) {
             showFmError('❌ ' + (data.error || 'Erro ao listar diretório'));
@@ -95,10 +106,13 @@ async function loadFiles(targetPath) {
             </tr>`;
         });
 
-        listEl.innerHTML = rows;
+        if (listEl) {
+            listEl.innerHTML = rows;
+        }
         if (window.lucide) lucide.createIcons();
 
     } catch (e) {
+        console.error('❌ [FileManager] Erro grave capturado em loadFiles:', e);
         showFmError('❌ Erro de rede: ' + e.message);
     } finally {
         if (loadEl) loadEl.style.display = 'none';
