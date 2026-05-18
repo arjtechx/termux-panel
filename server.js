@@ -14,7 +14,6 @@ const crypto = require('crypto');
 
 // Auto-instala dependências ausentes antes do require principal (evita falhas de deploy no Termux)
 try {
-try {
     require('multer');
 } catch (e) {
     if (e.code === 'MODULE_NOT_FOUND') {
