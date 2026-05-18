@@ -185,11 +185,11 @@ ok "Auto-restart ativado — painel reinicia se cair."
 log "Acesse: http://0.0.0.0:${PORT}"
 echo ""
 
-# Root: aplica prioridade (se disponível)
-if command -v su >/dev/null 2>&1 && su -c 'echo ok' >/dev/null 2>&1; then
-    log "Root detectado! Aplicando prioridades VIP..."
-    bash "$PANEL_DIR/scripts/prioritize.sh" >/dev/null 2>&1 &
-fi
+# Root: aplica prioridade (se disponível) - temporariamente desativado para testes de estabilidade
+# if command -v su >/dev/null 2>&1 && su -c 'echo ok' >/dev/null 2>&1; then
+#     log "Root detectado! Aplicando prioridades VIP..."
+#     bash "$PANEL_DIR/scripts/prioritize.sh" >/dev/null 2>&1 &
+# fi
 
 # Loop de auto-restart com limite de memória para evitar OOM Killer do Android
 while true; do
