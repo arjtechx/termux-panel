@@ -14,14 +14,15 @@ const crypto = require('crypto');
 
 // Auto-instala dependências ausentes antes do require principal (evita falhas de deploy no Termux)
 try {
-    require('http-proxy-middleware');
+try {
+    require('multer');
 } catch (e) {
     if (e.code === 'MODULE_NOT_FOUND') {
-        console.log('[WARN] Biblioteca http-proxy-middleware ausente. Instalando automaticamente...');
+        console.log('[WARN] Biblioteca multer ausente. Instalando automaticamente...');
         const { execSync } = require('child_process');
         try {
-            execSync('npm install http-proxy-middleware --no-save', { stdio: 'inherit' });
-            console.log('[OK] http-proxy-middleware instalado com sucesso! Reiniciando servidor para aplicar as alterações...');
+            execSync('npm install multer --no-save', { stdio: 'inherit' });
+            console.log('[OK] multer instalado com sucesso! Reiniciando servidor para aplicar as alterações...');
             process.exit(0); // Sai limpo (código 0) e deixa o loop do terminal reiniciar o servidor com o cache do Node limpo!
         } catch (err) {
             console.error('[ERR] Falha ao auto-instalar dependência:', err.message);
@@ -30,8 +31,8 @@ try {
     }
 }
 
-const { createProxyMiddleware } = require('http-proxy-middleware');
-const fileBrowserService = require('./services/filebrowser-service');
+const multer = require('multer');
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
@@ -168,8 +169,7 @@ function checkAuth(req, res, next) {
         req.path === '/api/phpmyadmin/validate-token' ||
         req.path === '/api/pma/sso/validate' ||
         req.path === '/api/database/verify-token' ||
-        req.path === '/api/phpmyadmin/validate' ||
-        req.path.startsWith('/__filebrowser')
+        req.path === '/api/phpmyadmin/validate'
     ) {
         return next();
     }
@@ -3946,15 +3946,11 @@ app.get('/api/mariadb/diagnose', async (req, res) => {
         } catch(e) {}
         ssoTokens.delete(testToken);
  
-        // 7. Diagnóstico do FileBrowser
-        const fbBinExists = fs.existsSync(fileBrowserService.binPath);
-        const fbPort = fileBrowserService.getPort();
-        const fbProcessActive = !!(fileBrowserService.process && fileBrowserService.process.pid && !fileBrowserService.process.killed);
+        // 7. Diagnóstico do FileBrowser (Removido, agora nativo)
+        const fbBinExists = false;
+        const fbPort = null;
+        const fbProcessActive = false;
         let fbWebOk = false;
-        try {
-            const fbCheck = await axios.get(`http://127.0.0.1:${fbPort}/`, { timeout: 1000 });
-            fbWebOk = fbCheck.status === 200;
-        } catch(e) {}
  
         res.json({
             success: true,
@@ -3978,11 +3974,11 @@ app.get('/api/mariadb/diagnose', async (req, res) => {
                 },
                 sso: { tokenValidationOk },
                 filebrowser: {
-                    installed: fbBinExists,
-                    port: fbPort,
-                    processActive: fbProcessActive,
-                    webOk: fbWebOk,
-                    dbPath: fileBrowserService.dbPath
+                    installed: false,
+                    port: null,
+                    processActive: false,
+                    webOk: false,
+                    dbPath: ''
                 }
             }
         });
@@ -3991,20 +3987,6 @@ app.get('/api/mariadb/diagnose', async (req, res) => {
     }
 });
 
-// Endpoint de Reinstalação e Fix do FileBrowser
-app.post('/api/filebrowser/reinstall', async (req, res) => {
-    if (!req.session || !req.session.authenticated) {
-        return res.status(401).json({ error: 'Acesso negado' });
-    }
-    try {
-        console.log('[INFO] Reinstalando FileBrowser via Auto-Fix...');
-        await fileBrowserService.installBinary();
-        fileBrowserService.startProcess();
-        res.json({ success: true, message: 'FileBrowser reinstalado e reiniciado com sucesso!' });
-    } catch(err) {
-        res.status(500).json({ success: false, error: err.message });
-    }
-});
 
 let portRetryCount = 0;
 server.on('error', (e) => {
@@ -4074,11 +4056,93 @@ server.once('listening', () => {
     console.log(`Painel Termux rodando em:`);
     console.log(`- Local: http://localhost:${PORT}`);
     console.log(`- Rede:  http://0.0.0.0:${PORT}`);
-    
-    // Iniciar FileBrowser Service em background
-    fileBrowserService.init().catch(err => {
-        console.error('[ERR] Falha ao iniciar FileBrowser:', err.message);
-    });
+});
+
+// --- API NATIVA DO GERENCIADOR DE ARQUIVOS ---
+const multerUpload = multer({ dest: path.join(os.tmpdir(), 'termux-panel-uploads') });
+
+app.get('/api/files/list', async (req, res) => {
+    try {
+        const targetPath = req.query.path || (process.env.PREFIX ? '/data/data/com.termux/files/home' : '/');
+        if (!fs.existsSync(targetPath)) return res.status(404).json({ error: 'Diretório não encontrado' });
+        
+        const files = fs.readdirSync(targetPath, { withFileTypes: true });
+        const result = files.map(dirent => {
+            const p = path.join(targetPath, dirent.name);
+            let stat;
+            try { stat = fs.statSync(p); } catch(e) { stat = { size: 0, mtime: new Date() }; }
+            return {
+                name: dirent.name,
+                isDir: dirent.isDirectory(),
+                size: stat.size,
+                mtime: stat.mtime
+            };
+        }).sort((a, b) => {
+            if (a.isDir && !b.isDir) return -1;
+            if (!a.isDir && b.isDir) return 1;
+            return a.name.localeCompare(b.name);
+        });
+        
+        res.json({ success: true, path: targetPath, files: result });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/files/download', (req, res) => {
+    const targetPath = req.query.path;
+    if (fs.existsSync(targetPath)) {
+        res.download(targetPath);
+    } else {
+        res.status(404).send('Arquivo não encontrado');
+    }
+});
+
+app.post('/api/files/upload', multerUpload.array('files'), (req, res) => {
+    try {
+        const targetDir = req.body.path;
+        if (!fs.existsSync(targetDir)) return res.status(400).json({ error: 'Diretório destino não existe' });
+        
+        req.files.forEach(file => {
+            const destPath = path.join(targetDir, file.originalname);
+            fs.renameSync(file.path, destPath);
+        });
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/files/mkdir', (req, res) => {
+    try {
+        const { targetPath } = req.body;
+        if (!fs.existsSync(targetPath)) fs.mkdirSync(targetPath, { recursive: true });
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.delete('/api/files/delete', (req, res) => {
+    try {
+        const targetPath = req.query.path;
+        if (fs.existsSync(targetPath)) {
+            fs.rmSync(targetPath, { recursive: true, force: true });
+        }
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/files/rename', (req, res) => {
+    try {
+        const { oldPath, newPath } = req.body;
+        if (fs.existsSync(oldPath)) fs.renameSync(oldPath, newPath);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 server.listen(PORT, '0.0.0.0');

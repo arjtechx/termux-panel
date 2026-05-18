@@ -206,43 +206,43 @@
 
             <!-- === TAB: ARQUIVOS === -->
             <div id="tab-files" class="tab-pane">
-                <div style="height: calc(100vh - 60px); display: flex; flex-direction: column; position: relative;">
-                    
-                    <!-- Overlay de Carregamento Estratégico -->
-                    <div id="fb-loading-overlay" style="position: absolute; top:0; left:0; width:100%; height:100%; background: var(--surface); z-index: 50; display: flex; align-items: center; justify-content: center; border-radius: 8px;">
-                        <div style="width: 100%; max-width: 450px; padding: 30px; background: var(--background); border-radius: 12px; border: 1px solid var(--border-color); box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
-                            <h3 style="margin-bottom: 15px; text-align: center; color: var(--primary);"><i data-lucide="hard-drive"></i> Inicializando Sistema de Arquivos</h3>
-                            <div style="background: #000; border-radius: 6px; padding: 12px; font-family: monospace; font-size: 0.85rem; height: 120px; overflow-y: auto; margin-bottom: 15px;" id="fb-boot-log">
-                                <div style="color: #a6e3a1;">> Conectando ao backend...</div>
-                            </div>
-                            <div class="progress-track"><div class="progress-fill" id="fb-boot-progress" style="width: 0%;"></div></div>
-                            <div style="text-align: center; font-size: 0.85rem; color: var(--text-muted); margin-top: 10px;" id="fb-boot-status">Aguardando daemon...</div>
-                        </div>
+                <div class="page-header" style="margin-bottom: 15px;">
+                    <h1>Gerenciador de Arquivos Avançado</h1>
+                    <span class="badge" style="background: var(--success); color: #fff; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 0.8rem;">100% Nativo</span>
+                </div>
+                
+                <div class="file-manager-toolbar card" style="display: flex; gap: 10px; margin-bottom: 15px; padding: 12px; align-items: center; flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; flex: 1; background: var(--bg-lighter); padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border-color);">
+                        <i data-lucide="folder" style="color: var(--primary); margin-right: 8px;"></i>
+                        <input type="text" id="fm-current-path" value="/" style="width: 100%; background: transparent; border: none; outline: none; font-family: monospace; color: var(--text-color);" onkeydown="if(event.key === 'Enter') loadFiles(this.value)">
                     </div>
+                    <button class="btn btn-primary btn-sm" onclick="fmUpDir()" title="Subir Pasta"><i data-lucide="corner-left-up"></i></button>
+                    <button class="btn btn-secondary btn-sm" onclick="loadFiles()" title="Atualizar"><i data-lucide="refresh-cw"></i></button>
+                    <button class="btn btn-secondary btn-sm" onclick="fmCreateFolder()"><i data-lucide="folder-plus"></i> Nova Pasta</button>
+                    <label class="btn btn-secondary btn-sm" style="cursor: pointer; margin: 0; display: inline-flex; align-items: center; gap: 6px;">
+                        <i data-lucide="upload"></i> Upload
+                        <input type="file" id="fm-upload-input" multiple style="display: none;" onchange="fmUploadFiles(event)">
+                    </label>
+                </div>
 
-                    <div class="page-header" style="margin-bottom: 15px;">
-                        <h1>Gerenciador de Arquivos Avançado</h1>
-                        <span class="badge" style="background: var(--primary); color: #000; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 0.8rem;">FileBrowser Integrado</span>
+                <div class="card" style="padding: 0; overflow-x: auto; min-height: 400px; position: relative;">
+                    <div id="fm-loading" style="position: absolute; top:0; left:0; right:0; bottom:0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 10;">
+                        <span>Carregando...</span>
                     </div>
-                    
-                    <div id="fb-layout" class="embedded-filebrowser-layout" style="display: flex; flex: 1; gap: 16px; overflow: hidden; opacity: 0; transition: opacity 0.5s;">
-                        <!-- Sidebar Rápida -->
-                        <div class="fb-sidebar" style="width: 220px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto;">
-                            <h4 style="color: var(--text-muted); font-size: 0.85rem; text-transform: uppercase; margin-bottom: 5px;">Acesso Rápido</h4>
-                            <div id="fb-dynamic-shortcuts" style="display: flex; flex-direction: column; gap: 10px;">
-                                <!-- Atalhos renderizados pelo JS -->
-                            </div>
-                            
-                            <div style="height: 1px; background: var(--border-color); margin: 10px 0;"></div>
-                            
-                            <button class="btn btn-secondary" style="justify-content: flex-start;" onclick="document.getElementById('iframe-filebrowser').contentWindow.location.reload();"><i data-lucide="refresh-cw"></i> Recarregar</button>
-                        </div>
-                        
-                        <!-- Iframe Nativo -->
-                        <div class="fb-content" style="flex: 1; border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; background: var(--surface);">
-                            <iframe id="iframe-filebrowser" src="about:blank" style="width: 100%; height: 100%; border: none;"></iframe>
-                        </div>
-                    </div>
+                    <table style="width: 100%; border-collapse: collapse; text-align: left;">
+                        <thead style="background: var(--surface2); border-bottom: 1px solid var(--border-color);">
+                            <tr>
+                                <th style="padding: 12px; width: 40px;"></th>
+                                <th style="padding: 12px;">Nome</th>
+                                <th style="padding: 12px; width: 120px;">Tamanho</th>
+                                <th style="padding: 12px; width: 180px;">Modificado em</th>
+                                <th style="padding: 12px; width: 150px; text-align: right;">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="fm-file-list">
+                            <tr><td colspan="5" style="text-align: center; padding: 20px;">Carregando arquivos...</td></tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
 
@@ -1014,6 +1014,7 @@
 </div>
 
 <script src="/socket.io/socket.io.js"></script>
+<script src="filemanager.js?v=0.0.6"></script>
 <script src="app.js?v=4.0"></script>
 </body>
 </html>
