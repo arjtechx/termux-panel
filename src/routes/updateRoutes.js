@@ -340,7 +340,60 @@ function compareSemver(v1, v2) {
     return 0;
 }
 
+const PANEL_UPDATE_ITEMS = ['public', 'scripts', 'server.js', 'package.json', 'package-lock.json', 'README.md', 'install.sh', 'src', 'services'];
 const UPDATE_CACHE_FILE = path.join(BASE_DIR, 'config', 'update-cache.json');
+const UPDATE_INSTALLED_FILE = path.join(BASE_DIR, 'config', 'update-installed.json');
+
+function getLocalBuildDate() {
+    let latestMtime = 0;
+    for (const item of PANEL_UPDATE_ITEMS) {
+        const itemPath = path.join(BASE_DIR, item);
+        if (!fs.existsSync(itemPath)) continue;
+        try {
+            const stat = fs.statSync(itemPath);
+            latestMtime = Math.max(latestMtime, stat.mtimeMs);
+        } catch(e) {}
+    }
+    return latestMtime ? new Date(latestMtime) : null;
+}
+
+function readInstalledUpdateMeta() {
+    try {
+        if (fs.existsSync(UPDATE_INSTALLED_FILE)) {
+            return JSON.parse(fs.readFileSync(UPDATE_INSTALLED_FILE, 'utf8'));
+        }
+    } catch(e) {}
+    return null;
+}
+
+function writeInstalledUpdateMeta(data) {
+    try {
+        fs.writeFileSync(UPDATE_INSTALLED_FILE, JSON.stringify({
+            ...data,
+            installedAt: new Date().toISOString()
+        }, null, 2));
+    } catch(e) {}
+}
+
+function getInstalledReferenceDate(repo, tag) {
+    const meta = readInstalledUpdateMeta();
+    if (meta && meta.repo === repo && (!tag || meta.tag === tag)) {
+        const metaDate = meta.releasePublishedAt || meta.installedAt;
+        if (metaDate) {
+            const parsed = new Date(metaDate);
+            if (!Number.isNaN(parsed.getTime())) return parsed;
+        }
+    }
+    return getLocalBuildDate();
+}
+
+function releaseIsNewerThanLocal(releaseDate, repo, tag) {
+    if (!releaseDate) return false;
+    const publishedAt = new Date(releaseDate);
+    const installedReferenceDate = getInstalledReferenceDate(repo, tag);
+    if (!installedReferenceDate || Number.isNaN(publishedAt.getTime())) return false;
+    return publishedAt.getTime() > installedReferenceDate.getTime() + 60 * 1000;
+}
 
 function readUpdateCache() {
     try {
@@ -380,6 +433,8 @@ router.get('/api/update/status', async (req, res) => {
         let latest = installed;
         let hasUpdate = false;
         let status = 'up_to_date';
+        let publishedAt = null;
+        let updateReason = 'version';
 
         try {
             const apiUrl = `https://api.github.com/repos/${repo}/releases/latest`;
@@ -388,7 +443,13 @@ router.get('/api/update/status', async (req, res) => {
                 timeout: 3000
             });
             latest = (resp.data.tag_name || installed).replace(/^v/, '');
+            const latestTag = resp.data.tag_name || `v${latest}`;
+            publishedAt = resp.data.published_at || resp.data.created_at || null;
             hasUpdate = compareSemver(latest, installed) > 0;
+            if (!hasUpdate && compareSemver(latest, installed) === 0 && releaseIsNewerThanLocal(publishedAt, repo, latestTag)) {
+                hasUpdate = true;
+                updateReason = 'release_rebuilt';
+            }
             status = hasUpdate ? 'update_available' : 'up_to_date';
         } catch(err) {
             if (cached && cached.repo === repo) {
@@ -405,7 +466,10 @@ router.get('/api/update/status', async (req, res) => {
             latest,
             hasUpdate,
             status,
-            repo
+            repo,
+            publishedAt,
+            localBuildDate: getInstalledReferenceDate(repo, `v${latest}`)?.toISOString() || null,
+            updateReason
         };
 
         if (status !== 'failed_check') {
@@ -535,6 +599,8 @@ router.post('/api/update/check', async (req, res) => {
         let latest = installed;
         let hasUpdate = false;
         let status = 'up_to_date';
+        let publishedAt = null;
+        let updateReason = 'version';
 
         try {
             const apiUrl = `https://api.github.com/repos/${repo}/releases/latest`;
@@ -543,7 +609,13 @@ router.post('/api/update/check', async (req, res) => {
                 timeout: 5000
             });
             latest = (resp.data.tag_name || installed).replace(/^v/, '');
+            const latestTag = resp.data.tag_name || `v${latest}`;
+            publishedAt = resp.data.published_at || resp.data.created_at || null;
             hasUpdate = compareSemver(latest, installed) > 0;
+            if (!hasUpdate && compareSemver(latest, installed) === 0 && releaseIsNewerThanLocal(publishedAt, repo, latestTag)) {
+                hasUpdate = true;
+                updateReason = 'release_rebuilt';
+            }
             status = hasUpdate ? 'update_available' : 'up_to_date';
         } catch(err) {
             try {
@@ -579,7 +651,10 @@ router.post('/api/update/check', async (req, res) => {
             latest,
             hasUpdate,
             status,
-            repo
+            repo,
+            publishedAt,
+            localBuildDate: getInstalledReferenceDate(repo, `v${latest}`)?.toISOString() || null,
+            updateReason
         };
 
         if (status !== 'failed_check') {
@@ -614,6 +689,7 @@ router.get('/api/update/install', async (req, res) => {
 
         let downloadUrl = '';
         let resolvedTag = targetTag;
+        let releasePublishedAt = null;
         
         try {
             const apiUrl = targetTag === 'latest'
@@ -622,11 +698,14 @@ router.get('/api/update/install', async (req, res) => {
             
             const resp = await axios.get(apiUrl, { headers: { 'User-Agent': 'termux-panel' }, timeout: 5000 });
             resolvedTag = resp.data.tag_name || targetTag;
+            releasePublishedAt = resp.data.published_at || resp.data.created_at || null;
             downloadUrl = `https://github.com/${repo}/releases/download/${resolvedTag}/termux-panel-dist.tar.gz`;
             sendLog('OK', `Release encontrada: ${resolvedTag}`);
         } catch(e) {
-            resolvedTag = targetTag === 'latest' ? 'v0.0.2' : targetTag;
-            downloadUrl = `https://github.com/${repo}/releases/download/${resolvedTag}/termux-panel-dist.tar.gz`;
+            resolvedTag = targetTag;
+            downloadUrl = targetTag === 'latest'
+                ? `https://github.com/${repo}/releases/latest/download/termux-panel-dist.tar.gz`
+                : `https://github.com/${repo}/releases/download/${resolvedTag}/termux-panel-dist.tar.gz`;
             sendLog('WARN', `GitHub API limite de requisições. Tentando URL direta: ${resolvedTag}`);
         }
 
@@ -636,8 +715,7 @@ router.get('/api/update/install', async (req, res) => {
         
         try {
             fs.mkdirSync(backupDir, { recursive: true });
-            const itemsToBackup = ['public', 'scripts', 'server.js', 'package.json', 'package-lock.json'];
-            for (const item of itemsToBackup) {
+            for (const item of PANEL_UPDATE_ITEMS) {
                 const srcPath = path.join(BASE_DIR, item);
                 const destPath = path.join(backupDir, item);
                 if (fs.existsSync(srcPath)) {
@@ -699,8 +777,7 @@ router.get('/api/update/install', async (req, res) => {
         // Substituir apenas arquivos da aplicação
         sendLog('INFO', `Instalando atualização...`);
         try {
-            const itemsToCopy = ['public', 'scripts', 'server.js', 'package.json', 'package-lock.json', 'README.md', 'install.sh', 'src', 'services'];
-            for (const item of itemsToCopy) {
+            for (const item of PANEL_UPDATE_ITEMS) {
                 const srcPath = path.join(extractDir, item);
                 const destPath = path.join(BASE_DIR, item);
                 if (fs.existsSync(srcPath)) {
@@ -714,8 +791,43 @@ router.get('/api/update/install', async (req, res) => {
             return res.end();
         }
 
+        sendLog('INFO', `Atualizando dependências Node.js...`);
+        try {
+            await new Promise((resolve, reject) => {
+                const proc = spawn('npm', ['install', '--no-audit', '--no-fund'], {
+                    cwd: BASE_DIR,
+                    env: process.env
+                });
+                proc.stdout.on('data', chunk => {
+                    chunk.toString().split('\n').forEach(line => {
+                        if (line.trim()) sendLog('NPM', line.trim());
+                    });
+                });
+                proc.stderr.on('data', chunk => {
+                    chunk.toString().split('\n').forEach(line => {
+                        if (line.trim()) sendLog('NPM', line.trim());
+                    });
+                });
+                proc.on('close', code => code === 0 ? resolve() : reject(new Error(`npm install terminou com código ${code}`)));
+                proc.on('error', reject);
+            });
+            sendLog('OK', `Dependências atualizadas.`);
+        } catch (npmErr) {
+            sendLog('WARN', `Não foi possível atualizar dependências automaticamente: ${npmErr.message}`);
+        }
+
         try {
             fs.rmSync(tempDir, { recursive: true, force: true });
+        } catch(e) {}
+
+        try {
+            const installedPjson = JSON.parse(fs.readFileSync(path.join(BASE_DIR, 'package.json'), 'utf8'));
+            writeInstalledUpdateMeta({
+                repo,
+                tag: resolvedTag,
+                version: installedPjson.version || currentVersion,
+                releasePublishedAt
+            });
         } catch(e) {}
 
         sendLog('OK', `Atualização concluída.`);
@@ -802,9 +914,7 @@ router.get('/api/update/rollback', async (req, res) => {
 
     try {
         sendLog('INFO', 'Restaurando arquivos de backup...');
-        const itemsToRestore = ['public', 'scripts', 'server.js', 'package.json', 'package-lock.json'];
-        
-        for (const item of itemsToRestore) {
+        for (const item of PANEL_UPDATE_ITEMS) {
             const srcPath = path.join(backupDir, item);
             const destPath = path.join(BASE_DIR, item);
             if (fs.existsSync(srcPath)) {

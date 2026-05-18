@@ -1598,7 +1598,7 @@ async function checkSystemUpdates() {
         repoInput.value = cfg.github_repo || '';
     }
 
-    const data = await safeFetch(`${API_BASE}/update/status`);
+    const data = await safeFetch(`${API_BASE}/update/status?force=1`);
     if (!data) {
         if (statusText) statusText.innerHTML = '<span style="color:var(--danger)">Erro ao verificar</span>';
         return;

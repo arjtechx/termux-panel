@@ -76,6 +76,7 @@ if [ -n "$GITHUB_REPO" ] && [ "$GITHUB_REPO" != "null" ] && [ "$GITHUB_REPO" != 
             cp -f "$TMP_EXTRACT/server.js" "$PANEL_DIR/"
             cp -f "$TMP_EXTRACT/install.sh" "$PANEL_DIR/"
             cp -f "$TMP_EXTRACT/package.json" "$PANEL_DIR/"
+            cp -f "$TMP_EXTRACT/package-lock.json" "$PANEL_DIR/" 2>/dev/null || true
             cp -f "$TMP_EXTRACT/README.md" "$PANEL_DIR/"
             
             ok "Arquivos atualizados com sucesso!"
@@ -122,6 +123,7 @@ else
         cp -f "$TMP_EXTRACT/server.js" "$PANEL_DIR/"
         cp -f "$TMP_EXTRACT/install.sh" "$PANEL_DIR/"
         cp -f "$TMP_EXTRACT/package.json" "$PANEL_DIR/"
+        cp -f "$TMP_EXTRACT/package-lock.json" "$PANEL_DIR/" 2>/dev/null || true
         cp -f "$TMP_EXTRACT/README.md" "$PANEL_DIR/"
         
         rm -rf "$TMP_EXTRACT"
