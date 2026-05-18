@@ -404,6 +404,8 @@ app.post('/api/processes/:pid/kill', async (req, res) => {
     }
 });
 
+let portRetryCount = 0;
+
 server.on('error', (e) => {
     if (e.code === 'EADDRINUSE') {
         portRetryCount++;

@@ -68,7 +68,7 @@ Blue "[*] Enviando para o GitHub..."
 git push origin HEAD
 
 Write-Host ""
-Green "[+] Código enviado com sucesso!"
-Green "[+] O GitHub Actions irá empacotar o .tar.gz automaticamente."
-Green "[+] Em ~30 segundos, clique 'Atualizar Agora' no painel do Termux."
+Green "[+] Code sent successfully!"
+Green "[+] GitHub Actions is building the package..."
+Green "[+] In 30 seconds, click Update in the cPanel."
 Write-Host ""
