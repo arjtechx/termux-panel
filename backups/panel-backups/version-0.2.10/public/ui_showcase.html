@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UI Showcase - Termux cPanel</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* Ajuste para o showcase não precisar de servidor */
+        .boot-overlay { display: none; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+    </style>
+</head>
+<body class="light-pro">
+    <div class="app-layout">
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <h2>☁️ Showcase</h2>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="#" class="nav-item active" data-target="tab-dashboard"><i data-lucide="layout-dashboard"></i> Dashboard</a>
+                <a href="#" class="nav-item" data-target="tab-files"><i data-lucide="folder"></i> Arquivos</a>
+                <a href="#" class="nav-item" data-target="tab-terminal"><i data-lucide="terminal"></i> Terminal</a>
+                <a href="#" class="nav-item" data-target="tab-database"><i data-lucide="database"></i> Banco de Dados</a>
+                <a href="#" class="nav-item" data-target="tab-docs"><i data-lucide="file-text"></i> Docs</a>
+            </nav>
+        </aside>
+
+        <main class="main-content">
+            <header class="section-header">
+                <h1>Visualização de Design</h1>
+                <button class="btn btn-primary" onclick="toggleTheme()">Trocar Tema</button>
+            </header>
+
+            <!-- Dashboard Preview -->
+            <div id="tab-dashboard" class="tab-content active">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <span class="stat-label">CPU</span>
+                        <span class="stat-value">12%</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">RAM</span>
+                        <span class="stat-value">4.2GB / 8GB</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">Temperatura</span>
+                        <span class="stat-value">42°C</span>
+                    </div>
+                </div>
+
+                <h3>Meus Apps (Exemplo)</h3>
+                <div class="stats-grid">
+                    <div class="stat-card" style="border-left: 4px solid var(--primary-color);">
+                        <div style="display:flex; justify-content: space-between; align-items: center;">
+                            <strong>🚀 Site Principal</strong>
+                            <span style="color: var(--success-color);">Online</span>
+                        </div>
+                        <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 5px;">Porta: 8080</p>
+                    </div>
+                    <div class="stat-card" style="border-left: 4px solid var(--warning-color);">
+                        <div style="display:flex; justify-content: space-between; align-items: center;">
+                            <strong>📦 API Backend</strong>
+                            <span style="color: var(--warning-color);">Offline</span>
+                        </div>
+                        <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 5px;">Porta: 3000</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Arquivos Preview -->
+            <div id="tab-files" class="tab-content">
+                <h3>Gerenciador de Arquivos</h3>
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Nome</th>
+                                <th>Tamanho</th>
+                                <th>Ação</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><i data-lucide="folder" style="width:16px; vertical-align:middle; margin-right:8px;"></i> public</td>
+                                <td>--</td>
+                                <td><button class="btn btn-icon btn-secondary"><i data-lucide="more-vertical"></i></button></td>
+                            </tr>
+                            <tr>
+                                <td><i data-lucide="file-code" style="width:16px; vertical-align:middle; margin-right:8px;"></i> server.js</td>
+                                <td>24 KB</td>
+                                <td><button class="btn btn-icon btn-secondary"><i data-lucide="more-vertical"></i></button></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Database Preview -->
+            <div id="tab-database" class="tab-content">
+                <h3>Bancos de Dados</h3>
+                <div class="grid-2-col">
+                    <div class="stat-card">
+                        <h4>mysql_prod</h4>
+                        <p>Usuário: admin</p>
+                        <button class="btn btn-danger" style="margin-top:10px;"><i data-lucide="trash"></i></button>
+                    </div>
+                    <div class="stat-card">
+                        <h4>test_db</h4>
+                        <p>Usuário: root</p>
+                        <button class="btn btn-danger" style="margin-top:10px;"><i data-lucide="trash"></i></button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Terminal Preview -->
+            <div id="tab-terminal" class="tab-content">
+                <h3>Terminal Web</h3>
+                <div class="boot-terminal" style="height: 400px;">
+                    <div style="color: #0f0;">> Connecting to termux...</div>
+                    <div style="color: #0f0;">> Connected!</div>
+                    <div style="color: #fff;">$ ls -la</div>
+                    <div style="color: #888;">total 104</div>
+                    <div style="color: #888;">drwxr-xr-x  8 user user  4096 May 16 14:00 .</div>
+                    <div style="color: #fff;">$ <span style="background: #fff; color: #000;"> </span></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Mobile Nav -->
+    <nav class="mobile-nav">
+        <a href="#" class="mobile-nav-item active" data-target="tab-dashboard"><i data-lucide="layout-dashboard"></i><span>Início</span></a>
+        <a href="#" class="mobile-nav-item" data-target="tab-files"><i data-lucide="folder"></i><span>Arquivos</span></a>
+        <a href="#" class="mobile-nav-item" data-target="tab-terminal"><i data-lucide="terminal"></i><span>Term</span></a>
+        <a href="#" class="mobile-nav-item" data-target="tab-database"><i data-lucide="database"></i><span>Banco</span></a>
+    </nav>
+
+    <script>
+        // Navegação simplificada para o showcase
+        const navItems = document.querySelectorAll('.nav-item, .mobile-nav-item');
+        navItems.forEach(item => {
+            item.addEventListener('click', (e) => {
+                e.preventDefault();
+                const targetId = item.getAttribute('data-target');
+                document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+                document.querySelectorAll('.nav-item, .mobile-nav-item').forEach(i => i.classList.remove('active'));
+                
+                document.getElementById(targetId).classList.add('active');
+                item.classList.add('active');
+            });
+        });
+
+        function toggleTheme() {
+            document.body.classList.toggle('light-pro');
+        }
+
+        lucide.createIcons();
+    </script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+[ENV] Ambiente detectado: windows | Distro: debian | Pkg: apt | Prefix: /usr
+Painel Termux rodando em:
+- Local: http://localhost:8088
+- Rede:  http://0.0.0.0:8088

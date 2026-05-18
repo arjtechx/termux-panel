@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login | Termux cPanel</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        :root {
+            --login-bg: var(--bg);
+            --login-panel: var(--surface);
+            --login-panel-solid: var(--surface);
+            --login-ink: var(--text);
+            --login-muted: var(--text-muted);
+            --login-placeholder: var(--text-muted);
+            --login-line: var(--border);
+            --login-accent: var(--primary);
+            --login-accent-strong: var(--primary);
+            --login-accent-soft: var(--primary-glow);
+            --login-warning: var(--warning);
+            --login-danger: var(--danger);
+            --login-shadow: var(--shadow-lg);
+        }
+
+        body[data-theme="dark"],
+        body.dark-neon {
+            --login-shadow: 0 28px 80px rgba(0, 0, 0, 0.35);
+        }
+
+        body {
+            min-height: 100vh;
+            height: auto;
+            display: grid;
+            place-items: center;
+            overflow: auto;
+            padding: 32px 18px;
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.16)),
+                repeating-linear-gradient(90deg, rgba(99, 102, 241, 0.055) 0 1px, transparent 1px 72px),
+                repeating-linear-gradient(0deg, rgba(99, 102, 241, 0.045) 0 1px, transparent 1px 72px),
+                var(--login-bg);
+            color: var(--login-ink);
+        }
+
+        body[data-theme="dark"],
+        body.dark-neon {
+            background:
+                linear-gradient(180deg, rgba(17, 19, 24, 0.9), rgba(17, 19, 24, 0.78)),
+                repeating-linear-gradient(90deg, rgba(99, 102, 241, 0.08) 0 1px, transparent 1px 72px),
+                repeating-linear-gradient(0deg, rgba(99, 102, 241, 0.06) 0 1px, transparent 1px 72px),
+                var(--login-bg);
+        }
+
+        .login-shell {
+            width: min(960px, 100%);
+            display: grid;
+            grid-template-columns: minmax(0, 1.05fr) minmax(360px, 0.95fr);
+            overflow: hidden;
+            border: 1px solid var(--login-line);
+            border-radius: 18px;
+            background: var(--login-panel);
+            box-shadow: var(--login-shadow);
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+        }
+
+        .login-info {
+            position: relative;
+            padding: 38px;
+            background:
+                linear-gradient(135deg, var(--primary-glow), rgba(99, 102, 241, 0.04)),
+                var(--login-panel-solid);
+            border-right: 1px solid var(--login-line);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            min-height: 520px;
+        }
+
+        .brand-mark {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-weight: 800;
+            font-size: 1.05rem;
+            letter-spacing: 0;
+        }
+
+        .brand-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            display: grid;
+            place-items: center;
+            color: #ffffff;
+            background: var(--login-accent);
+            box-shadow: 0 12px 28px var(--login-accent-soft);
+        }
+
+        .login-copy {
+            max-width: 430px;
+            margin-top: 72px;
+        }
+
+        .eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--login-accent-strong);
+            background: var(--login-accent-soft);
+            border: 1px solid var(--login-line);
+            border-radius: 999px;
+            padding: 7px 11px;
+            font-size: 0.78rem;
+            font-weight: 700;
+            margin-bottom: 18px;
+        }
+
+        .login-copy h1 {
+            color: var(--login-ink);
+            font-size: clamp(2rem, 4vw, 3.1rem);
+            line-height: 1.05;
+            letter-spacing: 0;
+            margin: 0 0 16px;
+        }
+
+        .login-copy p {
+            color: var(--login-muted);
+            font-size: 1rem;
+            max-width: 36rem;
+        }
+
+        .status-strip {
+            margin-top: 36px;
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .status-pill {
+            border: 1px solid var(--login-line);
+            border-radius: 10px;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.46);
+        }
+
+        body[data-theme="dark"] .status-pill,
+        body.dark-neon .status-pill {
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        .status-pill i {
+            width: 17px;
+            height: 17px;
+            color: var(--login-accent);
+            margin-bottom: 8px;
+        }
+
+        .status-pill span {
+            display: block;
+            color: var(--login-muted);
+            font-size: 0.74rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0;
+        }
+
+        .status-pill strong {
+            display: block;
+            color: var(--login-ink);
+            font-size: 0.95rem;
+            margin-top: 2px;
+        }
+
+        .login-card {
+            padding: 38px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            background: var(--login-panel);
+        }
+
+        .login-card-header {
+            margin-bottom: 26px;
+        }
+
+        .login-card-header h2 {
+            color: var(--login-ink);
+            font-size: 1.6rem;
+            line-height: 1.2;
+            margin-bottom: 8px;
+            letter-spacing: 0;
+        }
+
+        .login-card-header p {
+            color: var(--login-muted);
+            font-size: 0.92rem;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-group label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--login-ink);
+            font-size: 0.84rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .form-group label i {
+            width: 15px;
+            height: 15px;
+            color: var(--login-accent);
+        }
+
+        .input-shell {
+            position: relative;
+        }
+
+        .input-shell input {
+            width: 100%;
+            min-height: 48px;
+            border: 1px solid var(--login-line);
+            border-radius: 10px;
+            background: var(--login-panel-solid);
+            color: var(--login-ink);
+            font-size: 0.98rem;
+            padding: 12px 14px;
+            outline: none;
+            transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+        }
+
+        .input-shell input::placeholder {
+            color: var(--login-placeholder);
+        }
+
+        .input-shell input:focus {
+            border-color: var(--login-accent);
+            box-shadow: 0 0 0 4px var(--login-accent-soft);
+        }
+
+        .password-input input {
+            padding-right: 48px;
+        }
+
+        .password-toggle {
+            position: absolute;
+            right: 7px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 36px;
+            height: 36px;
+            display: grid;
+            place-items: center;
+            border: 0;
+            border-radius: 8px;
+            color: var(--login-muted);
+            background: transparent;
+            cursor: pointer;
+            transition: background 0.18s ease, color 0.18s ease;
+        }
+
+        .password-toggle:hover {
+            color: var(--login-accent);
+            background: var(--login-accent-soft);
+        }
+
+        .password-toggle i {
+            width: 18px;
+            height: 18px;
+        }
+
+        .btn-login {
+            width: 100%;
+            min-height: 50px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 6px;
+            border: 0;
+            border-radius: 10px;
+            background: var(--login-accent);
+            color: #ffffff;
+            font-size: 0.98rem;
+            font-weight: 800;
+            cursor: pointer;
+            transition: transform 0.18s ease, filter 0.18s ease, box-shadow 0.18s ease;
+            box-shadow: 0 14px 30px var(--login-accent-soft);
+        }
+
+        .btn-login:hover {
+            transform: translateY(-1px);
+            filter: brightness(1.04);
+        }
+
+        .btn-login:disabled {
+            cursor: wait;
+            opacity: 0.76;
+            transform: none;
+        }
+
+        .btn-login i {
+            width: 18px;
+            height: 18px;
+        }
+
+        .button-spinner {
+            width: 18px;
+            height: 18px;
+            display: none;
+            border: 2px solid rgba(255, 255, 255, 0.38);
+            border-top-color: #ffffff;
+            border-radius: 999px;
+        }
+
+        .btn-login.is-loading .button-spinner {
+            display: inline-block;
+        }
+
+        .btn-login.is-loading .button-icon {
+            display: none;
+        }
+
+        .spin {
+            animation: login-spin 0.8s linear infinite;
+        }
+
+        @keyframes login-spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .error-msg {
+            min-height: 20px;
+            display: none;
+            align-items: center;
+            gap: 8px;
+            color: var(--login-danger);
+            background: rgba(220, 38, 38, 0.08);
+            border: 1px solid rgba(220, 38, 38, 0.18);
+            border-radius: 10px;
+            padding: 10px 12px;
+            font-size: 0.86rem;
+            font-weight: 700;
+            margin-top: 14px;
+        }
+
+        .error-msg.show {
+            display: flex;
+        }
+
+        .login-footer {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--login-muted);
+            font-size: 0.78rem;
+            margin-top: 18px;
+        }
+
+        .login-footer i {
+            width: 15px;
+            height: 15px;
+            color: var(--login-warning);
+        }
+
+        .login-loading {
+            position: fixed;
+            inset: 0;
+            z-index: 50;
+            display: grid;
+            place-items: center;
+            padding: 24px;
+            background: rgba(240, 244, 248, 0.82);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.22s ease;
+        }
+
+        body[data-theme="dark"] .login-loading,
+        body.dark-neon .login-loading {
+            background: rgba(17, 19, 24, 0.78);
+        }
+
+        .login-loading.show {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .loading-card {
+            width: min(420px, 100%);
+            border: 1px solid var(--login-line);
+            border-radius: 16px;
+            background: var(--login-panel);
+            box-shadow: var(--login-shadow);
+            padding: 24px;
+        }
+
+        .loading-head {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 18px;
+        }
+
+        .loading-icon {
+            width: 46px;
+            height: 46px;
+            display: grid;
+            place-items: center;
+            border-radius: 12px;
+            color: #ffffff;
+            background: var(--login-accent);
+            box-shadow: 0 14px 30px var(--login-accent-soft);
+        }
+
+        .loading-icon i {
+            width: 22px;
+            height: 22px;
+        }
+
+        .loading-head h3 {
+            color: var(--login-ink);
+            font-size: 1.08rem;
+            line-height: 1.2;
+            margin: 0 0 4px;
+        }
+
+        .loading-head p {
+            color: var(--login-muted);
+            font-size: 0.86rem;
+            margin: 0;
+        }
+
+        .loading-track {
+            height: 10px;
+            overflow: hidden;
+            border-radius: 999px;
+            background: rgba(148, 163, 184, 0.2);
+            border: 1px solid var(--login-line);
+        }
+
+        .loading-fill {
+            width: 0%;
+            height: 100%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, var(--login-accent), #818cf8);
+            transition: width 0.28s ease;
+        }
+
+        .loading-meta {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            color: var(--login-muted);
+            font-size: 0.8rem;
+            font-weight: 700;
+            margin-top: 10px;
+        }
+
+        @media (max-width: 820px) {
+            body {
+                display: block;
+                padding: 18px;
+            }
+
+            .login-shell {
+                grid-template-columns: 1fr;
+            }
+
+            .login-info {
+                min-height: auto;
+                padding: 28px;
+                border-right: 0;
+                border-bottom: 1px solid var(--login-line);
+            }
+
+            .login-copy {
+                margin-top: 34px;
+            }
+
+            .status-strip {
+                margin-top: 26px;
+            }
+
+            .login-card {
+                padding: 28px;
+            }
+        }
+
+        @media (max-width: 520px) {
+            body {
+                padding: 12px;
+            }
+
+            .login-shell {
+                border-radius: 14px;
+            }
+
+            .login-info,
+            .login-card {
+                padding: 22px;
+            }
+
+            .status-strip {
+                grid-template-columns: 1fr;
+            }
+
+            .login-copy h1 {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <main class="login-shell" aria-label="Login do painel">
+        <section class="login-info" aria-label="Resumo do painel">
+            <div>
+                <div class="brand-mark">
+                    <span class="brand-icon"><i data-lucide="square-terminal"></i></span>
+                    <span>Termux <b>cPanel</b></span>
+                </div>
+
+                <div class="login-copy">
+                    <span class="eyebrow"><i data-lucide="shield-check"></i> Acesso protegido</span>
+                    <h1>Entre no painel de gerenciamento</h1>
+                    <p>Controle seu servidor, serviços, arquivos, bancos e atualizações em uma área administrativa centralizada.</p>
+                </div>
+            </div>
+
+            <div class="status-strip" aria-label="Recursos principais">
+                <div class="status-pill">
+                    <i data-lucide="server-cog"></i>
+                    <span>Sistema</span>
+                    <strong>Serviços</strong>
+                </div>
+                <div class="status-pill">
+                    <i data-lucide="database"></i>
+                    <span>Banco</span>
+                    <strong>MariaDB</strong>
+                </div>
+                <div class="status-pill">
+                    <i data-lucide="download-cloud"></i>
+                    <span>Painel</span>
+                    <strong>Atualizações</strong>
+                </div>
+            </div>
+        </section>
+
+        <section class="login-card" aria-label="Formulário de entrada">
+            <div class="login-card-header">
+                <h2>Bem-vindo de volta</h2>
+                <p>Use suas credenciais para continuar.</p>
+            </div>
+
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="username"><i data-lucide="user-round"></i> Usuário</label>
+                    <div class="input-shell">
+                        <input type="text" id="username" name="username" placeholder="Digite seu usuário" autocomplete="username" required autofocus>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="password"><i data-lucide="lock-keyhole"></i> Senha</label>
+                    <div class="input-shell password-input">
+                        <input type="password" id="password" name="password" placeholder="Digite sua senha" autocomplete="current-password" required>
+                        <button type="button" class="password-toggle" id="passwordToggle" aria-label="Mostrar senha" title="Mostrar senha">
+                            <i data-lucide="eye"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn-login" id="loginButton">
+                    <span class="button-spinner spin" aria-hidden="true"></span>
+                    <span class="button-icon" aria-hidden="true"><i data-lucide="log-in"></i></span>
+                    <span>Acessar painel</span>
+                </button>
+
+                <div id="errorMsg" class="error-msg" role="alert">
+                    <i data-lucide="circle-alert"></i>
+                    <span>Usuário ou senha incorretos.</span>
+                </div>
+            </form>
+
+            <div class="login-footer">
+                <i data-lucide="key-round"></i>
+                <span>As credenciais podem ser alteradas nas configurações do painel.</span>
+            </div>
+        </section>
+    </main>
+
+    <div class="login-loading" id="loginLoading" aria-live="polite" aria-hidden="true">
+        <div class="loading-card">
+            <div class="loading-head">
+                <span class="loading-icon"><i data-lucide="shield-check"></i></span>
+                <div>
+                    <h3 id="loadingTitle">Entrando no painel</h3>
+                    <p id="loadingStep">Validando credenciais...</p>
+                </div>
+            </div>
+            <div class="loading-track" aria-hidden="true">
+                <div class="loading-fill" id="loadingFill"></div>
+            </div>
+            <div class="loading-meta">
+                <span id="loadingHint">Preparando sessão segura</span>
+                <strong id="loadingPercent">0%</strong>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const savedTheme = localStorage.getItem('cpanel-theme') || 'light';
+        document.body.setAttribute('data-theme', savedTheme);
+
+        const passwordInput = document.getElementById('password');
+        const passwordToggle = document.getElementById('passwordToggle');
+        const loginButton = document.getElementById('loginButton');
+        const errorMsg = document.getElementById('errorMsg');
+        const errorText = errorMsg.querySelector('span');
+        const loginLoading = document.getElementById('loginLoading');
+        const loadingFill = document.getElementById('loadingFill');
+        const loadingPercent = document.getElementById('loadingPercent');
+        const loadingStep = document.getElementById('loadingStep');
+        const loadingHint = document.getElementById('loadingHint');
+        let loadingTimer = null;
+        let loadingProgress = 0;
+
+        const loadingSteps = [
+            { at: 12, step: 'Validando credenciais...', hint: 'Conectando ao servidor' },
+            { at: 34, step: 'Conferindo permissões...', hint: 'Protegendo sua sessão' },
+            { at: 58, step: 'Carregando preferências...', hint: 'Sincronizando o painel' },
+            { at: 78, step: 'Preparando dashboard...', hint: 'Quase pronto' },
+            { at: 92, step: 'Abrindo painel...', hint: 'Finalizando entrada' }
+        ];
+
+        function refreshIcons() {
+            if (window.lucide) lucide.createIcons();
+        }
+
+        function showError(message) {
+            errorText.textContent = message;
+            errorMsg.classList.add('show');
+            refreshIcons();
+        }
+
+        function setLoading(isLoading) {
+            loginButton.disabled = isLoading;
+            loginButton.classList.toggle('is-loading', isLoading);
+            loginButton.querySelector('span:last-child').textContent = isLoading ? 'Entrando...' : 'Acessar painel';
+        }
+
+        function updateLoading(progress) {
+            loadingProgress = Math.max(0, Math.min(100, Math.round(progress)));
+            loadingFill.style.width = `${loadingProgress}%`;
+            loadingPercent.textContent = `${loadingProgress}%`;
+
+            const currentStep = loadingSteps
+                .slice()
+                .reverse()
+                .find((item) => loadingProgress >= item.at) || loadingSteps[0];
+
+            loadingStep.textContent = currentStep.step;
+            loadingHint.textContent = currentStep.hint;
+        }
+
+        function startSmartLoading() {
+            clearInterval(loadingTimer);
+            loginLoading.classList.add('show');
+            loginLoading.setAttribute('aria-hidden', 'false');
+            updateLoading(8);
+
+            loadingTimer = setInterval(() => {
+                const remaining = 92 - loadingProgress;
+                const increment = Math.max(1, Math.ceil(remaining * 0.12));
+                updateLoading(Math.min(92, loadingProgress + increment));
+
+                if (loadingProgress >= 92) {
+                    clearInterval(loadingTimer);
+                }
+            }, 260);
+        }
+
+        function stopSmartLoading() {
+            clearInterval(loadingTimer);
+            updateLoading(0);
+            loginLoading.classList.remove('show');
+            loginLoading.setAttribute('aria-hidden', 'true');
+        }
+
+        function finishSmartLoading() {
+            clearInterval(loadingTimer);
+            updateLoading(100);
+            loadingStep.textContent = 'Acesso autorizado.';
+            loadingHint.textContent = 'Abrindo painel agora';
+        }
+
+        passwordToggle.addEventListener('click', () => {
+            const isPassword = passwordInput.type === 'password';
+            passwordInput.type = isPassword ? 'text' : 'password';
+            passwordToggle.setAttribute('aria-label', isPassword ? 'Ocultar senha' : 'Mostrar senha');
+            passwordToggle.setAttribute('title', isPassword ? 'Ocultar senha' : 'Mostrar senha');
+            passwordToggle.innerHTML = `<i data-lucide="${isPassword ? 'eye-off' : 'eye'}"></i>`;
+            refreshIcons();
+        });
+
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const user = document.getElementById('username').value.trim();
+            const pass = passwordInput.value;
+
+            errorMsg.classList.remove('show');
+            setLoading(true);
+            startSmartLoading();
+            let authenticated = false;
+
+            try {
+                const res = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user, pass })
+                });
+
+                const data = await res.json();
+                if (data.success) {
+                    authenticated = true;
+                    finishSmartLoading();
+                    setTimeout(() => {
+                        sessionStorage.setItem('skipBootOverlayOnce', '1');
+                        window.location.href = '/index.html';
+                    }, 420);
+                    return;
+                }
+
+                stopSmartLoading();
+                showError(data.error || 'Usuário ou senha incorretos.');
+            } catch (err) {
+                stopSmartLoading();
+                showError('Erro de conexão com o servidor.');
+            } finally {
+                if (!authenticated) {
+                    setLoading(false);
+                }
+            }
+        });
+
+        refreshIcons();
+    </script>
+</body>
+</html>

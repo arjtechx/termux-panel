@@ -108,6 +108,9 @@
                 <a href="#" class="nav-link" data-target="tab-noip">
                     <i data-lucide="wifi"></i> NO-IP IPv6
                 </a>
+                <a href="#" class="nav-link" data-target="tab-cloudflared">
+                    <i data-lucide="cloud"></i> Cloudflared Manager
+                </a>
                 <a href="#" class="nav-link" data-target="tab-logs">
                     <i data-lucide="scroll-text"></i> Logs
                 </a>
@@ -986,6 +989,96 @@
                 </div>
             </div>
 
+            <!-- === TAB: CLOUDFLARED === -->
+            <div id="tab-cloudflared" class="tab-pane">
+                <div class="page-header">
+                    <div>
+                        <h1>Cloudflared Manager</h1>
+                        <p style="color:var(--text-muted); font-size:0.875rem; margin-top:2px;">Controle de Cloudflare Tunnel integrado ao painel.</p>
+                    </div>
+                    <div class="toolbar-group">
+                        <button class="btn btn-secondary btn-sm" onclick="cloudflaredLogin()">
+                            <i data-lucide="key-round"></i> Login Cloudflare
+                        </button>
+                        <button class="btn btn-primary btn-sm" onclick="showCloudflaredCreate()">
+                            <i data-lucide="plus"></i> Novo Tunel
+                        </button>
+                        <button class="btn btn-secondary btn-sm" onclick="fetchCloudflaredTunnels()">
+                            <i data-lucide="refresh-cw"></i> Atualizar
+                        </button>
+                    </div>
+                </div>
+
+                <div class="stats-grid" style="margin-bottom:20px;">
+                    <div class="stat-card"><span class="card-label">Online</span><strong id="cf-stat-online">0</strong></div>
+                    <div class="stat-card"><span class="card-label">Offline</span><strong id="cf-stat-offline">0</strong></div>
+                    <div class="stat-card"><span class="card-label">Total</span><strong id="cf-stat-total">0</strong></div>
+                </div>
+
+                <form id="cloudflaredCreateForm" class="card hidden" onsubmit="createCloudflaredTunnel(event)" style="margin-bottom:20px;">
+                    <h3 class="card-title">Criar Tunel</h3>
+                    <div class="form-row">
+                        <input type="text" id="cfName" placeholder="Nome" required>
+                        <input type="text" id="cfDomain" placeholder="dominio.com.br" required>
+                        <select id="cfType" required>
+                            <option value="HTTP">HTTP</option>
+                            <option value="HTTPS">HTTPS</option>
+                            <option value="TCP">TCP</option>
+                            <option value="SSH">SSH</option>
+                            <option value="RDP">RDP</option>
+                            <option value="FTP">FTP</option>
+                            <option value="SFTP">SFTP</option>
+                            <option value="MYSQL">MYSQL</option>
+                            <option value="POSTGRES">POSTGRES</option>
+                            <option value="CUSTOM">CUSTOM</option>
+                        </select>
+                        <input type="text" id="cfLocalHost" placeholder="Host local" value="127.0.0.1" required>
+                        <input type="number" id="cfLocalPort" placeholder="Porta local" min="1" max="65535" required>
+                        <input type="text" id="cfPath" placeholder="/path opcional">
+                    </div>
+                    <label style="display:flex; align-items:center; gap:8px; margin-top:12px; font-size:0.85rem;">
+                        <input type="checkbox" id="cfAutoRestart" checked> Reiniciar automaticamente
+                    </label>
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-success btn-sm">
+                            <i data-lucide="save"></i> Criar
+                        </button>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="showCloudflaredCreate(false)">Cancelar</button>
+                    </div>
+                </form>
+
+                <div class="table-card" style="margin-bottom:20px;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Nome</th>
+                                <th>Status</th>
+                                <th>URL Publica</th>
+                                <th>Servico Local</th>
+                                <th>Uptime</th>
+                                <th>PID</th>
+                                <th>Acoes</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cloudflaredTunnelsBody">
+                            <tr><td colspan="7">Carregando...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="two-col">
+                    <div class="card">
+                        <h3 class="card-title">Logs do Tunel</h3>
+                        <div id="cloudflaredSelectedTunnel" class="text-muted" style="font-size:0.8rem; margin-bottom:10px;">Selecione um tunel para acompanhar.</div>
+                        <div id="cloudflaredLogBox" class="terminal-box" style="height:320px;">Aguardando...</div>
+                    </div>
+                    <div class="card">
+                        <h3 class="card-title">Login Cloudflare</h3>
+                        <div id="cloudflaredLoginBox" class="terminal-box" style="height:320px;">Use "Login Cloudflare" para iniciar.</div>
+                    </div>
+                </div>
+            </div>
+
             <!-- === TAB: LOGS === -->
             <div id="tab-logs" class="tab-pane">
                 <div class="page-header">
@@ -1205,8 +1298,8 @@
         <a href="#" class="mobile-nav-item" data-target="tab-database">
             <i data-lucide="database"></i><span>Banco</span>
         </a>
-        <a href="#" class="mobile-nav-item" data-target="tab-logs">
-            <i data-lucide="scroll-text"></i><span>Logs</span>
+        <a href="#" class="mobile-nav-item" data-target="tab-cloudflared">
+            <i data-lucide="cloud"></i><span>Tuneis</span>
         </a>
     </nav>
 
@@ -1251,7 +1344,7 @@
 </div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.10"></script>
+<script src="filemanager.js?v=0.2.16"></script>
 <script src="app.js?v=4.0"></script>
 </body>
 </html>

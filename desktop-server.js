@@ -178,7 +178,7 @@ function startPublishing(res, params) {
         if (params.localBackup) {
             steps.push({
                 desc: 'Gerando pacote local termux-panel-dist.tar.gz...',
-                cmd: `tar.exe -czvf termux-panel-dist.tar.gz --exclude=node_modules --exclude=config --exclude=backups --exclude=.git --exclude=*.tar.gz *`
+                cmd: `tar.exe -czvf termux-panel-dist.tar.gz --exclude=node_modules --exclude=config --exclude=backups --exclude=.git --exclude=*.tar.gz --exclude=logs *`
             });
         }
 

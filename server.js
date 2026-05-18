@@ -123,6 +123,9 @@ app.use('/api/nginx', nginxRoutes);
 const noipRoutes = require('./src/routes/noipRoutes')(io);
 app.use('/api/noip', noipRoutes);
 
+const cloudflaredRoutes = require('./modules/cloudflared/routes')(io);
+app.use('/api', cloudflaredRoutes);
+
 const systemRoutes = require('./src/routes/systemRoutes');
 app.use('/', systemRoutes);
 
@@ -463,5 +466,4 @@ server.once('listening', () => {
 });
 
 server.listen(PORT, '0.0.0.0');
-
 
