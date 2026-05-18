@@ -723,6 +723,40 @@ router.get('/api/update/install', async (req, res) => {
 
         setTimeout(() => {
             console.log('Painel atualizado. Reiniciando...');
+            try {
+                // Assegura que a pasta logs existe
+                const logsDir = path.join(__dirname, '..', '..', 'logs');
+                if (!fs.existsSync(logsDir)) {
+                    fs.mkdirSync(logsDir, { recursive: true });
+                }
+                const logFile = path.join(logsDir, 'panel-restart.log');
+                const out = fs.openSync(logFile, 'a');
+
+                const startScript = path.join(__dirname, '..', '..', 'scripts', 'start.sh');
+                
+                console.log('Iniciando processo desvinculado de start.sh...');
+                const child = spawn('bash', [startScript], {
+                    detached: true,
+                    stdio: ['ignore', out, out]
+                });
+                child.unref();
+            } catch(e) {
+                console.log('Falha ao iniciar start.sh, tentando server.js...', e.message);
+                try {
+                    const logsDir = path.join(__dirname, '..', '..', 'logs');
+                    const logFile = path.join(logsDir, 'panel-restart.log');
+                    const out = fs.openSync(logFile, 'a');
+                    const serverJs = path.join(__dirname, '..', '..', 'server.js');
+                    
+                    const child = spawn('node', [serverJs], {
+                        detached: true,
+                        stdio: ['ignore', out, out]
+                    });
+                    child.unref();
+                } catch(errSpawn) {
+                    console.log('Falha ao iniciar server.js em background:', errSpawn.message);
+                }
+            }
             process.exit(0);
         }, 1500);
 
