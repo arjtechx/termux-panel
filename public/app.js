@@ -432,7 +432,7 @@ async function killProcess(pid) {
 }
 
 // ============================================================
-//  GERENCIADOR DE ARQUIVOS — corrigido e completo
+//  GERENCIADOR DE ARQUIVOS — Stubs removidos (gerenciado por filemanager.js)
 // ============================================================
 
 function formatSize(bytes) {
@@ -447,22 +447,7 @@ function formatDate(mtime) {
     return new Date(mtime).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' });
 }
 
-// Monta o caminho absoluto de forma segura
-function filePath(name) {
-    return currentDir.replace(/\/$/, '') + '/' + name;
-}
-
-async function loadFiles(dir) {
-    // O FileBrowser embutido autogerencia o carregamento.
-}
-
-function fbNavigate(path) {
-    const iframe = document.getElementById('iframe-filebrowser');
-    if (iframe) {
-        // FileBrowser navega nas pastas mudando o caminho da URL
-        iframe.src = `/__filebrowser/files${path}`;
-    }
-}
+// loadFiles() e fbNavigate() são definidos em filemanager.js — NÃO redefina aqui!
 // ============================================================
 //  BANCO DE DADOS — Módulo Completo
 // ============================================================
