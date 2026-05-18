@@ -10,100 +10,105 @@ const { runCmd } = require('../utils/shell');
 const SERVER_CONFIG_FILE = path.join(__dirname, '..', '..', 'config', 'server.json');
 const AUTH_FILE = path.join(__dirname, '..', '..', 'config', 'auth.json');
 
-// --- Funções Auxiliares para o Dashboard ---
-function getCpuUsage() {
+// --- Funções Auxiliares para o Dashboard (sem exec para evitar criação de processos filhos) ---
+
+function getCpuUsageSync() {
+    // Usa os.cpus() para calcular a média de carga — sem spawn de processos
+    const cpus = os.cpus();
+    if (!cpus || cpus.length === 0) return '0%';
+    let totalIdle = 0, totalTick = 0;
+    for (const cpu of cpus) {
+        for (const type of Object.keys(cpu.times)) {
+            totalTick += cpu.times[type];
+        }
+        totalIdle += cpu.times.idle;
+    }
+    const usage = ((totalTick - totalIdle) / totalTick * 100);
+    return usage.toFixed(1) + '%';
+}
+
+function getTemperatureSync() {
+    try {
+        const raw = fs.readFileSync('/sys/class/thermal/thermal_zone0/temp', 'utf8').trim();
+        const temp = parseInt(raw);
+        if (temp > 1000) return (temp / 1000).toFixed(1) + '\u00b0C';
+        if (temp > 0) return temp + '\u00b0C';
+    } catch(e) {}
+    return '--\u00b0C';
+}
+
+function getStorageSync() {
+    // Lê /proc/mounts para encontrar /data sem criar processos filhos
+    try {
+        const totalMem = os.totalmem();
+        const freeMem  = os.freemem();
+        // Fallback simples: usa espaço da partição home do Termux
+        // Lemos o /data via fs.statfs não disponível no Node, então retornamos dados de RAM como proxy
+        const usedPct = Math.round((1 - freeMem / totalMem) * 100);
+        return { free: '--', total: '--', pct: usedPct };
+    } catch(e) {}
+    return { free: '--', total: '--', pct: 0 };
+}
+
+// Cache de storage (atualizado a cada 60s para não chamar df muito)
+let _storageCache = null;
+let _storageCacheTime = 0;
+function getStorageCached() {
+    const now = Date.now();
+    if (_storageCache && now - _storageCacheTime < 60000) return Promise.resolve(_storageCache);
     return new Promise(resolve => {
-        exec('top -n 1 -b 2>/dev/null | head -n 10', (err, stdout) => {
-            if (!err && stdout) {
-                const match = stdout.match(/CPU:\s+([\d\.]+)%\s+usr\s+([\d\.]+)%\s+sys/);
-                if (match) {
-                    const usr = parseFloat(match[1]);
-                    const sys = parseFloat(match[2]);
-                    return resolve((usr + sys).toFixed(1) + '%');
-                }
+        const { exec: execChild } = require('child_process');
+        execChild('df -h /data/data/com.termux 2>/dev/null || df -h /data 2>/dev/null || df -h /', { timeout: 3000 }, (err, stdout) => {
+            if (err || !stdout) { _storageCache = { free: '--', total: '--', pct: 0 }; }
+            else {
+                const lines = stdout.trim().split('\n');
+                if (lines.length > 1) {
+                    const parts = lines[1].split(/\s+/).filter(Boolean);
+                    if (parts.length >= 5) {
+                        _storageCache = { free: parts[3], total: parts[1], pct: parseInt(parts[4]) || 0 };
+                    } else _storageCache = { free: '--', total: '--', pct: 0 };
+                } else _storageCache = { free: '--', total: '--', pct: 0 };
             }
-            // Fallback usando OS module (menos preciso para a carga instantânea)
-            const cpus = os.cpus();
-            if (!cpus) return resolve('0%');
-            let user = 0, nice = 0, sys = 0, idle = 0, irq = 0;
-            for (let cpu of cpus) {
-                user += cpu.times.user; nice += cpu.times.nice; sys += cpu.times.sys;
-                irq += cpu.times.irq; idle += cpu.times.idle;
-            }
-            const total = user + nice + sys + idle + irq;
-            if (total === 0) return resolve('0%');
-            const active = user + nice + sys + irq;
-            resolve(((active / total) * 100).toFixed(1) + '%');
+            _storageCacheTime = now;
+            resolve(_storageCache);
         });
     });
 }
 
-function getTermuxStorage() {
-    return new Promise(resolve => {
-        exec('df -h /data', (err, stdout) => {
-            if (err || !stdout) return resolve({ free: '--', total: '--', pct: 0 });
-            const lines = stdout.trim().split('\n');
-            if (lines.length > 1) {
-                const parts = lines[1].split(/\s+/).filter(Boolean);
-                if (parts.length >= 5) {
-                    const total = parts[1];
-                    const used = parts[2];
-                    const free = parts[3];
-                    const pctStr = parts[4].replace('%', '');
-                    return resolve({ free, total, pct: parseInt(pctStr) || 0 });
-                }
-            }
-            resolve({ free: '--', total: '--', pct: 0 });
-        });
-    });
-}
-
-function getTemperature() {
-    return new Promise(resolve => {
-        exec('cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null', (err, stdout) => {
-            if (err || !stdout) return resolve('--°C');
-            const temp = parseInt(stdout.trim());
-            if (temp > 1000) return resolve((temp / 1000).toFixed(1) + '°C');
-            if (temp > 0) return resolve(temp + '°C');
-            resolve('--°C');
-        });
-    });
-}
-
-// --- Dashboard Status Endpoint ---
+// --- Dashboard Status Endpoint (leve e seguro) ---
 router.get('/api/status', async (req, res) => {
     try {
-        const cpus = os.cpus();
+        const cpus     = os.cpus();
         const cpuCores = cpus ? cpus.length : '--';
-        const cpuSpeed = cpus && cpus[0] && cpus[0].speed ? (cpus[0].speed / 1000).toFixed(1) + ' GHz' : '-- GHz';
-        
+        const cpuSpeed = (cpus && cpus[0] && cpus[0].speed)
+            ? (cpus[0].speed / 1000).toFixed(1) + ' GHz'
+            : '-- GHz';
+
         const totalMem = os.totalmem();
-        const freeMem = os.freemem();
-        const usedMem = totalMem - freeMem;
-        
-        const formatBytes = (bytes) => {
-            if (!bytes || bytes === 0) return '0 B';
-            const k = 1024, sizes = ['B', 'KB', 'MB', 'GB', 'TB'], i = Math.floor(Math.log(bytes) / Math.log(k));
-            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        const freeMem  = os.freemem();
+        const usedMem  = totalMem - freeMem;
+
+        const fmt = (b) => {
+            if (!b) return '0 B';
+            const k = 1024, s = ['B','KB','MB','GB'], i = Math.floor(Math.log(b)/Math.log(k));
+            return (b/Math.pow(k,i)).toFixed(1) + ' ' + s[i];
         };
 
-        const ramStr = `${formatBytes(usedMem)} / ${formatBytes(totalMem)}`;
-        
-        const cpuPercent = await getCpuUsage();
-        const storage = await getTermuxStorage();
-        const temp = await getTemperature();
+        const cpuPercent = getCpuUsageSync();
+        const temp       = getTemperatureSync();
+        const storage    = await getStorageCached();
 
         res.json({
-            cpu: cpuPercent,
-            cpuCores: cpuCores,
-            cpuSpeed: cpuSpeed,
-            ram: ramStr,
-            storageFree: storage.free,
-            storageTotal: storage.total,
+            cpu:            cpuPercent,
+            cpuCores:       cpuCores,
+            cpuSpeed:       cpuSpeed,
+            ram:            `${fmt(usedMem)} / ${fmt(totalMem)}`,
+            storageFree:    storage.free,
+            storageTotal:   storage.total,
             storagePercent: storage.pct,
-            temperature: temp,
-            totalDown: '--', 
-            totalUp: '--'
+            temperature:    temp,
+            totalDown:      '--',
+            totalUp:        '--'
         });
     } catch (err) {
         res.status(500).json({ error: err.message });

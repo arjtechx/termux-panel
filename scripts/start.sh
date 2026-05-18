@@ -193,7 +193,7 @@ fi
 
 # Loop de auto-restart com limite de memória para evitar OOM Killer do Android
 while true; do
-    node --max-old-space-size=512 "$PANEL_DIR/server.js"
+    node --max-old-space-size=128 "$PANEL_DIR/server.js"
     EXIT_CODE=$?
     if [ $EXIT_CODE -eq 137 ]; then
         warn "Servidor encerrado pelo OOM Killer (sem memória). Aguardando 10s..."

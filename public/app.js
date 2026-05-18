@@ -79,10 +79,10 @@ async function runBootSequence() {
     clearTimeout(bootFailsafe);
     setTimeout(() => {
         bootDone();
-        // Inicia polling após o boot
-        setInterval(fetchStatus,    5000);
-        setInterval(fetchApps,     15000);
-        setInterval(fetchProcesses, 10000);
+        // Inicia polling após o boot — intervalos conservadores para economizar memória no Android
+        setInterval(fetchStatus,    30000);  // a cada 30s (exec shell pesado)
+        setInterval(fetchApps,     30000);  // a cada 30s
+        setInterval(fetchProcesses, 30000); // a cada 30s
     }, 400);
 }
 
