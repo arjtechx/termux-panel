@@ -112,7 +112,7 @@ router.get('/api/system/update/check', async (req, res) => {
                 if (!hasUpdate) {
                     // Mesmo número de versão: verifica se o release é mais novo
                     const publishedAt = new Date(resp.data.published_at || 0);
-                    const localStat = fs.statSync(path.join(__dirname, 'server.js'));
+                    const localStat = fs.statSync(path.join(BASE_DIR, 'server.js'));
                     hasUpdate = publishedAt > localStat.mtime;
                 }
             } catch(e) {
@@ -154,7 +154,7 @@ router.get('/api/system/update/check', async (req, res) => {
         }
 
         // Método 2: Git local
-        const isGit = fs.existsSync(path.join(__dirname, '.git'));
+        const isGit = fs.existsSync(path.join(BASE_DIR, '.git'));
         if (updateMethod === 'manual' && isGit) {
             updateMethod = 'git';
             try {
@@ -184,7 +184,7 @@ router.get('/api/system/update/check', async (req, res) => {
 router.get('/api/system/update/versions', async (req, res) => {
     try {
         const config = getUpdateConfig();
-        const pjson = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+        const pjson = JSON.parse(fs.readFileSync(path.join(BASE_DIR, 'package.json'), 'utf8'));
         const currentVersion = pjson.version || '1.0.0';
 
         if (!config.github_repo || !config.github_repo.includes('/')) {
@@ -240,7 +240,7 @@ router.get('/api/system/update/versions', async (req, res) => {
         // FALLBACK: se a API do GitHub falhar (rate limit ou DNS), usa git ls-remote para listar as tags de forma segura!
         try {
             const config = getUpdateConfig();
-            const pjson = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+            const pjson = JSON.parse(fs.readFileSync(path.join(BASE_DIR, 'package.json'), 'utf8'));
             const currentVersion = pjson.version || '1.0.0';
             const gitUrl = `https://github.com/${config.github_repo}.git`;
             
@@ -340,7 +340,7 @@ function compareSemver(v1, v2) {
     return 0;
 }
 
-const UPDATE_CACHE_FILE = path.join(__dirname, 'config', 'update-cache.json');
+const UPDATE_CACHE_FILE = path.join(BASE_DIR, 'config', 'update-cache.json');
 
 function readUpdateCache() {
     try {
@@ -363,7 +363,7 @@ function writeUpdateCache(data) {
 // GET /api/update/status
 router.get('/api/update/status', async (req, res) => {
     try {
-        const pjson = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+        const pjson = JSON.parse(fs.readFileSync(path.join(BASE_DIR, 'package.json'), 'utf8'));
         const installed = pjson.version || '0.0.2';
         const config = getUpdateConfig();
         const repo = config.github_repo || 'arjtechx/termux-panel';
@@ -422,7 +422,7 @@ router.get('/api/update/status', async (req, res) => {
 router.get('/api/update/releases', async (req, res) => {
     try {
         const config = getUpdateConfig();
-        const pjson = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+        const pjson = JSON.parse(fs.readFileSync(path.join(BASE_DIR, 'package.json'), 'utf8'));
         const installed = pjson.version || '0.0.2';
         const repo = config.github_repo || 'arjtechx/termux-panel';
 
