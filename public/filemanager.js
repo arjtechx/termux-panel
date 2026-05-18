@@ -174,6 +174,7 @@ function renderListView() {
         const icon = getIconMarkup(f);
         const isSelected = isFileSelected(f.name);
         const isEdit = f.editable;
+        const isArc = !f.isDir && ['zip', 'tar', 'gz', 'bz2', 'xz'].includes(getFileExt(f.name));
         
         html += `
         <tr class="fm-row ${isSelected ? 'fm-selected' : ''}" onclick="toggleRowSelect(event, ${idx})" ondblclick="handleRowDblClick(${idx})">
@@ -194,6 +195,7 @@ function renderListView() {
             <td class="fm-muted">${fmDate(f.mtime)}</td>
             <td style="text-align:right;">
                 <div class="fm-row-actions">
+                    ${isArc ? `<button class="fm-ico" title="Descompactar" onclick="event.stopPropagation(); fmExtractFile('${escapePath(fullPath)}')"><i data-lucide="package-open"></i></button>` : ''}
                     ${!f.isDir ? `<a href="/api/files/download?path=${encodeURIComponent(fullPath)}" class="fm-ico" title="Download" target="_blank" onclick="event.stopPropagation();"><i data-lucide="download"></i></a>` : ''}
                     ${isEdit ? `<button class="fm-ico" title="Editar" onclick="event.stopPropagation(); fmOpenEditor('${escapePath(fullPath)}')"><i data-lucide="edit-3"></i></button>` : ''}
                     <button class="fm-ico" title="Mais opções" onclick="event.stopPropagation(); showContextMenuAtEvent(event, ${idx})"><i data-lucide="more-vertical"></i></button>
@@ -353,6 +355,7 @@ function updateDetailsPanel(file) {
     const fullPath = getFullPath(file.name);
     const isEdit = file.editable;
     const isImg = !file.isDir && ['png', 'jpg', 'jpeg', 'gif', 'webp', 'ico', 'svg'].includes(getFileExt(file.name));
+    const isArc = !file.isDir && ['zip', 'tar', 'gz', 'bz2', 'xz'].includes(getFileExt(file.name));
 
     panel.innerHTML = `
     <div class="fm-detail-icon ${getFileIconClass(file)}">
@@ -367,6 +370,7 @@ function updateDetailsPanel(file) {
     <div class="fm-detail-line"><span>Modificado:</span><b>${fmDate(file.mtime)}</b></div>
 
     <div class="fm-detail-actions">
+        ${isArc ? `<button class="btn btn-primary" onclick="fmExtractFile('${escapePath(fullPath)}')"><i data-lucide="package-open"></i> Descompactar</button>` : ''}
         ${isEdit ? `<button class="btn btn-primary" onclick="fmOpenEditor('${escapePath(fullPath)}')"><i data-lucide="edit"></i> Editar</button>` : ''}
         ${isImg ? `<button class="btn btn-primary" onclick="fmShowImagePreview('${escapePath(fullPath)}', '${escapePath(file.name)}')"><i data-lucide="eye"></i> Preview</button>` : ''}
         ${!file.isDir ? `<a href="/api/files/download?path=${encodeURIComponent(fullPath)}" class="btn btn-secondary" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:6px;" target="_blank"><i data-lucide="download"></i> Baixar</a>` : ''}
