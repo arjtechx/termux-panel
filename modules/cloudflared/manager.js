@@ -162,6 +162,7 @@ function startLogin(io) {
         const found = (text.match(/https:\/\/[^\s]+/i) || [])[0];
         if (found && !loginUrl) {
             loginUrl = found;
+            if (io) io.emit('cloudflared-login-url', loginUrl);
             const opener = process.env.PREFIX ? 'termux-open-url' : 'xdg-open';
             spawn(opener, [loginUrl], { detached: true, stdio: 'ignore' }).on('error', () => {});
         }

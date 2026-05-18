@@ -196,6 +196,7 @@ function initSocket() {
         socket.on('noip-log',      data => appendNoipLog(data));
         socket.on('log-data',      line => appendLogLine(line));
         socket.on('cloudflared-login-log', data => appendCloudflaredLoginLog(data));
+        socket.on('cloudflared-login-url', url => openCloudflaredAuthUrl(url));
         // Terminal SSH — recebe dados do shell remoto
         socket.on('terminal-data', data => {
             if (window._term) window._term.write(data);
@@ -2376,6 +2377,8 @@ let cloudflaredTunnels = [];
 let cloudflaredSelectedId = null;
 let cloudflaredLogInterval = null;
 let cloudflaredLoginInterval = null;
+let cloudflaredAuthWindow = null;
+let cloudflaredLastAuthUrl = null;
 
 function cfEscape(value) {
     return String(value ?? '').replace(/[&<>"']/g, ch => ({
@@ -2554,11 +2557,47 @@ async function loadCloudflaredLogs() {
 
 async function cloudflaredLogin() {
     const box = document.getElementById('cloudflaredLoginBox');
-    if (box) box.textContent = 'Iniciando cloudflared tunnel login...\n';
+    if (box) box.innerHTML = 'Iniciando cloudflared tunnel login...\nAguardando URL de autorizacao da Cloudflare...\n';
+    cloudflaredLastAuthUrl = null;
+
+    try {
+        cloudflaredAuthWindow = window.open('', '_blank');
+        if (cloudflaredAuthWindow) {
+            cloudflaredAuthWindow.document.write('<!doctype html><title>Cloudflare Login</title><body style="font-family:sans-serif;padding:24px">Aguardando URL de autorizacao da Cloudflare...</body>');
+            cloudflaredAuthWindow.document.close();
+        }
+    } catch (_) {
+        cloudflaredAuthWindow = null;
+    }
+
     const data = await safeFetch(`${API_BASE}/tunnel/login`, 'POST', {}, 30000);
-    if (!data?.success && box) box.textContent += 'Falha ao iniciar login.\n';
+    if (!data?.success && box) box.innerHTML += 'Falha ao iniciar login.\n';
     if (cloudflaredLoginInterval) clearInterval(cloudflaredLoginInterval);
     cloudflaredLoginInterval = setInterval(loadCloudflaredLoginLogs, 2000);
+}
+
+function openCloudflaredAuthUrl(url) {
+    if (!/^https:\/\/[^\s]+$/i.test(url || '')) return;
+    const isNewUrl = url !== cloudflaredLastAuthUrl;
+    cloudflaredLastAuthUrl = url;
+
+    const box = document.getElementById('cloudflaredLoginBox');
+    if (box && !box.innerHTML.includes(url)) {
+        box.innerHTML += `\nURL de autorizacao detectada:\n<a href="${cfEscape(url)}" target="_blank" style="color:#58a6ff">${cfEscape(url)}</a>\n\nDepois de autorizar na Cloudflare, o cloudflared gera o cert.pem automaticamente.\n`;
+        box.scrollTop = box.scrollHeight;
+    }
+
+    if (!isNewUrl) return;
+
+    try {
+        if (cloudflaredAuthWindow && !cloudflaredAuthWindow.closed) {
+            cloudflaredAuthWindow.location.href = url;
+        } else {
+            cloudflaredAuthWindow = window.open(url, '_blank');
+        }
+    } catch (_) {
+        cloudflaredAuthWindow = null;
+    }
 }
 
 async function loadCloudflaredLoginLogs() {
@@ -2566,7 +2605,10 @@ async function loadCloudflaredLoginLogs() {
     if (!box) return;
     try {
         const res = await fetch(`${API_BASE}/tunnel/login/logs?lines=240`);
-        box.textContent = await res.text();
+        const text = await res.text();
+        box.textContent = text;
+        const found = (text.match(/https:\/\/[^\s]+/i) || [])[0];
+        if (found) openCloudflaredAuthUrl(found);
         box.scrollTop = box.scrollHeight;
     } catch (err) {
         box.textContent = err.message;
@@ -2578,6 +2620,8 @@ function appendCloudflaredLoginLog(data) {
     if (!box) return;
     if (box.textContent.includes('Use "Login Cloudflare"')) box.textContent = '';
     box.textContent += data;
+    const found = (String(data).match(/https:\/\/[^\s]+/i) || [])[0];
+    if (found) openCloudflaredAuthUrl(found);
     box.scrollTop = box.scrollHeight;
 }
 
