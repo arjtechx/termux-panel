@@ -382,22 +382,63 @@ router.get('/api/update/status', async (req, res) => {
         let status = 'up_to_date';
 
         try {
-            const apiUrl = `https://api.github.com/repos/${repo}/releases/latest`;
-            const resp = await axios.get(apiUrl, {
+            // Tenta obter a lista de tags do GitHub primeiro para pegar a mais recente cronologicamente
+            const tagsUrl = `https://api.github.com/repos/${repo}/tags`;
+            const tagsResp = await axios.get(tagsUrl, {
                 headers: { 'User-Agent': 'termux-panel' },
                 timeout: 3000
             });
-            latest = (resp.data.tag_name || installed).replace(/^v/, '');
-            hasUpdate = compareSemver(latest, installed) > 0;
+            const tags = tagsResp.data || [];
+            if (tags.length > 0) {
+                latest = tags[0].name.replace(/^v/, '');
+            } else {
+                const apiUrl = `https://api.github.com/repos/${repo}/releases/latest`;
+                const resp = await axios.get(apiUrl, {
+                    headers: { 'User-Agent': 'termux-panel' },
+                    timeout: 3000
+                });
+                latest = (resp.data.tag_name || installed).replace(/^v/, '');
+            }
+            hasUpdate = latest !== installed;
             status = hasUpdate ? 'update_available' : 'up_to_date';
         } catch(err) {
-            if (cached && cached.repo === repo) {
-                return res.json({
-                    ...cached,
-                    status: cached.hasUpdate ? 'update_available' : 'up_to_date'
+            // Fallback via Git ls-remote
+            try {
+                const gitUrl = `https://github.com/${repo}.git`;
+                const tagsOut = await new Promise((resolve, reject) => {
+                    exec(`git ls-remote --tags ${gitUrl}`, (gitErr, stdout) => {
+                        if (gitErr) reject(gitErr);
+                        else resolve(stdout || '');
+                    });
                 });
+                const lines = tagsOut.split('\n').filter(Boolean);
+                const tagList = lines.map(line => {
+                    const match = line.match(/refs\/tags\/(v?\d+\.\d+\.\d+)/);
+                    return match ? match[1] : null;
+                }).filter(Boolean);
+                if (tagList.length > 0) {
+                    const sorted = tagList.sort(compareSemver);
+                    latest = sorted[sorted.length - 1].replace(/^v/, '');
+                    hasUpdate = latest !== installed;
+                    status = hasUpdate ? 'update_available' : 'up_to_date';
+                } else {
+                    if (cached && cached.repo === repo) {
+                        return res.json({
+                            ...cached,
+                            status: cached.hasUpdate ? 'update_available' : 'up_to_date'
+                        });
+                    }
+                    status = 'failed_check';
+                }
+            } catch(fallbackErr) {
+                if (cached && cached.repo === repo) {
+                    return res.json({
+                        ...cached,
+                        status: cached.hasUpdate ? 'update_available' : 'up_to_date'
+                    });
+                }
+                status = 'failed_check';
             }
-            status = 'failed_check';
         }
 
         const result = {
@@ -427,12 +468,24 @@ router.get('/api/update/releases', async (req, res) => {
         const repo = config.github_repo || 'arjtechx/termux-panel';
 
         try {
-            const apiUrl = `https://api.github.com/repos/${repo}/releases`;
-            const resp = await axios.get(apiUrl, {
+            // 1. Buscar Releases Oficiais do GitHub
+            const releasesUrl = `https://api.github.com/repos/${repo}/releases`;
+            const releasesResp = await axios.get(releasesUrl, {
                 headers: { 'User-Agent': 'termux-panel' },
                 timeout: 5000
             });
-            const releases = resp.data || [];
+            const releases = releasesResp.data || [];
+            
+            // 2. Buscar Tags do GitHub para capturar tags sem releases oficiais (ex: v0.0.11, v0.1.9)
+            const tagsUrl = `https://api.github.com/repos/${repo}/tags`;
+            const tagsResp = await axios.get(tagsUrl, {
+                headers: { 'User-Agent': 'termux-panel' },
+                timeout: 5000
+            }).catch(() => ({ data: [] }));
+            const tags = tagsResp.data || [];
+
+            const releaseTags = new Set(releases.map(r => r.tag_name));
+            
             const versions = releases.map(rel => {
                 const tag = rel.tag_name || '';
                 const tagClean = tag.replace(/^v/, '');
@@ -462,6 +515,40 @@ router.get('/api/update/releases', async (req, res) => {
                     compatStatus,
                     compatMessage
                 };
+            });
+
+            // Adiciona as tags que não possuem releases oficiais, na ordem retornada pela API
+            tags.forEach(t => {
+                if (!releaseTags.has(t.name)) {
+                    const tag = t.name || '';
+                    const tagClean = tag.replace(/^v/, '');
+
+                    let compatStatus = 'compatible';
+                    let compatMessage = 'Upgrade/Reinstalação 100% seguro.';
+
+                    if (tagClean === installed) {
+                        compatStatus = 'compatible';
+                        compatMessage = 'Esta é a sua versão ativa atual.';
+                    } else {
+                        const cmp = compareSemver(tagClean, installed);
+                        if (cmp < 0) {
+                            compatStatus = 'breaking';
+                            compatMessage = 'Aviso: Downgrade. Recursos novos do painel poderão ficar indisponíveis.';
+                        } else {
+                            compatStatus = 'compatible';
+                            compatMessage = 'Upgrade compatível e recomendado.';
+                        }
+                    }
+
+                    versions.push({
+                        tag,
+                        name: `Termux Panel ${tag}`,
+                        publishedAt: new Date().toISOString(),
+                        body: 'Git tag (Sem release oficial no GitHub).',
+                        compatStatus,
+                        compatMessage
+                    });
+                }
             });
 
             res.json(versions);
@@ -616,18 +703,38 @@ router.get('/api/update/install', async (req, res) => {
         let resolvedTag = targetTag;
         
         try {
-            const apiUrl = targetTag === 'latest'
-                ? `https://api.github.com/repos/${repo}/releases/latest`
-                : `https://api.github.com/repos/${repo}/releases/tags/${targetTag}`;
+            let apiUrl = '';
+            let resolvedFromTags = false;
+            if (targetTag === 'latest') {
+                // Tenta achar a mais recente cronologicamente usando a API de tags primeiro
+                const tagsUrl = `https://api.github.com/repos/${repo}/tags`;
+                const tagsResp = await axios.get(tagsUrl, { headers: { 'User-Agent': 'termux-panel' }, timeout: 3000 }).catch(() => null);
+                if (tagsResp && tagsResp.data && tagsResp.data.length > 0) {
+                    resolvedTag = tagsResp.data[0].name;
+                    resolvedFromTags = true;
+                } else {
+                    apiUrl = `https://api.github.com/repos/${repo}/releases/latest`;
+                }
+            } else {
+                apiUrl = `https://api.github.com/repos/${repo}/releases/tags/${targetTag}`;
+            }
+
+            if (apiUrl) {
+                const resp = await axios.get(apiUrl, { headers: { 'User-Agent': 'termux-panel' }, timeout: 5000 });
+                resolvedTag = resp.data.tag_name || targetTag;
+            }
             
-            const resp = await axios.get(apiUrl, { headers: { 'User-Agent': 'termux-panel' }, timeout: 5000 });
-            resolvedTag = resp.data.tag_name || targetTag;
-            downloadUrl = `https://github.com/${repo}/releases/download/${resolvedTag}/termux-panel-dist.tar.gz`;
-            sendLog('OK', `Release encontrada: ${resolvedTag}`);
+            if (resolvedFromTags) {
+                downloadUrl = `https://github.com/${repo}/archive/refs/tags/${resolvedTag}.tar.gz`;
+                sendLog('OK', `Tag mais recente resolvida: ${resolvedTag}`);
+            } else {
+                downloadUrl = `https://github.com/${repo}/releases/download/${resolvedTag}/termux-panel-dist.tar.gz`;
+                sendLog('OK', `Release encontrada: ${resolvedTag}`);
+            }
         } catch(e) {
-            resolvedTag = targetTag === 'latest' ? 'v0.0.2' : targetTag;
-            downloadUrl = `https://github.com/${repo}/releases/download/${resolvedTag}/termux-panel-dist.tar.gz`;
-            sendLog('WARN', `GitHub API limite de requisições. Tentando URL direta: ${resolvedTag}`);
+            resolvedTag = targetTag === 'latest' ? 'v0.0.11' : targetTag;
+            downloadUrl = `https://github.com/${repo}/archive/refs/tags/${resolvedTag}.tar.gz`;
+            sendLog('WARN', `Usando arquivo de tag direta do repositório: ${resolvedTag}`);
         }
 
         // Criar Backup Preventivo

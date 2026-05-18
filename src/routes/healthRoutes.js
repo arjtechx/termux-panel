@@ -46,7 +46,7 @@ router.get('/run', (req, res) => {
 router.get('/status', async (req, res) => {
     const checkPort = (host, port) => new Promise(resolve => {
         const sock = new net.Socket();
-        sock.setTimeout(1500);
+        sock.setTimeout(1000);
         sock.on('connect', () => { sock.destroy(); resolve(true); });
         sock.on('timeout', () => { sock.destroy(); resolve(false); });
         sock.on('error',   () => { sock.destroy(); resolve(false); });
@@ -54,7 +54,7 @@ router.get('/status', async (req, res) => {
     });
 
     const checkProcess = (name) => new Promise(resolve => {
-        exec(`pgrep -x "${name}"`, (err, stdout) => resolve(!err && stdout.trim().length > 0));
+        exec(`pgrep -f "${name}" || pidof "${name}"`, (err, stdout) => resolve(!err && stdout.trim().length > 0));
     });
 
     const checkCmd = (cmd) => new Promise(resolve => {
@@ -63,15 +63,24 @@ router.get('/status', async (req, res) => {
 
     const prefix = process.env.PREFIX || '/data/data/com.termux/files/usr';
 
+    // Para o Nginx, verifica portas comuns para evitar falsos negativos no Termux
+    const checkNginxPorts = async () => {
+        const ports = [80, 8080, 8082, 8085, 8888];
+        for (const p of ports) {
+            if (await checkPort('127.0.0.1', p)) return true;
+        }
+        return false;
+    };
+
     const [
         nginxRunning, mariadbRunning, phpfpmRunning,
         port80, port8080, port3306,
         hasNginx, hasPHP, hasMariadb, hasPMA,
     ] = await Promise.all([
         checkProcess('nginx'),
-        checkProcess('mariadbd').then(r => r || checkProcess('mysqld')),
+        checkProcess('mariadbd').then(r => r || checkProcess('mysqld') || checkProcess('mariadb') || checkProcess('mysql')),
         checkProcess('php-fpm'),
-        checkPort('127.0.0.1', 80),
+        checkNginxPorts(),
         checkPort('127.0.0.1', 8080),
         checkPort('127.0.0.1', 3306),
         checkCmd('nginx'),
