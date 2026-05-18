@@ -33,6 +33,7 @@ const DB_FILE = path.join(__dirname, 'config', 'db.json');
 const AUTH_FILE = path.join(__dirname, 'config', 'auth.json');
 const SYSTEM_FILE = path.join(__dirname, 'config', 'system.json');
 const BASE_DIR = process.env.HOME || __dirname;
+const DEFAULT_AUTH = { user: 'admin', pass: 'admin' };
 
 // ============================================================
 //  DETECÇÃO DE AMBIENTE UNIVERSAL
@@ -51,7 +52,15 @@ if (!fs.existsSync(path.join(__dirname, 'config'))) {
 if (!fs.existsSync(APPS_FILE)) fs.writeFileSync(APPS_FILE, '[]');
 if (!fs.existsSync(NOIP_FILE)) fs.writeFileSync(NOIP_FILE, JSON.stringify({ interval: 15, autostart: false }));
 if (!fs.existsSync(DB_FILE)) fs.writeFileSync(DB_FILE, JSON.stringify({ host: 'localhost', user: 'root', password: '' }));
-if (!fs.existsSync(AUTH_FILE)) fs.writeFileSync(AUTH_FILE, JSON.stringify({ user: 'admin', pass: 'admin' }));
+if (!fs.existsSync(AUTH_FILE)) fs.writeFileSync(AUTH_FILE, JSON.stringify(DEFAULT_AUTH));
+
+function readAuthConfig() {
+    if (!fs.existsSync(AUTH_FILE)) {
+        fs.mkdirSync(path.dirname(AUTH_FILE), { recursive: true });
+        fs.writeFileSync(AUTH_FILE, JSON.stringify(DEFAULT_AUTH));
+    }
+    return JSON.parse(fs.readFileSync(AUTH_FILE, 'utf8'));
+}
 
 app.use(cors());
 app.use(express.json());
@@ -71,7 +80,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.post('/api/login', (req, res) => {
     const { user, pass } = req.body;
     try {
-        const auth = JSON.parse(fs.readFileSync(AUTH_FILE, 'utf8'));
+        const auth = readAuthConfig();
         if (user === auth.user && pass === auth.pass) {
             req.session.authenticated = true;
             res.json({ success: true });
