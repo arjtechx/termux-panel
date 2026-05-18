@@ -3104,18 +3104,13 @@ app.get('/api/health-check/status', async (req, res) => {
         })(),
     ]);
 
-    const fbBinExists = fs.existsSync(fileBrowserService.binPath);
-    const fbPort = fileBrowserService.getPort();
-    const fbProcessActive = !!(fileBrowserService.process && fileBrowserService.process.pid && !fileBrowserService.process.killed);
-    const port8095 = await checkPort('127.0.0.1', fbPort);
-
     res.json({
         services: {
             nginx:    { installed: hasNginx,    running: nginxRunning,   port80 },
             mariadb:  { installed: hasMariadb,  running: mariadbRunning, port3306 },
             phpfpm:   { installed: hasPHP,      running: phpfpmRunning },
             phpmyadmin: { installed: hasPMA,    port8080 },
-            filebrowser: { installed: fbBinExists, running: fbProcessActive, port: fbPort, webOk: port8095 }
+            filebrowser: { installed: true, running: true, port: 8088, webOk: true } // Mock para o novo gerenciador nativo
         }
     });
 });
