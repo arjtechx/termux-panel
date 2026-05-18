@@ -30,11 +30,34 @@ echo -e "${BLUE}============================================${RESET}"
 log "Diretório: $PANEL_DIR"
 echo ""
 
+RUNNING=1
+trap 'RUNNING=0; warn "Parada solicitada. Encerrando painel..."; exit 0' INT TERM
+
 # Verifica server.js
 if [ ! -f "$PANEL_DIR/server.js" ]; then
     err "server.js não encontrado em: $PANEL_DIR"
     err "Extraia corretamente: tar -xzvf termux-panel-dist.tar.gz -C ~/"
     exit 1
+fi
+
+mem_available_mb() {
+    awk '/MemAvailable:/ {print int($2/1024)}' /proc/meminfo 2>/dev/null
+}
+
+AVAILABLE_MB="$(mem_available_mb)"
+LOW_MEMORY_MODE="${TERMUX_PANEL_LOW_MEMORY:-auto}"
+if [ "$LOW_MEMORY_MODE" = "auto" ]; then
+    if [ -n "$AVAILABLE_MB" ] && [ "$AVAILABLE_MB" -gt 0 ] && [ "$AVAILABLE_MB" -lt 700 ]; then
+        LOW_MEMORY_MODE="1"
+    else
+        LOW_MEMORY_MODE="0"
+    fi
+fi
+
+if [ "$LOW_MEMORY_MODE" = "1" ]; then
+    warn "Modo pouca memória ativo${AVAILABLE_MB:+ (${AVAILABLE_MB}MB disponíveis)}."
+    warn "PHP-FPM, MariaDB e NGINX não serão iniciados automaticamente."
+    warn "Use os botões do painel para iniciar serviços sob demanda."
 fi
 
 # ─── Lê credenciais do banco salvas pelo instalador ─────────────
@@ -56,24 +79,27 @@ fi
 MYSQL_DATA_DIR="$PREFIX/var/lib/mysql"
 
 # ─── 1. PHP-FPM ─────────────────────────────────────────────────
-log "Verificando PHP-FPM..."
-mkdir -p "$PREFIX/var/run" "$PREFIX/tmp"
+if [ "$LOW_MEMORY_MODE" != "1" ]; then
+    log "Verificando PHP-FPM..."
+    mkdir -p "$PREFIX/var/run" "$PREFIX/tmp"
 
-if command -v php-fpm >/dev/null 2>&1; then
-    PHPOUT=$(php-fpm --daemonize 2>&1)
-    PHPCODE=$?
-    if [ $PHPCODE -eq 0 ]; then
-        ok "PHP-FPM iniciado."
-    elif echo "$PHPOUT" | grep -qi "already in use\|already running"; then
-        ok "PHP-FPM já está rodando."
+    if command -v php-fpm >/dev/null 2>&1; then
+        PHPOUT=$(php-fpm --daemonize 2>&1)
+        PHPCODE=$?
+        if [ $PHPCODE -eq 0 ]; then
+            ok "PHP-FPM iniciado."
+        elif echo "$PHPOUT" | grep -qi "already in use\|already running"; then
+            ok "PHP-FPM já está rodando."
+        else
+            warn "PHP-FPM: $(echo "$PHPOUT" | head -1)"
+        fi
     else
-        warn "PHP-FPM: $(echo "$PHPOUT" | head -1)"
+        warn "PHP-FPM não instalado. Pulando."
     fi
-else
-    warn "PHP-FPM não instalado. Pulando."
 fi
 
 # ─── 2. MARIADB — detecção inteligente e inicialização ──────────
+if [ "$LOW_MEMORY_MODE" != "1" ]; then
 log "Verificando MariaDB..."
 
 mariadb_is_running() {
@@ -137,21 +163,24 @@ else
         warn "MariaDB não respondeu. Gerenciamento de banco pode ser limitado."
     fi
 fi
+fi
 
 # ─── 3. NGINX ────────────────────────────────────────────────────
-log "Verificando NGINX..."
-if command -v nginx >/dev/null 2>&1; then
-    NGOUT=$(nginx 2>&1)
-    NGCODE=$?
-    if [ $NGCODE -eq 0 ]; then
-        ok "NGINX iniciado."
-    elif echo "$NGOUT" | grep -qi "already in use\|bind().*failed\|already running"; then
-        nginx -s reload 2>/dev/null && ok "NGINX recarregado." || ok "NGINX já ativo."
+if [ "$LOW_MEMORY_MODE" != "1" ]; then
+    log "Verificando NGINX..."
+    if command -v nginx >/dev/null 2>&1; then
+        NGOUT=$(nginx 2>&1)
+        NGCODE=$?
+        if [ $NGCODE -eq 0 ]; then
+            ok "NGINX iniciado."
+        elif echo "$NGOUT" | grep -qi "already in use\|bind().*failed\|already running"; then
+            nginx -s reload 2>/dev/null && ok "NGINX recarregado." || ok "NGINX já ativo."
+        else
+            warn "NGINX: $(echo "$NGOUT" | head -1)"
+        fi
     else
-        warn "NGINX: $(echo "$NGOUT" | head -1)"
+        warn "NGINX não instalado. Pulando."
     fi
-else
-    warn "NGINX não instalado. Pulando."
 fi
 
 # ─── 4. PAINEL NODE.JS ───────────────────────────────────────────
@@ -192,9 +221,13 @@ echo ""
 # fi
 
 # Loop de auto-restart com limite de memória para evitar OOM Killer do Android
-while true; do
-    node --max-old-space-size=128 "$PANEL_DIR/server.js"
+NODE_HEAP_MB="${TERMUX_PANEL_NODE_HEAP_MB:-96}"
+while [ "$RUNNING" -eq 1 ]; do
+    node --max-old-space-size="$NODE_HEAP_MB" "$PANEL_DIR/server.js"
     EXIT_CODE=$?
+    if [ "$RUNNING" -ne 1 ]; then
+        exit 0
+    fi
     if [ $EXIT_CODE -eq 137 ]; then
         warn "Servidor encerrado pelo OOM Killer (sem memória). Aguardando 10s..."
         sleep 10
