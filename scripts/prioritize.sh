@@ -44,7 +44,9 @@ echo -e "${GREEN}[+] Acesso Root concedido!${NC}"
 echo -e "${CYAN}[*] Desativando Phantom Process Killer do Android (Imunidade Total)...${NC}"
 su -c "device_config put activity_manager max_phantom_processes 2147483647" >/dev/null 2>&1
 su -c "settings put global settings_enable_monitor_phantom_procs false" >/dev/null 2>&1
-echo -e "${GREEN}[+] Phantom Process Killer desativado com sucesso.${NC}"
+su -c "dumpsys deviceidle whitelist +com.termux" >/dev/null 2>&1
+echo -e "${GREEN}[+] Phantom Process Killer desativado e Bateria whitelistada com sucesso.${NC}"
+
 
 # 4. Localiza os PIDs de todos os serviços vitais
 echo -e "${CYAN}[*] Localizando processos do painel e serviços...${NC}"
