@@ -1547,7 +1547,7 @@ function runHealthCheck() {
         try {
             const data = JSON.parse(event.data);
             const line = data.line;
-            
+
             if (line.startsWith('__DONE__:')) {
                 evtSource.close();
                 const code = line.split(':')[1];
@@ -1611,6 +1611,8 @@ async function checkSystemUpdates() {
     if (versionCur) versionCur.textContent = `v${currentVersion}`;
     if (versionLat) versionLat.textContent = latestVersion !== currentVersion ? `v${latestVersion}` : '—';
 
+    if (versionLat && hasUpdate) versionLat.textContent = `v${latestVersion}`;
+
     if (hasUpdate) {
         if (statusText) statusText.innerHTML = '<span style="color:var(--success)">✅ Nova versão disponível!</span>';
         if (btnRun) btnRun.classList.remove('hidden');
@@ -1642,7 +1644,7 @@ async function fetchAvailableVersions() {
         if (releases.length > 0) {
             window.availableVersions = releases;
             select.innerHTML = releases.map(rel => {
-                const date = new Date(rel.publishedAt).toLocaleDateString();
+                const date = rel.publishedAt ? new Date(rel.publishedAt).toLocaleDateString() : 'tag';
                 const prefix = rel.compatStatus === 'breaking' ? '⚠️ ' : '✅ ';
                 return `<option value="${rel.tag}">${prefix}${rel.tag} (${date})</option>`;
             }).join('');
@@ -1682,6 +1684,47 @@ function onVersionSelected() {
     lucide.createIcons();
 }
 
+function setUpdateProgress(percent, label, failed = false) {
+    const fill = document.getElementById('update-progress-fill');
+    const percentEl = document.getElementById('update-progress-percent');
+    const labelEl = document.getElementById('update-progress-label');
+    const safePercent = Math.max(0, Math.min(100, Number(percent) || 0));
+
+    if (fill) {
+        fill.style.width = `${safePercent}%`;
+        fill.classList.toggle('is-failed', failed);
+    }
+    if (percentEl) percentEl.textContent = `${Math.round(safePercent)}%`;
+    if (labelEl && label) labelEl.textContent = label;
+}
+
+function resetUpdateProgress(label = 'Preparando atualização...') {
+    setUpdateProgress(0, label, false);
+}
+
+function advanceUpdateProgressFromLine(line) {
+    const normalized = String(line || '').toLowerCase();
+    const stages = [
+        { match: ['verificando releases', 'release encontrada', 'tag mais recente'], percent: 12, label: 'Verificando versão' },
+        { match: ['criando backup'], percent: 24, label: 'Criando backup' },
+        { match: ['backup criado'], percent: 34, label: 'Backup concluído' },
+        { match: ['baixando pacote', 'baixando o tarball'], percent: 46, label: 'Baixando pacote' },
+        { match: ['pacote baixado', 'tarball da tag baixado'], percent: 60, label: 'Download concluído' },
+        { match: ['extraindo pacote', 'extração básica'], percent: 70, label: 'Extraindo arquivos' },
+        { match: ['instalando atualização'], percent: 80, label: 'Instalando arquivos' },
+        { match: ['arquivos copiados'], percent: 88, label: 'Arquivos instalados' },
+        { match: ['atualizando depend', '[npm]'], percent: 94, label: 'Atualizando dependências' },
+        { match: ['atualização concluída', 'rollback para'], percent: 100, label: 'Concluído' }
+    ];
+
+    for (const stage of stages) {
+        if (stage.match.some(pattern => normalized.includes(pattern))) {
+            setUpdateProgress(stage.percent, stage.label);
+            return;
+        }
+    }
+}
+
 async function runManualSystemUpdate() {
     const select = document.getElementById('github-versions-select');
     const tag = select?.value;
@@ -1708,6 +1751,7 @@ async function runManualSystemUpdate() {
     const btnManual   = document.getElementById('btn-run-manual-update');
 
     if (termWrapper) termWrapper.classList.remove('hidden');
+    resetUpdateProgress(`Preparando ${tag}...`);
     
     const initialText = `[INFO] Iniciando instalação para a versão ${tag}...\n`;
     if (term) term.innerHTML = `<span style="color:var(--primary)">${initialText}</span>`;
@@ -1741,15 +1785,18 @@ async function runManualSystemUpdate() {
         try {
             const data = JSON.parse(event.data);
             const line = data.line;
+            advanceUpdateProgressFromLine(line);
 
             if (line.startsWith('__DONE__:')) {
                 evtSource.close();
                 const code = line.split(':')[1];
                 writeLine(`\n<span style="color:${code == 0 ? 'var(--success)' : 'var(--warning)'}">Processo finalizado com código ${code}.</span>`);
                 if (code == 0) {
+                    setUpdateProgress(100, 'Atualização concluída');
                     writeLine(`<span style="color:var(--success)">✅ Versão ${tag} aplicada com sucesso! Recarregando em 5s...</span>`);
                     setTimeout(() => location.reload(), 5000);
                 } else {
+                    setUpdateProgress(100, 'Falha na atualização', true);
                     writeLine(`<span style="color:var(--danger)">❌ Falha na aplicação da versão. Verifique as mensagens acima.</span>`);
                 }
                 
@@ -1773,6 +1820,7 @@ async function runManualSystemUpdate() {
     };
 
     evtSource.onerror = () => {
+        setUpdateProgress(96, 'Reiniciando servidor...');
         writeLine('\n<span style="color:var(--warning)">Aviso: Conectando/Reiniciando servidor para aplicar as alterações...</span>');
         evtSource.close();
         setTimeout(() => {
@@ -1816,6 +1864,7 @@ function runSystemUpdate() {
 
     if (termWrapper) termWrapper.classList.remove('hidden');
     
+    resetUpdateProgress('Preparando atualização...');
     const initialText = `[INFO] Iniciando atualização automática para a versão mais recente...\n`;
     if (term) term.innerHTML = `<span style="color:var(--primary)">${initialText}</span>`;
     if (healthTerm) healthTerm.innerHTML = `<span style="color:var(--primary)">${initialText}</span>`;
@@ -1840,15 +1889,18 @@ function runSystemUpdate() {
         try {
             const data = JSON.parse(event.data);
             const line = data.line;
+            advanceUpdateProgressFromLine(line);
 
             if (line.startsWith('__DONE__:')) {
                 evtSource.close();
                 const code = line.split(':')[1];
                 writeLine(`\n<span style="color:${code == 0 ? 'var(--success)' : 'var(--warning)'}">Processo finalizado com código ${code}.</span>`);
                 if (code == 0) {
+                    setUpdateProgress(100, 'Atualização concluída');
                     writeLine(`<span style="color:var(--success)">✅ Atualização concluída com sucesso! Recarregando em 5s...</span>`);
                     setTimeout(() => location.reload(), 5000);
                 } else {
+                    setUpdateProgress(100, 'Falha na atualização', true);
                     writeLine(`<span style="color:var(--danger)">❌ Falha na atualização. Verifique os logs acima.</span>`);
                 }
                 if (btnRun)  btnRun.disabled  = false;
@@ -1870,6 +1922,7 @@ function runSystemUpdate() {
     };
 
     evtSource.onerror = () => {
+        setUpdateProgress(96, 'Reiniciando servidor...');
         writeLine('\n<span style="color:var(--warning)">Aviso: Conectando/Reiniciando servidor para aplicar as alterações...</span>');
         evtSource.close();
         setTimeout(() => {

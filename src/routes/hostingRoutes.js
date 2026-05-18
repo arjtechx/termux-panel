@@ -41,6 +41,16 @@ function isPortListening(port) {
     });
 }
 
+function ensureHostingLogFile(filePath) {
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+    }
+    if (!fs.existsSync(filePath)) {
+        fs.closeSync(fs.openSync(filePath, 'a'));
+    }
+}
+
 router.get('/', async (req, res) => {
     try {
         const services = JSON.parse(fs.readFileSync(HOSTING_FILE, 'utf8'));
@@ -128,6 +138,8 @@ router.post('/', async (req, res) => {
         let content = '';
         const fullLogPath = path.join(__dirname, '..', '..', 'logs', `hosting-${cleanName}-${id}.log`);
         const fullErrorLogPath = path.join(__dirname, '..', '..', 'logs', `hosting-${cleanName}-${id}-error.log`);
+        ensureHostingLogFile(fullLogPath);
+        ensureHostingLogFile(fullErrorLogPath);
         
         if (type === 'php' || type === 'static') {
             content = `server {

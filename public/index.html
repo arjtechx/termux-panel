@@ -1083,6 +1083,15 @@
 
                     <!-- Terminal de atualização -->
                     <div id="update-terminal-wrapper" class="hidden">
+                        <div class="update-progress-panel" id="update-progress-panel">
+                            <div class="update-progress-head">
+                                <span id="update-progress-label">Preparando atualização...</span>
+                                <strong id="update-progress-percent">0%</strong>
+                            </div>
+                            <div class="update-progress-track" aria-hidden="true">
+                                <div class="update-progress-fill" id="update-progress-fill"></div>
+                            </div>
+                        </div>
                         <div id="update-terminal" class="terminal-box" style="height:260px; overflow-y:auto; font-size:13px; font-family:monospace; white-space:pre-wrap; background:#0d1117; color:#c9d1d9; padding:16px; border-radius:6px;">
                             [Aguardando início da atualização...]
                         </div>
@@ -1263,7 +1272,7 @@
 </div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.2"></script>
+<script src="filemanager.js?v=0.2.3"></script>
 <script src="app.js?v=4.0"></script>
 </body>
 </html>

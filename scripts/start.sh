@@ -30,6 +30,8 @@ echo -e "${BLUE}============================================${RESET}"
 log "Diretório: $PANEL_DIR"
 echo ""
 
+mkdir -p "$PANEL_DIR/logs"
+
 # Verifica server.js
 if [ ! -f "$PANEL_DIR/server.js" ]; then
     err "server.js não encontrado em: $PANEL_DIR"

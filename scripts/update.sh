@@ -139,6 +139,7 @@ fi
 # PÓS-ATUALIZAÇÃO
 # -----------------------------------------------------------------
 cd "$PANEL_DIR"
+mkdir -p "$PANEL_DIR/logs"
 
 log "Atualizando dependências Node.js..."
 npm install --no-audit --no-fund

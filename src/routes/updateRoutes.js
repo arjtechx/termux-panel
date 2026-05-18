@@ -317,6 +317,7 @@ function parseSemver(versionString) {
         parts.push(0);
     }
     return {
+        parts,
         major: parts[0] || 0,
         minor: parts[1] || 0,
         patch: parts[2] || 0,
@@ -328,9 +329,12 @@ function compareSemver(v1, v2) {
     const p1 = parseSemver(v1);
     const p2 = parseSemver(v2);
     
-    if (p1.major !== p2.major) return p1.major - p2.major;
-    if (p1.minor !== p2.minor) return p1.minor - p2.minor;
-    if (p1.patch !== p2.patch) return p1.patch - p2.patch;
+    const maxParts = Math.max(p1.parts.length, p2.parts.length);
+    for (let i = 0; i < maxParts; i++) {
+        const n1 = p1.parts[i] || 0;
+        const n2 = p2.parts[i] || 0;
+        if (n1 !== n2) return n1 - n2;
+    }
     
     if (p1.prerelease && !p2.prerelease) return -1;
     if (!p1.prerelease && p2.prerelease) return 1;
@@ -338,6 +342,131 @@ function compareSemver(v1, v2) {
         return p1.prerelease.localeCompare(p2.prerelease);
     }
     return 0;
+}
+
+function normalizeTag(tag) {
+    const clean = String(tag || '').trim();
+    if (!clean) return '';
+    return clean.startsWith('v') ? clean : `v${clean}`;
+}
+
+function isSemverTag(tag) {
+    return /^v?\d+(?:\.\d+){2,4}(?:-[0-9A-Za-z.-]+)?$/.test(String(tag || '').trim());
+}
+
+function getCompatInfo(tag, installed) {
+    const tagClean = String(tag || '').replace(/^v/, '');
+    if (tagClean === installed) {
+        return {
+            compatStatus: 'compatible',
+            compatMessage: 'Esta Ã© a sua versÃ£o ativa atual.'
+        };
+    }
+
+    const cmp = compareSemver(tagClean, installed);
+    if (cmp < 0) {
+        return {
+            compatStatus: 'breaking',
+            compatMessage: 'Aviso: Downgrade. Recursos novos do painel poderÃ£o ficar indisponÃ­veis.'
+        };
+    }
+
+    return {
+        compatStatus: 'compatible',
+        compatMessage: 'Upgrade compatÃ­vel e recomendado.'
+    };
+}
+
+async function fetchGithubReleases(repo) {
+    const apiUrl = `https://api.github.com/repos/${repo}/releases?per_page=100`;
+    const resp = await axios.get(apiUrl, {
+        headers: { 'User-Agent': 'termux-panel' },
+        timeout: 5000
+    });
+    return Array.isArray(resp.data) ? resp.data : [];
+}
+
+async function fetchGithubTags(repo) {
+    try {
+        const apiUrl = `https://api.github.com/repos/${repo}/tags?per_page=100`;
+        const resp = await axios.get(apiUrl, {
+            headers: { 'User-Agent': 'termux-panel' },
+            timeout: 5000
+        });
+        return (Array.isArray(resp.data) ? resp.data : [])
+            .map(tag => tag.name)
+            .filter(isSemverTag)
+            .map(normalizeTag);
+    } catch(e) {
+        const gitUrl = `https://github.com/${repo}.git`;
+        const tagsOut = await new Promise((resolve, reject) => {
+            exec(`git ls-remote --tags ${gitUrl}`, (gitErr, stdout) => {
+                if (gitErr) reject(gitErr);
+                else resolve(stdout || '');
+            });
+        });
+
+        return [...new Set(tagsOut.split('\n')
+            .map(line => {
+                const match = line.match(/refs\/tags\/(v?\d+(?:\.\d+){2,4}(?:-[0-9A-Za-z.-]+)?)(?:\^\{\})?$/);
+                return match ? normalizeTag(match[1]) : null;
+            })
+            .filter(Boolean))];
+    }
+}
+
+async function getRemoteVersions(repo, installed) {
+    let releases = [];
+    let tags = [];
+    let releaseError = null;
+    let tagError = null;
+
+    try {
+        releases = await fetchGithubReleases(repo);
+    } catch(e) {
+        releaseError = e;
+    }
+
+    try {
+        tags = await fetchGithubTags(repo);
+    } catch(e) {
+        tagError = e;
+    }
+
+    if (!releases.length && !tags.length && releaseError && tagError) {
+        throw new Error(`GitHub indisponÃ­vel: ${releaseError.message}; tags indisponÃ­veis: ${tagError.message}`);
+    }
+
+    const byTag = new Map();
+    for (const rel of releases) {
+        const tag = normalizeTag(rel.tag_name || '');
+        if (!isSemverTag(tag)) continue;
+        byTag.set(tag, {
+            tag,
+            name: rel.name || tag,
+            publishedAt: rel.published_at || rel.created_at || null,
+            body: rel.body || '',
+            source: 'release',
+            hasRelease: true,
+            ...getCompatInfo(tag, installed)
+        });
+    }
+
+    for (const rawTag of tags) {
+        const tag = normalizeTag(rawTag);
+        if (!isSemverTag(tag) || byTag.has(tag)) continue;
+        byTag.set(tag, {
+            tag,
+            name: `Termux Panel ${tag}`,
+            publishedAt: null,
+            body: 'VersÃ£o encontrada nas tags do GitHub.',
+            source: 'tag',
+            hasRelease: false,
+            ...getCompatInfo(tag, installed)
+        });
+    }
+
+    return [...byTag.values()].sort((a, b) => compareSemver(b.tag, a.tag));
 }
 
 const PANEL_UPDATE_ITEMS = ['public', 'scripts', 'server.js', 'package.json', 'package-lock.json', 'README.md', 'install.sh', 'src', 'services'];
@@ -437,20 +566,21 @@ router.get('/api/update/status', async (req, res) => {
         let updateReason = 'version';
 
         try {
-            const apiUrl = `https://api.github.com/repos/${repo}/releases/latest`;
-            const resp = await axios.get(apiUrl, {
-                headers: { 'User-Agent': 'termux-panel' },
-                timeout: 3000
-            });
-            latest = (resp.data.tag_name || installed).replace(/^v/, '');
-            const latestTag = resp.data.tag_name || `v${latest}`;
-            publishedAt = resp.data.published_at || resp.data.created_at || null;
-            hasUpdate = compareSemver(latest, installed) > 0;
-            if (!hasUpdate && compareSemver(latest, installed) === 0 && releaseIsNewerThanLocal(publishedAt, repo, latestTag)) {
-                hasUpdate = true;
-                updateReason = 'release_rebuilt';
+            const versions = await getRemoteVersions(repo, installed);
+            const remoteLatest = versions[0] || null;
+            if (!remoteLatest) {
+                status = 'failed_check';
+            } else {
+                latest = remoteLatest.tag.replace(/^v/, '');
+                const latestTag = remoteLatest.tag;
+                publishedAt = remoteLatest.publishedAt || null;
+                hasUpdate = compareSemver(latest, installed) > 0;
+                if (!hasUpdate && compareSemver(latest, installed) === 0 && releaseIsNewerThanLocal(publishedAt, repo, latestTag)) {
+                    hasUpdate = true;
+                    updateReason = 'release_rebuilt';
+                }
+                status = hasUpdate ? 'update_available' : 'up_to_date';
             }
-            status = hasUpdate ? 'update_available' : 'up_to_date';
         } catch(err) {
             if (cached && cached.repo === repo) {
                 return res.json({
@@ -483,6 +613,20 @@ router.get('/api/update/status', async (req, res) => {
 });
 
 // GET /api/update/releases
+router.get('/api/update/releases', async (req, res) => {
+    try {
+        const config = getUpdateConfig();
+        const pjson = JSON.parse(fs.readFileSync(path.join(BASE_DIR, 'package.json'), 'utf8'));
+        const installed = pjson.version || '0.0.2';
+        const repo = config.github_repo || 'arjtechx/termux-panel';
+        const versions = await getRemoteVersions(repo, installed);
+        res.json(versions);
+    } catch(err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Legacy fallback kept below; this route is intentionally shadowed by the unified tags+releases route above.
 router.get('/api/update/releases', async (req, res) => {
     try {
         const config = getUpdateConfig();
@@ -595,6 +739,54 @@ router.post('/api/update/check', async (req, res) => {
         const installed = pjson.version || '0.0.2';
         const config = getUpdateConfig();
         const repo = config.github_repo || 'arjtechx/termux-panel';
+        const versions = await getRemoteVersions(repo, installed);
+        const remoteLatest = versions[0] || null;
+
+        let latest = installed;
+        let hasUpdate = false;
+        let status = 'failed_check';
+        let publishedAt = null;
+        let updateReason = 'version';
+
+        if (remoteLatest) {
+            latest = remoteLatest.tag.replace(/^v/, '');
+            publishedAt = remoteLatest.publishedAt || null;
+            hasUpdate = compareSemver(latest, installed) > 0;
+            if (!hasUpdate && compareSemver(latest, installed) === 0 && releaseIsNewerThanLocal(publishedAt, repo, remoteLatest.tag)) {
+                hasUpdate = true;
+                updateReason = 'release_rebuilt';
+            }
+            status = hasUpdate ? 'update_available' : 'up_to_date';
+        }
+
+        const result = {
+            installed,
+            latest,
+            hasUpdate,
+            status,
+            repo,
+            publishedAt,
+            localBuildDate: getInstalledReferenceDate(repo, `v${latest}`)?.toISOString() || null,
+            updateReason
+        };
+
+        if (status !== 'failed_check') {
+            writeUpdateCache(result);
+        }
+
+        res.json(result);
+    } catch(err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Legacy fallback kept below; this route is intentionally shadowed by the unified tags+releases route above.
+router.post('/api/update/check', async (req, res) => {
+    try {
+        const pjson = JSON.parse(fs.readFileSync(path.join(BASE_DIR, 'package.json'), 'utf8'));
+        const installed = pjson.version || '0.0.2';
+        const config = getUpdateConfig();
+        const repo = config.github_repo || 'arjtechx/termux-panel';
 
         let latest = installed;
         let hasUpdate = false;
@@ -690,20 +882,32 @@ router.get('/api/update/install', async (req, res) => {
         let downloadUrl = '';
         let resolvedTag = targetTag;
         let releasePublishedAt = null;
+
+        if (targetTag === 'latest') {
+            try {
+                const versions = await getRemoteVersions(repo, currentVersion);
+                if (versions[0]?.tag) {
+                    resolvedTag = versions[0].tag;
+                    releasePublishedAt = versions[0].publishedAt || null;
+                    sendLog('OK', `Tag mais recente encontrada: ${resolvedTag}`);
+                }
+            } catch(e) {
+                sendLog('WARN', `NÃ£o foi possÃ­vel listar tags: ${e.message}`);
+            }
+        }
         
         try {
-            const apiUrl = targetTag === 'latest'
+            const apiUrl = targetTag === 'latest' && resolvedTag === 'latest'
                 ? `https://api.github.com/repos/${repo}/releases/latest`
-                : `https://api.github.com/repos/${repo}/releases/tags/${targetTag}`;
+                : `https://api.github.com/repos/${repo}/releases/tags/${resolvedTag}`;
             
             const resp = await axios.get(apiUrl, { headers: { 'User-Agent': 'termux-panel' }, timeout: 5000 });
-            resolvedTag = resp.data.tag_name || targetTag;
+            resolvedTag = resp.data.tag_name || resolvedTag;
             releasePublishedAt = resp.data.published_at || resp.data.created_at || null;
             downloadUrl = `https://github.com/${repo}/releases/download/${resolvedTag}/termux-panel-dist.tar.gz`;
             sendLog('OK', `Release encontrada: ${resolvedTag}`);
         } catch(e) {
-            resolvedTag = targetTag;
-            downloadUrl = targetTag === 'latest'
+            downloadUrl = targetTag === 'latest' && resolvedTag === 'latest'
                 ? `https://github.com/${repo}/releases/latest/download/termux-panel-dist.tar.gz`
                 : `https://github.com/${repo}/releases/download/${resolvedTag}/termux-panel-dist.tar.gz`;
             sendLog('WARN', `GitHub API limite de requisições. Tentando URL direta: ${resolvedTag}`);
@@ -750,9 +954,35 @@ router.get('/api/update/install', async (req, res) => {
             });
             sendLog('OK', `Pacote baixado com sucesso.`);
         } catch (dlErr) {
-            sendLog('ERR', `Falha ao baixar o pacote: ${dlErr.message}`);
-            res.write(`data: ${JSON.stringify({ line: '__DONE__:1' })}\n\n`);
-            return res.end();
+            const tagArchiveUrl = resolvedTag && resolvedTag !== 'latest'
+                ? `https://github.com/${repo}/archive/refs/tags/${resolvedTag}.tar.gz`
+                : '';
+            if (!tagArchiveUrl) {
+                sendLog('ERR', `Falha ao baixar o pacote: ${dlErr.message}`);
+                res.write(`data: ${JSON.stringify({ line: '__DONE__:1' })}\n\n`);
+                return res.end();
+            }
+
+            sendLog('WARN', `Asset da release indisponÃ­vel. Tentando baixar o tarball da tag ${resolvedTag}...`);
+            try {
+                const writer = fs.createWriteStream(tempTarPath);
+                const response = await axios({
+                    method: 'get',
+                    url: tagArchiveUrl,
+                    responseType: 'stream',
+                    timeout: 15000
+                });
+                response.data.pipe(writer);
+                await new Promise((resolve, reject) => {
+                    writer.on('finish', resolve);
+                    writer.on('error', reject);
+                });
+                sendLog('OK', `Tarball da tag baixado com sucesso.`);
+            } catch (tagDlErr) {
+                sendLog('ERR', `Falha ao baixar release e tag: ${tagDlErr.message}`);
+                res.write(`data: ${JSON.stringify({ line: '__DONE__:1' })}\n\n`);
+                return res.end();
+            }
         }
 
         // Extrair atualização
