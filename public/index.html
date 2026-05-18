@@ -1006,19 +1006,7 @@
             <!-- === TAB: DIAGNÓSTICO / FIX === -->
             <div id="tab-health" class="tab-pane">
                 <div class="page-header">
-                    <h1>Diagnóstico do Servidor</h1>
-                    <div class="toolbar-group">
-                        <button class="btn btn-secondary btn-sm" onclick="checkHealthStatus()">
-                            <i data-lucide="refresh-cw"></i> Status Rápido
-                        </button>
-                        <button class="btn btn-primary btn-sm" onclick="runHealthCheck()">
-                            <i data-lucide="stethoscope"></i> Iniciar Reparo
-                        </button>
-                    </div>
-                </div>
-
-                <div class="stats-grid" id="health-quick-status" style="margin-bottom:20px;">
-                    <!-- Preenchido via JS -->
+                    <h1>Atualização do Sistema</h1>
                 </div>
 
                 <!-- Card de Atualização do Painel -->
@@ -1098,15 +1086,6 @@
                     </div>
                 </div>
 
-                <div class="card">
-                    <h3 class="card-title">Console de Diagnóstico & Auto-Fix</h3>
-                    <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px;">
-                        O script de reparo verifica dependências, portas, processos e recria configurações quebradas automaticamente (NGINX, MariaDB, PHP-FPM, phpMyAdmin).
-                    </p>
-                    <div id="health-check-terminal" class="terminal-box" style="height:400px; overflow-y:auto; font-size:13px; font-family:monospace; white-space:pre-wrap; background:#0d1117; color:#c9d1d9; padding:16px;">
-                        [Aguardando execução...]
-                    </div>
-                </div>
             </div>
 
             <!-- === TAB: BACKUPS === -->
@@ -1272,7 +1251,7 @@
 </div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.5"></script>
+<script src="filemanager.js?v=0.2.6"></script>
 <script src="app.js?v=4.0"></script>
 </body>
 </html>

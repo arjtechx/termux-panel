@@ -125,11 +125,6 @@ app.use('/', databaseRoutes);
 const fileRoutes = require('./src/routes/fileRoutes');
 app.use('/api/files', fileRoutes);
 
-
-
-const healthRoutes = require('./src/routes/healthRoutes');
-app.use('/api/health-check', healthRoutes);
-
 const hostingRoutes = require('./src/routes/hostingRoutes');
 app.use('/api/hosting', hostingRoutes);
 
