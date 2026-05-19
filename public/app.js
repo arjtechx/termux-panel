@@ -2827,8 +2827,10 @@ async function cloudflaredLogin() {
     cloudflaredLastAuthUrl = null;
 
     try {
-        cloudflaredAuthWindow = window.open('', '_blank');
-        if (cloudflaredAuthWindow) {
+        if (!cloudflaredAuthWindow || cloudflaredAuthWindow.closed) {
+            cloudflaredAuthWindow = window.open('', '_blank');
+        }
+        if (cloudflaredAuthWindow && !cloudflaredAuthWindow.closed) {
             cloudflaredAuthWindow.document.write('<!doctype html><title>Cloudflare Login</title><body style="font-family:sans-serif;padding:24px">Aguardando URL de autorizacao da Cloudflare...</body>');
             cloudflaredAuthWindow.document.close();
         }
@@ -2876,6 +2878,64 @@ async function resetCloudflaredSystem() {
     
     const box = document.getElementById('cloudflaredLoginBox');
     if (box) box.innerHTML = 'Sistema Cloudflared resetado localmente.\nVocê pode fazer Login novamente quando quiser.\n';
+}
+
+async function resetCloudflaredAndLogin() {
+    if (!confirm('ATENCAO: Isso vai limpar os dados locais do Cloudflared, excluir o cert.pem, apagar os tuneis criados no painel e iniciar um novo login Cloudflare. Deseja continuar?')) return;
+
+    const freshBtn = document.getElementById('cloudflaredFreshLoginBtn');
+    const loginBtn = document.getElementById('cloudflaredLoginBtn');
+    if (freshBtn) {
+        freshBtn.disabled = true;
+        freshBtn.innerHTML = '<i data-lucide="loader" class="spin"></i> Limpando...';
+    }
+    if (loginBtn) loginBtn.disabled = true;
+    if (window.lucide) lucide.createIcons();
+
+    try {
+        cloudflaredAuthWindow = window.open('', '_blank');
+        if (cloudflaredAuthWindow) {
+            cloudflaredAuthWindow.document.write('<!doctype html><title>Cloudflare Login</title><body style="font-family:sans-serif;padding:24px">Limpando dados locais antes do novo login...</body>');
+            cloudflaredAuthWindow.document.close();
+        }
+    } catch (_) {
+        cloudflaredAuthWindow = null;
+    }
+
+    const box = document.getElementById('cloudflaredLoginBox');
+    if (box) box.textContent = 'Limpando dados locais, cert.pem e credenciais antigas...\n';
+
+    const data = await cloudflaredJsonFetch(`${API_BASE}/tunnel/reset`, 'POST', {}, 30000);
+    if (!data?.success) {
+        if (freshBtn) {
+            freshBtn.disabled = false;
+            freshBtn.innerHTML = '<i data-lucide="rotate-ccw"></i> Nova configuração';
+        }
+        if (loginBtn) loginBtn.disabled = false;
+        if (window.lucide) lucide.createIcons();
+        alert('Falha ao limpar dados: ' + (data?.error || 'erro desconhecido'));
+        return;
+    }
+
+    await fetchCloudflaredTunnels();
+    updateCloudflaredLoginUi({ state: 'idle', message: 'Nao autenticado', running: false, loggedIn: false });
+    if (box) {
+        const removed = data.removed || {};
+        box.textContent += `Limpeza concluida. Tuneis removidos: ${removed.tunnels || 0}. Credenciais removidas: ${removed.credentials || 0}. cert.pem: ${removed.cert ? 'removido' : 'nao encontrado'}.\nIniciando novo login Cloudflare...\n`;
+    }
+
+    if (freshBtn) {
+        freshBtn.innerHTML = '<i data-lucide="loader" class="spin"></i> Iniciando login...';
+        if (window.lucide) lucide.createIcons();
+    }
+
+    await cloudflaredLogin();
+
+    if (freshBtn) {
+        freshBtn.disabled = false;
+        freshBtn.innerHTML = '<i data-lucide="rotate-ccw"></i> Nova configuração';
+    }
+    if (window.lucide) lucide.createIcons();
 }
 
 function openCloudflaredAuthUrl(url) {

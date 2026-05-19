@@ -495,9 +495,18 @@ function resetManager() {
         loginProcess = null;
     }
 
+    const removed = {
+        cert: false,
+        tunnels: 0,
+        credentials: 0
+    };
+
     const cert = certPath();
     if (fs.existsSync(cert)) {
-        try { fs.unlinkSync(cert); } catch (err) { console.error('Erro ao excluir cert.pem', err); }
+        try {
+            fs.unlinkSync(cert);
+            removed.cert = true;
+        } catch (err) { console.error('Erro ao excluir cert.pem', err); }
     }
 
     if (fs.existsSync(TUNNELS_DIR)) {
@@ -505,8 +514,21 @@ function resetManager() {
             const p = path.join(TUNNELS_DIR, file);
             if (fs.statSync(p).isDirectory()) {
                 try {
+                    const meta = readJson(metaPath(file), null);
                     stopTunnel(file);
+                    const credentialsFile = meta?.credentialsFile ? path.resolve(meta.credentialsFile) : '';
+                    const credentialsHome = path.resolve(cloudflaredHome());
+                    const canRemoveCredentials = credentialsFile
+                        && credentialsFile.startsWith(`${credentialsHome}${path.sep}`)
+                        && path.extname(credentialsFile).toLowerCase() === '.json';
+                    if (canRemoveCredentials && fs.existsSync(credentialsFile)) {
+                        try {
+                            fs.unlinkSync(credentialsFile);
+                            removed.credentials += 1;
+                        } catch (err) { console.error('Erro ao excluir credenciais do tunel', file, err); }
+                    }
                     fs.rmSync(p, { recursive: true, force: true });
+                    removed.tunnels += 1;
                 } catch (err) { console.error('Erro ao excluir tunel', file, err); }
             }
         });
@@ -523,7 +545,7 @@ function resetManager() {
     lastLoginUrl = '';
     if (fs.existsSync(LOGIN_LOG)) fs.writeFileSync(LOGIN_LOG, '');
 
-    return { success: true };
+    return { success: true, removed };
 }
 
 module.exports = {

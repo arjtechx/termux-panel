@@ -1016,6 +1016,9 @@
                         <button class="btn btn-secondary btn-sm" id="cloudflaredLoginBtn" onclick="cloudflaredLogin()">
                             <i data-lucide="key-round"></i> Login Cloudflare
                         </button>
+                        <button class="btn btn-warning btn-sm" id="cloudflaredFreshLoginBtn" onclick="resetCloudflaredAndLogin()" title="Limpar dados, excluir cert.pem e iniciar nova autorização">
+                            <i data-lucide="rotate-ccw"></i> Nova configuração
+                        </button>
                         <button class="btn btn-danger btn-sm" onclick="resetCloudflaredSystem()" title="Limpar Configurações e Excluir Cert.pem">
                             <i data-lucide="trash-2"></i> Limpar / Logout
                         </button>
@@ -1368,7 +1371,7 @@
 </div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.32"></script>
+<script src="filemanager.js?v=0.2.33"></script>
 <script src="app.js?v=4.0"></script>
 </body>
 </html>
