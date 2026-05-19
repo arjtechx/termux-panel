@@ -787,13 +787,15 @@ async function handleCreateDatabase(e) {
 
 async function actionPhpMyAdmin() {
     logToDbConsole('open_phpmyadmin --db=' + currentDbManager, `Redirecionando para o phpMyAdmin (Cookie Auth)...`);
-    const url = `/phpmyadmin/index.php${currentDbManager ? '?db=' + encodeURIComponent(currentDbManager) : ''}`;
+    const baseUrl = window.location.protocol + '//' + window.location.hostname + ':8080';
+    const url = `${baseUrl}/phpmyadmin/index.php${currentDbManager ? '?db=' + encodeURIComponent(currentDbManager) : ''}`;
     window.open(url, '_blank');
 }
 
 async function actionShowTables() {
     logToDbConsole('open_phpmyadmin_tables --db=' + currentDbManager, `Redirecionando para estrutura de tabelas no phpMyAdmin...`);
-    const tablesUrl = `/phpmyadmin/index.php?db=${encodeURIComponent(currentDbManager)}&target=${encodeURIComponent('tbl_structure.php')}`;
+    const baseUrl = window.location.protocol + '//' + window.location.hostname + ':8080';
+    const tablesUrl = `${baseUrl}/phpmyadmin/index.php?db=${encodeURIComponent(currentDbManager)}&target=${encodeURIComponent('tbl_structure.php')}`;
     window.open(tablesUrl, '_blank');
 }
 
@@ -1178,7 +1180,7 @@ async function saveDbSetup() {
 //  PHPMYADMIN SSO
 // ============================================================
 async function openPhpMyAdmin(dbName = null, targetPage = null) {
-    let url = '/phpmyadmin/index.php';
+    let url = window.location.protocol + '//' + window.location.hostname + ':8080/phpmyadmin/index.php';
     const params = [];
     if (dbName) {
         params.push(`db=${encodeURIComponent(dbName)}`);
