@@ -198,6 +198,29 @@ function startPublishing(res, params) {
         // 3. Executa comandos do PowerShell sequencialmente
         pendingRemoteSteps = []; // Reset pending antes de iniciar
         lastReleaseVersion = newVersion;
+
+        // Cria caminhos seguros para evitar problemas de escape de shell nas notas de release
+        const gitDir = path.join(PROJECT_DIR, '.git');
+        const commitMsgPath = fs.existsSync(gitDir)
+            ? path.join(gitDir, 'release-commit-msg.txt')
+            : path.join(PROJECT_DIR, 'release-commit-msg.txt');
+        const tagMsgPath = fs.existsSync(gitDir)
+            ? path.join(gitDir, 'release-tag-msg.txt')
+            : path.join(PROJECT_DIR, 'release-tag-msg.txt');
+
+        const commitMsg = `release: v${newVersion} - ${params.releaseNotes || 'Update'}`;
+        fs.writeFileSync(commitMsgPath, commitMsg, 'utf8');
+        fs.writeFileSync(tagMsgPath, params.releaseNotes || 'Release', 'utf8');
+
+        const cleanupTempFiles = () => {
+            try {
+                if (fs.existsSync(commitMsgPath)) fs.unlinkSync(commitMsgPath);
+                if (fs.existsSync(tagMsgPath)) fs.unlinkSync(tagMsgPath);
+            } catch (e) {
+                // Ignora silenciosamente
+            }
+        };
+
         const steps = [];
 
         // Contingência de tar local
@@ -214,10 +237,9 @@ function startPublishing(res, params) {
             cmd: 'git add -A'
         });
 
-        const commitMsg = `release: v${newVersion} - ${params.releaseNotes || 'Update'}`;
         steps.push({
             desc: 'Commitando alterações...',
-            cmd: `git commit -m "${commitMsg.replace(/"/g, '\\"')}"`
+            cmd: `git commit -F "${commitMsgPath}"`
         });
 
         // Git workflow (network - marcadas para resiliência)
@@ -241,7 +263,7 @@ function startPublishing(res, params) {
 
         steps.push({
             desc: `Criando tag Git oficial v${newVersion}...`,
-            cmd: `git tag -a v${newVersion} -m "${(params.releaseNotes || 'Release').replace(/"/g, '\\"')}"`
+            cmd: `git tag -a v${newVersion} -F "${tagMsgPath}"`
         });
 
         steps.push({
@@ -251,6 +273,7 @@ function startPublishing(res, params) {
         });
 
         runSequentially(steps, 0, sendLog, () => {
+            cleanupTempFiles();
             if (pendingRemoteSteps.length > 0) {
                 sendLog(`\n⚠️ Release v${newVersion} criada localmente com sucesso!`, 'success');
                 sendLog(`⚠️ ${pendingRemoteSteps.length} operação(ões) remota(s) pendente(s) — sem conexão com GitHub.`, 'error');
@@ -264,6 +287,7 @@ function startPublishing(res, params) {
             }
             res.end();
         }, () => {
+            cleanupTempFiles();
             sendLog(`❌ Processo interrompido por falha em alguma etapa local.`, 'error');
             res.end();
         });
