@@ -9,6 +9,8 @@ let socket = null;
 let currentDir = '/';
 let currentFiles = [];
 let bootCompleted = false;
+const CPU_HISTORY_LIMIT = 28;
+const cpuHistory = [];
 
 // ============================================================
 //  BOOT SEQUENCE
@@ -108,6 +110,9 @@ function initElements() {
     el = {
         cpu:        document.getElementById('stat-cpu'),
         cpuDetails: document.getElementById('stat-cpu-details'),
+        cpuCoreGrid: document.getElementById('cpu-core-grid'),
+        cpuChartLine: document.getElementById('cpu-chart-line'),
+        cpuChartArea: document.getElementById('cpu-chart-area'),
         ram:        document.getElementById('stat-ram'),
         temp:       document.getElementById('stat-temperature'),
         storage:    document.getElementById('stat-storage'),
@@ -341,6 +346,7 @@ async function fetchStatus() {
     // storageFree, storageTotal, storagePercent, temperature (string)
     if (el.cpu)        el.cpu.textContent        = data.cpu        || '--%';
     if (el.cpuDetails) el.cpuDetails.textContent = `${data.cpuCores || '--'} Núcleos | ${data.cpuSpeed || '--'}`;
+    renderCpuVisual(data);
     if (el.ram)        el.ram.textContent        = data.ram        || '-- / --';
     if (el.temp)       el.temp.textContent       = data.temperature || '--°C';
     if (el.netSpeed)   el.netSpeed.textContent   = `${data.totalDown || '--'} / ${data.totalUp || '--'}`;
@@ -352,6 +358,61 @@ async function fetchStatus() {
     if (el.storage && data.storageTotal) {
         el.storage.textContent = `${data.storageFree || '--'} livre de ${data.storageTotal}`;
     }
+}
+
+function parsePercent(value) {
+    const numeric = Number(String(value || '').replace('%', '').replace(',', '.').trim());
+    if (!Number.isFinite(numeric)) return 0;
+    return Math.max(0, numeric);
+}
+
+function renderCpuVisual(data) {
+    const cores = Math.max(1, Number(data.cpuCores) || 1);
+    const usage = parsePercent(data.cpu);
+
+    cpuHistory.push(usage);
+    while (cpuHistory.length > CPU_HISTORY_LIMIT) cpuHistory.shift();
+
+    renderCpuCores(cores, usage);
+    renderCpuChart();
+}
+
+function renderCpuCores(cores, usage) {
+    if (!el.cpuCoreGrid) return;
+
+    const activeCores = Math.min(cores, Math.ceil(usage / 100));
+    if (el.cpuCoreGrid.dataset.cores !== String(cores)) {
+        el.cpuCoreGrid.dataset.cores = String(cores);
+        el.cpuCoreGrid.innerHTML = Array.from({ length: cores }, (_, index) => (
+            `<span class="cpu-core" title="Nucleo ${index + 1}" aria-label="Nucleo ${index + 1}"></span>`
+        )).join('');
+    }
+
+    el.cpuCoreGrid.querySelectorAll('.cpu-core').forEach((core, index) => {
+        core.classList.toggle('active', index < activeCores);
+    });
+}
+
+function renderCpuChart() {
+    if (!el.cpuChartLine || !el.cpuChartArea) return;
+
+    const width = 160;
+    const height = 48;
+    const values = cpuHistory.length > 1 ? cpuHistory : [0, cpuHistory[0] || 0];
+    const scaleMax = Math.max(100, ...values);
+    const step = width / (values.length - 1);
+
+    const points = values.map((value, index) => {
+        const x = index * step;
+        const y = height - (value / scaleMax) * (height - 4) - 2;
+        return [x, y];
+    });
+
+    const linePath = points.map(([x, y], index) => `${index ? 'L' : 'M'} ${x.toFixed(2)} ${y.toFixed(2)}`).join(' ');
+    const areaPath = `${linePath} L ${width} ${height} L 0 ${height} Z`;
+
+    el.cpuChartLine.setAttribute('d', linePath);
+    el.cpuChartArea.setAttribute('d', areaPath);
 }
 
 // ============================================================
@@ -2420,11 +2481,143 @@ function showCloudflaredCreate(force) {
     }
 }
 
+function resetCloudflaredForm() {
+    const form = document.getElementById('cloudflaredCreateForm');
+    if (form) form.reset();
+    const editId = document.getElementById('cfEditId');
+    const title = document.getElementById('cloudflaredFormTitle');
+    const submit = document.getElementById('cloudflaredSubmitBtn');
+    const host = document.getElementById('cfLocalHost');
+    const autoRestart = document.getElementById('cfAutoRestart');
+
+    if (editId) editId.value = '';
+    if (title) title.textContent = 'Criar Tunel';
+    if (submit) submit.innerHTML = '<i data-lucide="save"></i> Criar';
+    if (host) host.value = '127.0.0.1';
+    if (autoRestart) autoRestart.checked = true;
+    showCloudflaredCreate(false);
+    if (window.lucide) lucide.createIcons();
+}
+
+function newCloudflaredTunnel() {
+    resetCloudflaredForm();
+    showCloudflaredCreate(true);
+}
+
+function editCloudflaredTunnel(id) {
+    const tunnel = cloudflaredTunnels.find(item => item.id === id);
+    if (!tunnel) return;
+
+    document.getElementById('cfEditId').value = tunnel.id;
+    document.getElementById('cfName').value = tunnel.name || '';
+    document.getElementById('cfDomain').value = tunnel.domain || '';
+    document.getElementById('cfType').value = tunnel.type || 'HTTP';
+    document.getElementById('cfLocalHost').value = tunnel.localHost || '127.0.0.1';
+    document.getElementById('cfLocalPort').value = tunnel.localPort || '';
+    document.getElementById('cfPath').value = tunnel.path || '';
+    document.getElementById('cfAutoRestart').checked = tunnel.autoRestart !== false;
+
+    const title = document.getElementById('cloudflaredFormTitle');
+    const submit = document.getElementById('cloudflaredSubmitBtn');
+    if (title) title.textContent = `Editar Tunel: ${tunnel.name}`;
+    if (submit) submit.innerHTML = '<i data-lucide="save"></i> Salvar';
+
+    showCloudflaredCreate(true);
+    if (window.lucide) lucide.createIcons();
+}
+
+async function cloudflaredJsonFetch(url, method = 'GET', body = null, timeoutMs = 30000) {
+    try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        const opts = {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            signal: controller.signal
+        };
+        if (body) opts.body = JSON.stringify(body);
+        const res = await fetch(url, opts);
+        clearTimeout(timer);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) return { success: false, error: data.error || `HTTP ${res.status}` };
+        return data;
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
 async function fetchCloudflaredTunnels() {
     const data = await safeFetch(`${API_BASE}/tunnels`);
     if (!data?.success) return;
     cloudflaredTunnels = data.tunnels || [];
     renderCloudflaredTunnels();
+}
+
+function formatCloudflaredDiagnostics(data) {
+    if (!data?.success) return data?.error || 'Falha ao executar diagnostico.';
+
+    const checks = data.checks || {};
+    const env = data.environment || {};
+    const lines = [
+        `ambiente: ${env.type || '--'}${env.isTermux ? ' / Android Termux' : ''}`,
+        `PREFIX: ${env.prefix || '--'}`,
+        `HOME: ${env.home || '--'}`,
+        `gerenciador: ${env.packageManager || '--'}`,
+        '',
+        `cloudflared instalado: ${checks.installed ? 'OK' : 'ERRO'}`,
+        `login Cloudflare/cert.pem: ${checks.loggedIn ? 'OK' : 'PENDENTE'}`,
+        `pasta do painel gravavel: ${checks.moduleWritable ? 'OK' : 'ERRO'}`,
+        `pasta ~/.cloudflared gravavel: ${checks.cloudflaredHomeWritable ? 'OK' : 'ERRO'}`,
+        env.isTermux ? `termux-open-url: ${checks.termuxOpenUrl ? 'OK' : 'AUSENTE'}` : '',
+        env.isTermux ? `termux-api: ${checks.termuxApi ? 'OK' : 'AUSENTE'}` : '',
+        data.version ? `versao: ${data.version}` : '',
+        data.installHint ? `instalacao: ${data.installHint}` : '',
+        '',
+        `cert.pem: ${data.paths?.cert || '--'}`,
+        `tuneis do painel: ${data.paths?.tunnelsDir || '--'}`,
+        ''
+    ].filter(Boolean);
+
+    if (data.issues?.length) {
+        lines.push('ERROS / AVISOS:');
+        data.issues.forEach(issue => lines.push(`- ${issue}`));
+        lines.push('');
+    } else {
+        lines.push('Nenhum erro encontrado no diagnostico principal.', '');
+    }
+
+    if (data.tunnels?.length) {
+        lines.push('TUNEIS:');
+        data.tunnels.forEach(tunnel => {
+            lines.push(`- ${tunnel.name}: ${tunnel.status} | ${tunnel.publicUrl} -> ${tunnel.localService}`);
+            if (tunnel.issues?.length) tunnel.issues.forEach(issue => lines.push(`  * ${issue}`));
+        });
+    }
+
+    return lines.join('\n');
+}
+
+async function checkCloudflaredSystem() {
+    const card = document.getElementById('cloudflaredDiagnosticsCard');
+    const box = document.getElementById('cloudflaredDiagnosticsBox');
+    const status = document.getElementById('cloudflaredDiagnosticsStatus');
+
+    if (card) card.classList.remove('hidden');
+    if (status) {
+        status.className = 'badge badge-warning';
+        status.textContent = 'Verificando';
+    }
+    if (box) box.textContent = 'Verificando instalacao, login, permissoes, configs e portas locais...\n';
+
+    const data = await cloudflaredJsonFetch(`${API_BASE}/tunnel/diagnostics`, 'GET', null, 20000);
+    if (box) {
+        box.textContent = formatCloudflaredDiagnostics(data);
+        box.scrollTop = 0;
+    }
+    if (status) {
+        status.className = `badge ${data?.ok ? 'badge-success' : 'badge-warning'}`;
+        status.textContent = data?.ok ? 'OK' : 'Ajustar';
+    }
 }
 
 function renderCloudflaredTunnels() {
@@ -2461,7 +2654,7 @@ function renderCloudflaredTunnels() {
                 <td>${tunnel.pid ? `<code>${cfEscape(tunnel.pid)}</code>` : '--'}</td>
                 <td>
                     <div class="toolbar-group">
-                        <button class="btn btn-sm ${isOnline ? 'btn-danger' : 'btn-success'}" onclick="${isOnline ? 'stopCloudflaredTunnel' : 'startCloudflaredTunnel'}('${cfEscape(tunnel.id)}')" title="${isOnline ? 'Parar' : 'Iniciar'}">
+                        <button class="btn btn-sm ${isOnline ? 'btn-danger' : 'btn-success'}" onclick="${isOnline ? 'stopCloudflaredTunnel' : 'startCloudflaredTunnel'}('${cfEscape(tunnel.id)}')" title="${isOnline ? 'Pausar' : 'Iniciar'}">
                             <i data-lucide="${isOnline ? 'square' : 'play'}"></i>
                         </button>
                         <button class="btn btn-secondary btn-sm" onclick="restartCloudflaredTunnel('${cfEscape(tunnel.id)}')" title="Reiniciar">
@@ -2469,6 +2662,9 @@ function renderCloudflaredTunnels() {
                         </button>
                         <button class="btn btn-secondary btn-sm" onclick="selectCloudflaredTunnel('${cfEscape(tunnel.id)}')" title="Logs">
                             <i data-lucide="scroll-text"></i>
+                        </button>
+                        <button class="btn btn-secondary btn-sm" onclick="editCloudflaredTunnel('${cfEscape(tunnel.id)}')" title="Editar">
+                            <i data-lucide="pencil"></i>
                         </button>
                         <button class="btn btn-danger btn-sm" onclick="deleteCloudflaredTunnel('${cfEscape(tunnel.id)}')" title="Excluir">
                             <i data-lucide="trash-2"></i>
@@ -2484,7 +2680,9 @@ function renderCloudflaredTunnels() {
 
 async function createCloudflaredTunnel(event) {
     event.preventDefault();
+    const editId = document.getElementById('cfEditId')?.value.trim();
     const payload = {
+        id: editId,
         name: document.getElementById('cfName')?.value.trim(),
         domain: document.getElementById('cfDomain')?.value.trim(),
         type: document.getElementById('cfType')?.value,
@@ -2494,42 +2692,43 @@ async function createCloudflaredTunnel(event) {
         autoRestart: document.getElementById('cfAutoRestart')?.checked !== false
     };
 
-    const data = await safeFetch(`${API_BASE}/tunnel/create`, 'POST', payload, 60000);
+    const endpoint = editId ? `${API_BASE}/tunnel/update` : `${API_BASE}/tunnel/create`;
+    const data = await cloudflaredJsonFetch(endpoint, 'POST', payload, 60000);
     if (!data?.success) {
-        alert(`Falha ao criar tunel. Verifique se o cloudflared esta instalado e logado.`);
+        alert(data?.error || `Falha ao ${editId ? 'editar' : 'criar'} tunel. Verifique se o cloudflared esta instalado e logado.`);
         return;
     }
 
-    event.target.reset();
-    document.getElementById('cfLocalHost').value = '127.0.0.1';
-    document.getElementById('cfAutoRestart').checked = true;
-    showCloudflaredCreate(false);
+    resetCloudflaredForm();
     await fetchCloudflaredTunnels();
     selectCloudflaredTunnel(data.tunnel.id);
 }
 
 async function startCloudflaredTunnel(id) {
-    const data = await safeFetch(`${API_BASE}/tunnel/start`, 'POST', { id }, 30000);
+    const data = await cloudflaredJsonFetch(`${API_BASE}/tunnel/start`, 'POST', { id }, 30000);
     if (!data?.success) alert(data?.error || 'Falha ao iniciar tunel.');
     await fetchCloudflaredTunnels();
+    if (cloudflaredSelectedId === id) loadCloudflaredLogs();
 }
 
 async function stopCloudflaredTunnel(id) {
-    const data = await safeFetch(`${API_BASE}/tunnel/stop`, 'POST', { id }, 30000);
+    const data = await cloudflaredJsonFetch(`${API_BASE}/tunnel/stop`, 'POST', { id }, 30000);
     if (!data?.success) alert(data?.error || 'Falha ao parar tunel.');
     await fetchCloudflaredTunnels();
+    if (cloudflaredSelectedId === id) loadCloudflaredLogs();
 }
 
 async function restartCloudflaredTunnel(id) {
-    const data = await safeFetch(`${API_BASE}/tunnel/restart`, 'POST', { id }, 30000);
+    const data = await cloudflaredJsonFetch(`${API_BASE}/tunnel/restart`, 'POST', { id }, 30000);
     if (!data?.success) alert(data?.error || 'Falha ao reiniciar tunel.');
     await fetchCloudflaredTunnels();
+    if (cloudflaredSelectedId === id) loadCloudflaredLogs();
 }
 
 async function deleteCloudflaredTunnel(id) {
     const name = cloudflaredTunnels.find(item => item.id === id)?.name || id;
     if (!confirm(`Excluir o tunel "${name}"?`)) return;
-    const data = await safeFetch(`${API_BASE}/tunnel/delete`, 'POST', { id }, 30000);
+    const data = await cloudflaredJsonFetch(`${API_BASE}/tunnel/delete`, 'POST', { id }, 30000);
     if (!data?.success) alert(data?.error || 'Falha ao excluir tunel.');
     if (cloudflaredSelectedId === id) selectCloudflaredTunnel(null);
     await fetchCloudflaredTunnels();
@@ -2579,14 +2778,16 @@ async function cloudflaredLogin() {
         cloudflaredAuthWindow = null;
     }
 
-    const data = await safeFetch(`${API_BASE}/tunnel/login`, 'POST', {}, 30000);
-    if (!data?.success && box) box.innerHTML += 'Falha ao iniciar login.\n';
+    const data = await cloudflaredJsonFetch(`${API_BASE}/tunnel/login`, 'POST', {}, 30000);
+    if (!data?.success && box) box.innerHTML += `Falha ao iniciar login: ${cfEscape(data?.error || 'erro desconhecido')}\n`;
     if (cloudflaredLoginInterval) clearInterval(cloudflaredLoginInterval);
     cloudflaredLoginInterval = setInterval(loadCloudflaredLoginLogs, 2000);
+    setTimeout(loadCloudflaredLoginStatus, 800);
 }
 
 function openCloudflaredAuthUrl(url) {
-    if (!/^https:\/\/[^\s]+$/i.test(url || '')) return;
+    url = String(url || '').trim().replace(/[),.;\]]+$/g, '');
+    if (!/^https:\/\/[^\s"'<>]+$/i.test(url || '')) return;
     const isNewUrl = url !== cloudflaredLastAuthUrl;
     cloudflaredLastAuthUrl = url;
 
@@ -2615,8 +2816,9 @@ async function loadCloudflaredLoginLogs() {
     try {
         const res = await fetch(`${API_BASE}/tunnel/login/logs?lines=240`);
         const text = await res.text();
+        const headerUrl = res.headers.get('X-Cloudflared-Auth-Url');
         box.textContent = text;
-        const found = (text.match(/https:\/\/[^\s]+/i) || [])[0];
+        const found = headerUrl || (text.match(/https:\/\/[^\s"'<>]+/i) || [])[0];
         if (found) openCloudflaredAuthUrl(found);
         box.scrollTop = box.scrollHeight;
     } catch (err) {
@@ -2624,12 +2826,17 @@ async function loadCloudflaredLoginLogs() {
     }
 }
 
+async function loadCloudflaredLoginStatus() {
+    const data = await cloudflaredJsonFetch(`${API_BASE}/tunnel/login/status`, 'GET', null, 8000);
+    if (data?.authUrl) openCloudflaredAuthUrl(data.authUrl);
+}
+
 function appendCloudflaredLoginLog(data) {
     const box = document.getElementById('cloudflaredLoginBox');
     if (!box) return;
     if (box.textContent.includes('Use "Login Cloudflare"')) box.textContent = '';
     box.textContent += data;
-    const found = (String(data).match(/https:\/\/[^\s]+/i) || [])[0];
+    const found = (String(data).match(/https:\/\/[^\s"'<>]+/i) || [])[0];
     if (found) openCloudflaredAuthUrl(found);
     box.scrollTop = box.scrollHeight;
 }

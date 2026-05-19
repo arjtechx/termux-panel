@@ -24,9 +24,11 @@ const {
     defaultCredentialsPath,
     appendLog
 } = require('./utils');
-const { getStatus, stopTunnel } = require('./process');
+const { getStatus, startTunnel, stopTunnel } = require('./process');
 
 ensureModuleDirs();
+
+let lastLoginUrl = '';
 
 function runCommand(command, args, options = {}) {
     return new Promise((resolve) => {
@@ -42,8 +44,14 @@ function runCommand(command, args, options = {}) {
 
 function parseTunnelCreateOutput(output) {
     const uuid = (output.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i) || [])[0];
-    const credentials = (output.match(/[\w./~:-]+\.json/i) || [])[0];
+    const credentials = (output.match(/(?:[A-Za-z]:)?[^\r\n"'<>]*\.json/i) || [])[0]?.trim();
     return { uuid, credentialsFile: credentials };
+}
+
+function extractCloudflareUrl(text) {
+    const found = String(text || '').match(/https:\/\/[^\s"'<>]+/i);
+    if (!found) return '';
+    return found[0].replace(/[),.;\]]+$/g, '');
 }
 
 function buildConfig(meta) {
@@ -71,6 +79,31 @@ function saveTunnel(meta) {
     fs.closeSync(fs.openSync(logPath(meta.id), 'a'));
 }
 
+function normalizeTunnelInput(input, existing = {}) {
+    const name = String(input.name || existing.name || '').trim();
+    const slug = existing.slug || slugifyName(name);
+    const domain = validateDomain(input.domain || existing.domain);
+    const type = validateType(input.type || existing.type);
+    const localHost = validateHost(input.localHost || input.host || existing.localHost || '127.0.0.1');
+    const localPort = validatePort(input.localPort || input.port || existing.localPort);
+    const routePath = validatePath(input.path ?? existing.path);
+
+    return {
+        name,
+        slug,
+        domain,
+        type,
+        localHost,
+        localPort,
+        path: routePath,
+        localService: makeLocalService(type, localHost, localPort),
+        publicUrl: `https://${domain}${routePath || ''}`,
+        autoRestart: Object.prototype.hasOwnProperty.call(input, 'autoRestart')
+            ? input.autoRestart !== false
+            : existing.autoRestart !== false
+    };
+}
+
 function listTunnels() {
     ensureModuleDirs();
     return fs.readdirSync(TUNNELS_DIR, { withFileTypes: true })
@@ -82,13 +115,8 @@ function listTunnels() {
 }
 
 async function createTunnel(input) {
-    const name = String(input.name || '').trim();
-    const slug = slugifyName(name);
-    const domain = validateDomain(input.domain);
-    const type = validateType(input.type);
-    const localHost = validateHost(input.localHost || input.host || '127.0.0.1');
-    const localPort = validatePort(input.localPort || input.port);
-    const routePath = validatePath(input.path);
+    const normalized = normalizeTunnelInput(input);
+    const { name, slug, domain, type, localHost, localPort, path: routePath } = normalized;
     const id = `${slug}-${Date.now()}`;
 
     const createResult = await runCommand('cloudflared', ['tunnel', 'create', slug]);
@@ -109,10 +137,10 @@ async function createTunnel(input) {
         localHost,
         localPort,
         path: routePath,
-        localService: makeLocalService(type, localHost, localPort),
+        localService: normalized.localService,
         credentialsFile: parsed.credentialsFile || defaultCredentialsPath(parsed.uuid),
-        publicUrl: `https://${domain}${routePath || ''}`,
-        autoRestart: input.autoRestart !== false,
+        publicUrl: normalized.publicUrl,
+        autoRestart: normalized.autoRestart,
         status: 'offline',
         pid: null,
         createdAt: new Date().toISOString(),
@@ -137,6 +165,27 @@ function getTunnel(id) {
     return { ...meta, ...getStatus(id) };
 }
 
+function updateTunnel(id, input) {
+    const current = readJson(metaPath(id), null);
+    if (!current) throw new Error('TÃºnel nÃ£o encontrado.');
+
+    const wasOnline = getStatus(id).online;
+    if (wasOnline) stopTunnel(id);
+
+    const patch = normalizeTunnelInput(input, current);
+    const next = {
+        ...current,
+        ...patch,
+        updatedAt: new Date().toISOString()
+    };
+
+    saveTunnel(next);
+    appendLog(logPath(id), `ConfiguraÃ§Ã£o atualizada: ${next.publicUrl} -> ${next.localService}`);
+    if (wasOnline) startTunnel(id);
+
+    return { ...next, ...getStatus(id), wasOnline };
+}
+
 function deleteTunnel(id) {
     const meta = getTunnel(id);
     if (!meta) throw new Error('Túnel não encontrado.');
@@ -146,22 +195,34 @@ function deleteTunnel(id) {
     return { success: true };
 }
 
-function startLogin(io) {
+async function startLogin(io) {
     ensureModuleDirs();
     fs.writeFileSync(LOGIN_LOG, '');
+    lastLoginUrl = '';
+
+    const version = await runCommand('cloudflared', ['--version']);
+    if (version.code !== 0) {
+        const message = `cloudflared nÃ£o encontrado ou nÃ£o executou corretamente: ${version.stderr || version.stdout || 'verifique a instalacao'}`;
+        fs.appendFileSync(LOGIN_LOG, `${message}\n`);
+        if (io) io.emit('cloudflared-login-log', `${message}\n`);
+        return { success: false, error: message };
+    }
 
     const child = spawn('cloudflared', ['tunnel', 'login'], {
         stdio: ['ignore', 'pipe', 'pipe'],
         env: { ...process.env }
     });
 
+    let buffer = '';
     let loginUrl = '';
     const onData = (data) => {
         const text = data.toString();
         fs.appendFileSync(LOGIN_LOG, text);
-        const found = (text.match(/https:\/\/[^\s]+/i) || [])[0];
+        buffer = `${buffer}${text}`.slice(-8192);
+        const found = extractCloudflareUrl(buffer);
         if (found && !loginUrl) {
             loginUrl = found;
+            lastLoginUrl = found;
             if (io) io.emit('cloudflared-login-url', loginUrl);
             const opener = process.env.PREFIX ? 'termux-open-url' : 'xdg-open';
             spawn(opener, [loginUrl], { detached: true, stdio: 'ignore' }).on('error', () => {});
@@ -183,11 +244,25 @@ function startLogin(io) {
     return { success: true, pid: child.pid };
 }
 
+function getLastLoginUrl() {
+    if (lastLoginUrl) return lastLoginUrl;
+    try {
+        const text = fs.readFileSync(LOGIN_LOG, 'utf8');
+        return extractCloudflareUrl(text);
+    } catch (_) {
+        return '';
+    }
+}
+
 module.exports = {
     listTunnels,
     createTunnel,
+    updateTunnel,
     getTunnel,
     deleteTunnel,
     startLogin,
+    getLastLoginUrl,
+    extractCloudflareUrl,
+    runCommand,
     buildConfig
 };

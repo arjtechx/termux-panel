@@ -482,7 +482,7 @@ function install_panel() {
     # Verificar deps restantes (nodejs, nginx, etc.)
     log "Instalando outras dependências..."
     if [ "$IS_TERMUX" = true ]; then
-        pkg install -y nodejs nginx termux-api coreutils procps zip unzip psmisc lsof python php 2>/dev/null || true
+        pkg install -y nodejs nginx cloudflared termux-api coreutils procps zip unzip psmisc lsof python php 2>/dev/null || true
     else
         ${SUDO}apt-get install -y nodejs nginx coreutils procps zip unzip psmisc lsof python3 php-fpm 2>/dev/null || true
     fi

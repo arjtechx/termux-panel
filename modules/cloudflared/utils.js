@@ -153,8 +153,19 @@ function createFallbackUuid() {
     return crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString('hex');
 }
 
+function cloudflaredHome() {
+    const termuxHome = '/data/data/com.termux/files/home';
+    if (process.env.HOME) return path.join(process.env.HOME, '.cloudflared');
+    if (process.env.PREFIX && process.env.PREFIX.includes('com.termux')) return path.join(termuxHome, '.cloudflared');
+    return path.join(os.homedir(), '.cloudflared');
+}
+
 function defaultCredentialsPath(uuid) {
-    return path.join(os.homedir(), '.cloudflared', `${uuid}.json`);
+    return path.join(cloudflaredHome(), `${uuid}.json`);
+}
+
+function certPath() {
+    return path.join(cloudflaredHome(), 'cert.pem');
 }
 
 module.exports = {
@@ -180,5 +191,7 @@ module.exports = {
     escapeYaml,
     makeLocalService,
     createFallbackUuid,
-    defaultCredentialsPath
+    cloudflaredHome,
+    defaultCredentialsPath,
+    certPath
 };

@@ -109,6 +109,68 @@ body {
     margin-top: 6px;
 }
 
+.cpu-visual {
+    display: grid;
+    grid-template-columns: minmax(70px, 0.8fr) minmax(90px, 1.2fr);
+    gap: 12px;
+    align-items: end;
+    margin-top: 14px;
+}
+
+.cpu-core-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(10px, 1fr));
+    gap: 5px;
+    min-height: 48px;
+    align-content: end;
+}
+
+.cpu-core {
+    display: block;
+    min-width: 10px;
+    height: 22px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--surface2);
+    box-shadow: inset 0 -10px 0 rgba(113, 128, 150, 0.08);
+    transition: height 0.35s ease, background 0.35s ease, border-color 0.35s ease, box-shadow 0.35s ease;
+}
+
+.cpu-core:nth-child(2n) { height: 30px; }
+.cpu-core:nth-child(3n) { height: 38px; }
+.cpu-core:nth-child(4n) { height: 46px; }
+
+.cpu-core.active {
+    border-color: rgba(99, 102, 241, 0.42);
+    background: linear-gradient(180deg, #818cf8, var(--primary));
+    box-shadow: 0 6px 16px var(--primary-glow);
+}
+
+.cpu-usage-chart {
+    width: 100%;
+    height: 48px;
+    overflow: visible;
+}
+
+.cpu-chart-area {
+    fill: url(#cpu-chart-fill);
+}
+
+.cpu-chart-line {
+    fill: none;
+    stroke: var(--primary);
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    filter: drop-shadow(0 4px 8px var(--primary-glow));
+}
+
+@media (max-width: 560px) {
+    .cpu-visual {
+        grid-template-columns: 1fr;
+    }
+}
+
 /* === APP SHELL — ESTRUTURA MESTRE === */
 .app-shell {
     display: flex;
