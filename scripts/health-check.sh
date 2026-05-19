@@ -352,7 +352,7 @@ fi
 if [ -f "$PMA_NGINX_CONF" ]; then
     log_ok "Arquivo de vhost phpMyAdmin existe"
     # Verifica se o conteúdo referencia o diretório correto
-    if grep -q "$PMA_DIR" "$PMA_NGINX_CONF" 2>/dev/null && grep -q "/phpmyadmin/" "$PMA_NGINX_CONF" 2>/dev/null; then
+    if grep -q "$PMA_DIR" "$PMA_NGINX_CONF" 2>/dev/null && grep -q "/phpmyadmin/" "$PMA_NGINX_CONF" 2>/dev/null && ! grep -q "include       fastcgi_params;" "$PMA_NGINX_CONF" 2>/dev/null; then
         log_ok "Vhost aponta para o diretório correto"
     else
         log_warn "Vhost phpMyAdmin com referência incorreta de path"
@@ -369,6 +369,42 @@ if [ "$REWRITE_PMA" = true ]; then
     FASTCGI_PASS="unix:${DETECTED_SOCK}"
     if [ ! -S "$DETECTED_SOCK" ]; then
         FASTCGI_PASS="127.0.0.1:9000"
+    fi
+    FASTCGI_INCLUDE=""
+    for try_include in \
+        "$PREFIX/etc/nginx/fastcgi_params" \
+        "$PREFIX/etc/nginx/fastcgi.conf" \
+        "/etc/nginx/fastcgi_params" \
+        "/etc/nginx/fastcgi.conf"; do
+        if [ -f "$try_include" ]; then
+            FASTCGI_INCLUDE="$try_include"
+            break
+        fi
+    done
+    if [ -z "$FASTCGI_INCLUDE" ]; then
+        FASTCGI_INCLUDE="$PREFIX/etc/nginx/fastcgi_params"
+        mkdir -p "$(dirname "$FASTCGI_INCLUDE")"
+        cat > "$FASTCGI_INCLUDE" <<'FASTCGI_PARAMS'
+fastcgi_param  QUERY_STRING       $query_string;
+fastcgi_param  REQUEST_METHOD     $request_method;
+fastcgi_param  CONTENT_TYPE       $content_type;
+fastcgi_param  CONTENT_LENGTH     $content_length;
+fastcgi_param  SCRIPT_NAME        $fastcgi_script_name;
+fastcgi_param  REQUEST_URI        $request_uri;
+fastcgi_param  DOCUMENT_URI       $document_uri;
+fastcgi_param  DOCUMENT_ROOT      $document_root;
+fastcgi_param  SERVER_PROTOCOL    $server_protocol;
+fastcgi_param  REQUEST_SCHEME     $scheme;
+fastcgi_param  HTTPS              $https if_not_empty;
+fastcgi_param  GATEWAY_INTERFACE  CGI/1.1;
+fastcgi_param  SERVER_SOFTWARE    nginx/$nginx_version;
+fastcgi_param  REMOTE_ADDR        $remote_addr;
+fastcgi_param  REMOTE_PORT        $remote_port;
+fastcgi_param  SERVER_ADDR        $server_addr;
+fastcgi_param  SERVER_PORT        $server_port;
+fastcgi_param  SERVER_NAME        $server_name;
+fastcgi_param  REDIRECT_STATUS    200;
+FASTCGI_PARAMS
     fi
 
     cat > "$PMA_NGINX_CONF" << PMA_CONF
@@ -396,7 +432,7 @@ server {
         fastcgi_pass  ${FASTCGI_PASS};
         fastcgi_index index.php;
         fastcgi_param SCRIPT_FILENAME \$request_filename;
-        include       fastcgi_params;
+        include       ${FASTCGI_INCLUDE};
     }
 
     location ~ /\\.(ht|git) {

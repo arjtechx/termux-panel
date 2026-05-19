@@ -46,6 +46,45 @@ detect_fastcgi_pass() {
     printf '127.0.0.1:9000\n'
 }
 
+detect_fastcgi_include() {
+    local include_file
+    for include_file in \
+        "$PREFIX/etc/nginx/fastcgi_params" \
+        "$PREFIX/etc/nginx/fastcgi.conf" \
+        "/etc/nginx/fastcgi_params" \
+        "/etc/nginx/fastcgi.conf"; do
+        if [ -f "$include_file" ]; then
+            printf '%s\n' "$include_file"
+            return 0
+        fi
+    done
+
+    include_file="$PREFIX/etc/nginx/fastcgi_params"
+    mkdir -p "$(dirname "$include_file")"
+    cat > "$include_file" <<'FASTCGI_PARAMS'
+fastcgi_param  QUERY_STRING       $query_string;
+fastcgi_param  REQUEST_METHOD     $request_method;
+fastcgi_param  CONTENT_TYPE       $content_type;
+fastcgi_param  CONTENT_LENGTH     $content_length;
+fastcgi_param  SCRIPT_NAME        $fastcgi_script_name;
+fastcgi_param  REQUEST_URI        $request_uri;
+fastcgi_param  DOCUMENT_URI       $document_uri;
+fastcgi_param  DOCUMENT_ROOT      $document_root;
+fastcgi_param  SERVER_PROTOCOL    $server_protocol;
+fastcgi_param  REQUEST_SCHEME     $scheme;
+fastcgi_param  HTTPS              $https if_not_empty;
+fastcgi_param  GATEWAY_INTERFACE  CGI/1.1;
+fastcgi_param  SERVER_SOFTWARE    nginx/$nginx_version;
+fastcgi_param  REMOTE_ADDR        $remote_addr;
+fastcgi_param  REMOTE_PORT        $remote_port;
+fastcgi_param  SERVER_ADDR        $server_addr;
+fastcgi_param  SERVER_PORT        $server_port;
+fastcgi_param  SERVER_NAME        $server_name;
+fastcgi_param  REDIRECT_STATUS    200;
+FASTCGI_PARAMS
+    printf '%s\n' "$include_file"
+}
+
 configure_phpmyadmin_sso() {
     local pma_dir="$1"
     local pma_config="$pma_dir/config.inc.php"
@@ -107,7 +146,9 @@ PHP_CONFIG
 configure_nginx_vhost() {
     local pma_dir="$1"
     local fastcgi_pass
+    local fastcgi_include
     fastcgi_pass="$(detect_fastcgi_pass)"
+    fastcgi_include="$(detect_fastcgi_include)"
 
     mkdir -p "$NGINX_CONF_DIR" "$PREFIX/var/log/nginx"
 
@@ -136,7 +177,7 @@ server {
         fastcgi_pass  ${fastcgi_pass};
         fastcgi_index index.php;
         fastcgi_param SCRIPT_FILENAME \$request_filename;
-        include       fastcgi_params;
+        include       ${fastcgi_include};
     }
 
     location ~ /\\.(ht|git) {
@@ -146,6 +187,7 @@ server {
 PMA_CONF
 
     echo "  [+] vhost NGINX criado em $PMA_NGINX_CONF usando fastcgi_pass=$fastcgi_pass"
+    echo "  [+] include FastCGI: $fastcgi_include"
 }
 
 PMA_DIR="$(find_phpmyadmin_dir)"
