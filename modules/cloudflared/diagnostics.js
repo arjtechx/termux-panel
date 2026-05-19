@@ -125,7 +125,9 @@ async function runDiagnostics() {
     const homeWritable = checkWritableDir(homeCloudflaredDir);
     const loginLog = fs.existsSync(LOGIN_LOG) ? logs.getLoginLogs(80) : '';
     const termuxOpenUrl = IS_TERMUX ? await commandExists('termux-open-url') : false;
-    const termuxApi = IS_TERMUX ? await commandExists('termux-api') : false;
+    const termuxApi = IS_TERMUX
+        ? (termuxOpenUrl || await commandExists('termux-toast') || await commandExists('termux-battery-status'))
+        : false;
     const python = IS_TERMUX ? await commandExists('python') : true;
 
     const tunnelMetas = fs.readdirSync(TUNNELS_DIR, { withFileTypes: true })

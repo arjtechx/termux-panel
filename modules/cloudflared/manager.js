@@ -546,34 +546,21 @@ async function resetManagerViaTerminal(io) {
     }
 
     const home = cloudflaredHome();
-    const cert = certPath();
-    const tunnels = TUNNELS_DIR;
-
+    const resetScript = path.join(__dirname, '..', '..', 'scripts', 'cloudflared-reset.sh');
     const script = process.platform === 'win32'
         ? [
             `$ErrorActionPreference = 'Continue'`,
             `Write-Output "[cloudflared] Limpando processos antigos..."`,
             `Get-Process cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue`,
             `Write-Output "[cloudflared] Removendo cert.pem..."`,
-            `Remove-Item -LiteralPath ${JSON.stringify(cert)} -Force -ErrorAction SilentlyContinue`,
+            `Remove-Item -LiteralPath ${JSON.stringify(certPath())} -Force -ErrorAction SilentlyContinue`,
             `Write-Output "[cloudflared] Removendo credenciais .json antigas..."`,
             `if (Test-Path -LiteralPath ${JSON.stringify(home)}) { Get-ChildItem -LiteralPath ${JSON.stringify(home)} -Filter *.json -File -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue }`,
             `Write-Output "[cloudflared] Removendo tuneis do painel..."`,
-            `if (Test-Path -LiteralPath ${JSON.stringify(tunnels)}) { Get-ChildItem -LiteralPath ${JSON.stringify(tunnels)} -Directory -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue }`,
+            `if (Test-Path -LiteralPath ${JSON.stringify(TUNNELS_DIR)}) { Get-ChildItem -LiteralPath ${JSON.stringify(TUNNELS_DIR)} -Directory -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue }`,
             `Write-Output "[cloudflared] Limpeza concluida."`
         ].join('; ')
-        : [
-            `set +e`,
-            `echo "[cloudflared] Limpando processos antigos..."`,
-            `pkill -f 'cloudflared.*tunnel' 2>/dev/null || true`,
-            `echo "[cloudflared] Removendo cert.pem..."`,
-            `rm -f ${shellQuote(cert)}`,
-            `echo "[cloudflared] Removendo credenciais .json antigas..."`,
-            `find ${shellQuote(home)} -maxdepth 1 -type f -name '*.json' -delete 2>/dev/null || true`,
-            `echo "[cloudflared] Removendo tuneis do painel..."`,
-            `find ${shellQuote(tunnels)} -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true`,
-            `echo "[cloudflared] Limpeza concluida."`
-        ].join('\n');
+        : `sh ${shellQuote(resetScript)} ${shellQuote(home)} ${shellQuote(TUNNELS_DIR)}`;
 
     fs.writeFileSync(LOGIN_LOG, '');
     const result = await runTerminalScript(script, {

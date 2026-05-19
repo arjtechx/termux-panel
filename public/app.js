@@ -2507,7 +2507,7 @@ function updateCloudflaredLoginUi(status = {}) {
     if (freshBtn) {
         freshBtn.disabled = busy;
         if (!busy) {
-            freshBtn.innerHTML = '<i data-lucide="rotate-ccw"></i> Nova configuração';
+            freshBtn.innerHTML = '<i data-lucide="rotate-ccw"></i> Limpar e novo login';
         }
         if (window.lucide) lucide.createIcons();
     }
@@ -2908,7 +2908,7 @@ async function resetCloudflaredAndLogin() {
     if (!data?.success) {
         if (freshBtn) {
             freshBtn.disabled = false;
-            freshBtn.innerHTML = '<i data-lucide="rotate-ccw"></i> Nova configuração';
+            freshBtn.innerHTML = '<i data-lucide="rotate-ccw"></i> Limpar e novo login';
         }
         if (loginBtn) loginBtn.disabled = false;
         if (window.lucide) lucide.createIcons();
@@ -2928,7 +2928,7 @@ async function resetCloudflaredAndLogin() {
     if (freshBtn) {
         freshBtn.innerHTML = data.running
             ? '<i data-lucide="loader" class="spin"></i> Aguardando autorização...'
-            : '<i data-lucide="rotate-ccw"></i> Nova configuração';
+            : '<i data-lucide="rotate-ccw"></i> Limpar e novo login';
     }
     if (window.lucide) lucide.createIcons();
 }
