@@ -130,8 +130,16 @@ app.use('/api/nginx', nginxRoutes);
 const noipRoutes = require('./src/routes/noipRoutes')(io);
 app.use('/api/noip', noipRoutes);
 
-const cloudflaredRoutes = require('./modules/cloudflared/routes')(io);
-app.use('/api', cloudflaredRoutes);
+try {
+    const cloudflaredRoutes = require('./modules/cloudflared/routes')(io);
+    app.use('/api', cloudflaredRoutes);
+} catch (e) {
+    console.error('\n[ERR] ==========================================');
+    console.error('[ERR] Falha ao carregar o módulo Cloudflare Tunnel!');
+    console.error('[ERR] Erro:', e.message);
+    console.error('[ERR] Certifique-se de que a pasta ./modules/cloudflared existe.');
+    console.error('[ERR] ==========================================\n');
+}
 
 const systemRoutes = require('./src/routes/systemRoutes');
 app.use('/', systemRoutes);
