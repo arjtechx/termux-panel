@@ -14,7 +14,20 @@ if (!fs.existsSync(DB_FILE)) {
 
 function getTunnels() {
     try {
-        return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+        let tunnels = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+        let migrated = false;
+        
+        // Automatic Schema Migration for old Termux-Panel versions
+        tunnels = tunnels.map(t => {
+            let changed = false;
+            if (!t.type) { t.type = 'classic'; changed = true; }
+            if (t.port && !t.localPort) { t.localPort = String(t.port); changed = true; }
+            if (changed) migrated = true;
+            return t;
+        });
+
+        if (migrated) saveTunnels(tunnels);
+        return tunnels;
     } catch {
         return [];
     }
@@ -137,20 +150,38 @@ function listTunnels() {
 /**
  * Generates Auth Login Link (Classic Mode)
  */
-function getLoginUrl() {
-    try {
-        // Run cloudflared tunnel login in background and extract URL
-        // In Termux, cloudflared login blocks waiting for browser. We capture stdout.
-        const tmpLog = path.join(PANEL_DIR, 'logs', 'cloudflared_login.log');
-        execSync(`cloudflared tunnel login > "${tmpLog}" 2>&1 &`);
-        // Wait 2 seconds for URL to appear
-        execSync('sleep 2');
-        const logs = fs.readFileSync(tmpLog, 'utf8');
-        const match = logs.match(/https:\/\/(?:[a-zA-Z0-9-]+\.)*cloudflare\.com\/a\/[^\s]+/);
-        return match ? match[0] : null;
-    } catch {
-        return null;
-    }
+async function getLoginUrl() {
+    return new Promise((resolve) => {
+        try {
+            // Utilizamos spawn para monitorar a saída em tempo real
+            const { spawn } = require('child_process');
+            const child = spawn('cloudflared', ['tunnel', 'login'], { shell: true });
+            
+            let found = false;
+
+            const handleData = (data) => {
+                if (found) return;
+                const text = data.toString();
+                const match = text.match(/https:\/\/(?:[a-zA-Z0-9-]+\.)*cloudflare\.com\/a\/[^\s]+/);
+                if (match) {
+                    found = true;
+                    child.unref(); // Deixa o processo rodando solto para aguardar o navegador
+                    resolve(match[0]);
+                }
+            };
+
+            child.stdout.on('data', handleData);
+            child.stderr.on('data', handleData);
+
+            child.on('error', () => { if (!found) resolve(null); });
+            child.on('close', () => { if (!found) resolve(null); });
+
+            // Timeout de segurança se o link não aparecer em 8s
+            setTimeout(() => { if (!found) resolve(null); }, 8000);
+        } catch {
+            resolve(null);
+        }
+    });
 }
 
 function isClassicAuthenticated() {

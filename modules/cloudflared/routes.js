@@ -57,6 +57,15 @@ module.exports = function createCloudflaredRoutes() {
         }
     });
 
+    router.post('/tunnel/restart', (req, res) => {
+        try {
+            manager.stopTunnel(req.body.id);
+            res.json(manager.startTunnel(req.body.id));
+        } catch (err) {
+            res.status(400).json({ success: false, error: err.message });
+        }
+    });
+
     router.get('/tunnel/logs', (req, res) => {
         try {
             res.type('text/plain').send(processManager.readLogs(req.query.id, req.query.lines || 200));
@@ -70,9 +79,9 @@ module.exports = function createCloudflaredRoutes() {
         res.json({ success: true, authenticated: manager.isClassicAuthenticated() });
     });
 
-    router.post('/auth/login', (req, res) => {
+    router.post('/auth/login', async (req, res) => {
         try {
-            const url = manager.getLoginUrl();
+            const url = await manager.getLoginUrl();
             if (url) {
                 res.json({ success: true, url });
             } else {
