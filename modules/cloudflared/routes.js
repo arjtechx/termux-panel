@@ -131,13 +131,16 @@ module.exports = function createCloudflaredRoutes(io) {
         }
     });
 
-    router.post('/tunnel/reset', (req, res) => {
+    const resetCloudflaredManager = (req, res) => {
         try {
             res.json(manager.resetManager());
         } catch (err) {
             res.status(500).json({ success: false, error: err.message });
         }
-    });
+    };
+
+    router.post('/tunnel/reset', resetCloudflaredManager);
+    router.post('/cloudflared/reset', resetCloudflaredManager);
 
     return router;
 };

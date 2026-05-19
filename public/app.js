@@ -2597,6 +2597,19 @@ async function cloudflaredJsonFetch(url, method = 'GET', body = null, timeoutMs 
     }
 }
 
+async function resetCloudflaredData() {
+    const primary = await cloudflaredJsonFetch(`${API_BASE}/tunnel/reset`, 'POST', {}, 30000);
+    if (primary?.success || !/HTTP 404/.test(primary?.error || '')) return primary;
+
+    const fallback = await cloudflaredJsonFetch(`${API_BASE}/cloudflared/reset`, 'POST', {}, 30000);
+    if (fallback?.success || !/HTTP 404/.test(fallback?.error || '')) return fallback;
+
+    return {
+        success: false,
+        error: 'Rota de limpeza do Cloudflared nao encontrada neste servidor. Reinicie o painel para carregar o backend atualizado e confirme que esta usando a porta do painel principal.'
+    };
+}
+
 async function fetchCloudflaredTunnels() {
     const data = await safeFetch(`${API_BASE}/tunnels`);
     if (!data?.success) return;
@@ -2866,7 +2879,7 @@ async function resetCloudflaredSystem() {
     const btn = document.getElementById('cloudflaredLoginBtn');
     if (btn) btn.innerHTML = '<i data-lucide="loader" class="spin"></i> Resetando...';
     
-    const data = await cloudflaredJsonFetch(`${API_BASE}/tunnel/reset`, 'POST', {}, 30000);
+    const data = await resetCloudflaredData();
     if (!data?.success) {
         alert('Falha ao resetar: ' + (data?.error || 'erro desconhecido'));
         return;
@@ -2905,7 +2918,7 @@ async function resetCloudflaredAndLogin() {
     const box = document.getElementById('cloudflaredLoginBox');
     if (box) box.textContent = 'Limpando dados locais, cert.pem e credenciais antigas...\n';
 
-    const data = await cloudflaredJsonFetch(`${API_BASE}/tunnel/reset`, 'POST', {}, 30000);
+    const data = await resetCloudflaredData();
     if (!data?.success) {
         if (freshBtn) {
             freshBtn.disabled = false;
