@@ -40,6 +40,22 @@ PKG_MGR="apt-get"
 SUDO=""
 ENV_PREFIX=""
 MYSQL_DIR=""
+INSTALLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+function repair_nginx_bootstrap() {
+    if [ "$IS_TERMUX" != true ]; then
+        return 0
+    fi
+
+    local repair_script="$INSTALLER_DIR/scripts/nginx-termux-repair.sh"
+    if [ ! -f "$repair_script" ]; then
+        warn "Reparo NGINX/mime.types nao encontrado: $repair_script"
+        return 0
+    fi
+
+    log "Aplicando reparo base do NGINX/mime.types..."
+    sh "$repair_script" || warn "Reparo NGINX/mime.types falhou. Rode: bash scripts/nginx-termux-repair.sh"
+}
 
 # ─── Detecção de SO ──────────────────────────────────────────────
 function detect_os() {
@@ -527,6 +543,7 @@ function install_panel() {
     log "Instalando outras dependências..."
     if [ "$IS_TERMUX" = true ]; then
         pkg install -y nodejs nginx cloudflared termux-api coreutils procps zip unzip psmisc lsof python php php-fpm phpmyadmin 2>/dev/null || true
+        repair_nginx_bootstrap
     else
         ${SUDO}apt-get install -y nodejs nginx coreutils procps zip unzip psmisc lsof python3 php-fpm 2>/dev/null || true
     fi
@@ -561,6 +578,7 @@ function install_panel() {
 
     # ─── phpMyAdmin ──────────────────────────────────────────────
     generate_phpmyadmin_config
+    repair_nginx_bootstrap
     if [ -f "scripts/setup-pma-sso.sh" ]; then
         bash scripts/setup-pma-sso.sh || warn "SSO do phpMyAdmin nao foi configurado. Rode scripts/health-check.sh para detalhes."
     fi

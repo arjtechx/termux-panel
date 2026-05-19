@@ -7,6 +7,13 @@ const { runCmd } = require('../utils/shell');
 
 const PREFIX = systemConfig.prefix;
 const NGINX_CONF_DIR = systemConfig.nginx_conf_dir || `${PREFIX}/etc/nginx/conf.d`;
+const NGINX_REPAIR_SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'nginx-termux-repair.sh');
+
+async function repairNginxBootstrap() {
+    if (systemConfig.is_termux && fs.existsSync(NGINX_REPAIR_SCRIPT)) {
+        await runCmd(`sh "${NGINX_REPAIR_SCRIPT}"`);
+    }
+}
 
 router.get('/', (req, res) => {
     try {
@@ -86,6 +93,7 @@ router.post('/', async (req, res) => {
 
     try {
         fs.writeFileSync(confPath, content);
+        await repairNginxBootstrap();
         await runCmd('nginx -s reload');
         res.json({ success: true });
     } catch (err) {
@@ -97,6 +105,7 @@ router.delete('/', async (req, res) => {
     const { file } = req.query;
     try {
         fs.unlinkSync(path.join(NGINX_CONF_DIR, file));
+        await repairNginxBootstrap();
         await runCmd('nginx -s reload');
         res.json({ success: true });
     } catch (err) {
@@ -107,6 +116,7 @@ router.delete('/', async (req, res) => {
 router.post('/action', async (req, res) => {
     const { action } = req.body;
     try {
+        await repairNginxBootstrap();
         if (action === 'start') {
             await runCmd('nginx');
         } else if (action === 'stop') {

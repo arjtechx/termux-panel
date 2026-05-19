@@ -175,6 +175,13 @@ chown -R "$current_user" "$PREFIX/var/run" "$PREFIX/var/log/nginx" "$PREFIX/var/
 # Remove arquivo PID órfão/travado que pode ter sido criado por root/su
 rm -f "$PREFIX/var/run/nginx.pid" 2>/dev/null || true
 
+log "Aplicando reparo base do NGINX/mime.types..."
+if [ -f "$SCRIPT_DIR/nginx-termux-repair.sh" ]; then
+    sh "$SCRIPT_DIR/nginx-termux-repair.sh" || warn "Reparo NGINX/mime.types falhou. Veja a saida acima."
+else
+    warn "Script de reparo NGINX nao encontrado: $SCRIPT_DIR/nginx-termux-repair.sh"
+fi
+
 log "Atualizando dependências Node.js..."
 npm install --no-audit --no-fund
 

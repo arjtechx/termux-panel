@@ -281,6 +281,14 @@ chmod 777 "$PREFIX/var/run" 2>/dev/null || true
 # Remove arquivo PID órfão/travado que pode ter sido criado por root/su
 rm -f "$PREFIX/var/run/nginx.pid" 2>/dev/null || true
 
+if [ -f "$SCRIPT_DIR/nginx-termux-repair.sh" ]; then
+    log_fix "Aplicando reparo base do NGINX/mime.types..."
+    sh "$SCRIPT_DIR/nginx-termux-repair.sh" >/tmp/termux-panel-nginx-repair.log 2>&1 || {
+        log_warn "Reparo base do NGINX retornou erro. Detalhes:"
+        cat /tmp/termux-panel-nginx-repair.log 2>/dev/null || true
+    }
+fi
+
 NGINX_MAIN="$NGINX_CONF_DIR/nginx.conf"
 
 # nginx.conf base
@@ -306,7 +314,7 @@ events {
 }
 
 http {
-    include       mime.types;
+    include       /data/data/com.termux/files/usr/etc/nginx/mime.types;
     default_type  application/octet-stream;
     sendfile      on;
     keepalive_timeout  65;
@@ -333,7 +341,7 @@ events {
 }
 
 http {
-    include       mime.types;
+    include       /data/data/com.termux/files/usr/etc/nginx/mime.types;
     default_type  application/octet-stream;
     sendfile      on;
     keepalive_timeout  65;
@@ -357,7 +365,7 @@ events {
 }
 
 http {
-    include       mime.types;
+    include       /data/data/com.termux/files/usr/etc/nginx/mime.types;
     default_type  application/octet-stream;
     sendfile      on;
     keepalive_timeout  65;

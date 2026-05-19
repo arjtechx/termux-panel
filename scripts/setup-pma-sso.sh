@@ -141,9 +141,14 @@ configure_nginx_vhost() {
 
     # Garante que o diretório etc/nginx exista e tem permissões corretas
     local nginx_main_dir="$(dirname "$NGINX_CONF_DIR")"
+    local mime_types="$nginx_main_dir/mime.types"
     mkdir -p "$nginx_main_dir" "$NGINX_CONF_DIR" "$PREFIX/var/log/nginx" "$PREFIX/var/run"
     chmod -R 777 "$nginx_main_dir" "$PREFIX/var/log/nginx" "$PREFIX/var/run" 2>/dev/null || true
     chown -R "$(whoami)" "$nginx_main_dir" "$PREFIX/var/log/nginx" "$PREFIX/var/run" 2>/dev/null || true
+
+    if [ -f "$SCRIPT_DIR/nginx-termux-repair.sh" ]; then
+        sh "$SCRIPT_DIR/nginx-termux-repair.sh" >/dev/null 2>&1 || true
+    fi
 
     # Garante que o arquivo nginx.conf principal exista
     local nginx_main="$nginx_main_dir/nginx.conf"
@@ -159,7 +164,7 @@ events {
 }
 
 http {
-    include       mime.types;
+    include       /data/data/com.termux/files/usr/etc/nginx/mime.types;
     default_type  application/octet-stream;
     sendfile      on;
     keepalive_timeout  65;
