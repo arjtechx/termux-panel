@@ -326,7 +326,7 @@ fi
 while true; do
     cleanup_termux_api_duplicates
     cleanup_panel_duplicates
-    node "$PANEL_DIR/server.js"
+    node --max-old-space-size=128 "$PANEL_DIR/server.js"
     warn "Servidor encerrado. Reiniciando em 3s..."
     sleep 3
 done

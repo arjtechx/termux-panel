@@ -57,7 +57,7 @@ function runWatchdogOnce() {
     }
 }
 
-function startWatchdog(intervalMs = 30000) {
+function startWatchdog(intervalMs = 15000) {
     if (watchdogTimer) return watchdogTimer;
     watchdogTimer = setInterval(runWatchdogOnce, intervalMs);
     watchdogTimer.unref();
