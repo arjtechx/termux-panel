@@ -260,15 +260,27 @@ function init_mariadb() {
 # ─── [7] SUBIR SERVIDOR TEMPORÁRIO ──────────────────────────────
 function start_mariadb_temp() {
     log "Iniciando servidor MariaDB temporário..."
+    
+    # Garante o diretório do socket do MariaDB para evitar crashes
+    local run_dir="$ENV_PREFIX/var/run/mysqld"
+    mkdir -p "$run_dir"
+    chmod 777 "$run_dir" 2>/dev/null || true
+    chown "$(whoami)" "$run_dir" 2>/dev/null || true
+
+    # Garante permissões do diretório de dados
+    mkdir -p "$MYSQL_DIR"
+    chmod -R 777 "$MYSQL_DIR" 2>/dev/null || true
+    chown -R "$(whoami)" "$MYSQL_DIR" 2>/dev/null || true
+
     if mysql -u root -e "SELECT 1" >/dev/null 2>&1; then
         ok "MariaDB já está respondendo."
         return 0
     fi
 
     if command -v mariadbd-safe >/dev/null 2>&1; then
-        mariadbd-safe --datadir="$MYSQL_DIR" >/dev/null 2>&1 &
+        mariadbd-safe --datadir="$MYSQL_DIR" --socket="$run_dir/mysqld.sock" --port=3306 >/dev/null 2>&1 &
     elif command -v mysqld_safe >/dev/null 2>&1; then
-        mysqld_safe --datadir="$MYSQL_DIR" >/dev/null 2>&1 &
+        mysqld_safe --datadir="$MYSQL_DIR" --socket="$run_dir/mysqld.sock" --port=3306 >/dev/null 2>&1 &
     else
         err "Nenhum daemon MariaDB encontrado!"
         return 1
