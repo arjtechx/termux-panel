@@ -127,22 +127,20 @@ function startTunnelProcess(id, options = {}) {
     const logFile = path.join(LOGS_DIR, `tunnel_${id}.log`);
     const outStream = fs.openSync(logFile, 'a');
     
-    let args = [];
+    const lastFour = parseInt(id.slice(-4), 10);
+    const metricsPort = 30000 + (isNaN(lastFour) ? 500 : lastFour % 10000);
+
+    let args = ['tunnel', '--no-autoupdate', '--metrics', `127.0.0.1:${metricsPort}`];
     if (token) {
-        args = ['tunnel', '--no-autoupdate', 'run', '--token', token];
+        args.push('run', '--token', token);
     } else if (quickUrl) {
-        args = ['tunnel', '--no-autoupdate', '--url', quickUrl];
+        args.push('--url', quickUrl);
     } else if (configPath && tunnelName) {
         // Advanced Custom YAML Tunnel
-        args = ['tunnel', '--no-autoupdate', '--config', configPath, 'run', tunnelName];
+        args.push('--config', configPath, 'run', tunnelName);
     } else {
         return { success: false, error: 'Configurações de início incompletas.' };
     }
-
-    // Add local metrics server dynamically to get active connections
-    const lastFour = parseInt(id.slice(-4), 10);
-    const metricsPort = 30000 + (isNaN(lastFour) ? 500 : lastFour % 10000);
-    args.push('--metrics', `127.0.0.1:${metricsPort}`);
 
     const child = spawn('cloudflared', args, {
         detached: true,
