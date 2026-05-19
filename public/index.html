@@ -1013,9 +1013,10 @@
                         <button class="btn btn-warning btn-sm" onclick="checkCloudflaredSystem()">
                             <i data-lucide="shield-alert"></i> Verificar erros
                         </button>
-                        <button class="btn btn-secondary btn-sm" onclick="cloudflaredLogin()">
+                        <button class="btn btn-secondary btn-sm" id="cloudflaredLoginBtn" onclick="cloudflaredLogin()">
                             <i data-lucide="key-round"></i> Login Cloudflare
                         </button>
+                        <span id="cloudflaredAuthStatus" class="badge badge-danger">Nao autenticado</span>
                         <button class="btn btn-primary btn-sm" onclick="newCloudflaredTunnel()">
                             <i data-lucide="plus"></i> Novo Tunel
                         </button>
@@ -1098,7 +1099,7 @@
                         <div id="cloudflaredLogBox" class="terminal-box" style="height:320px;">Aguardando...</div>
                     </div>
                     <div class="card">
-                        <h3 class="card-title">Login Cloudflare</h3>
+                        <h3 class="card-title">Login Cloudflare <span id="cloudflaredAuthStatusInline" class="badge badge-danger">Nao autenticado</span></h3>
                         <div id="cloudflaredLoginBox" class="terminal-box" style="height:320px;">Use "Login Cloudflare" para iniciar.</div>
                     </div>
                 </div>
@@ -1364,7 +1365,7 @@
 </div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.21"></script>
+<script src="filemanager.js?v=0.2.22"></script>
 <script src="app.js?v=4.0"></script>
 </body>
 </html>

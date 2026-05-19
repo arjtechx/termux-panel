@@ -111,7 +111,7 @@ module.exports = function createCloudflaredRoutes(io) {
     });
 
     router.get('/tunnel/login/status', (req, res) => {
-        res.json({ success: true, authUrl: manager.getLastLoginUrl() || '' });
+        res.json({ success: true, ...manager.getLoginStatusSnapshot() });
     });
 
     router.get('/tunnel/diagnostics', async (req, res) => {

@@ -23,6 +23,7 @@ const {
     createFallbackUuid,
     cloudflaredHome,
     defaultCredentialsPath,
+    certPath,
     appendLog
 } = require('./utils');
 const { getStatus, startTunnel, stopTunnel } = require('./process');
@@ -32,6 +33,15 @@ ensureModuleDirs();
 
 let lastLoginUrl = '';
 let loginProcess = null;
+let loginWatchTimer = null;
+let loginStatus = {
+    state: 'idle',
+    message: 'Nao autenticado',
+    authUrl: '',
+    running: false,
+    pid: null,
+    updatedAt: new Date().toISOString()
+};
 
 function runCommand(command, args, options = {}) {
     return new Promise((resolve) => {
@@ -52,7 +62,9 @@ function parseTunnelCreateOutput(output) {
 }
 
 function extractCloudflareUrl(text) {
-    const found = String(text || '').match(/https:\/\/dash\.cloudflare\.com[^\s\x1b"'<>]+|https:\/\/[^\s\x1b"'<>]+/i);
+    const clean = String(text || '')
+        .replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1B\\))/g, '');
+    const found = clean.match(/https:\/\/dash\.cloudflare\.com[^\s"'<>]+|https?:\/\/[^\s"'<>]+/i);
     if (!found) return '';
     return found[0].replace(/[),.;\]]+$/g, '');
 }
@@ -63,13 +75,94 @@ function isTermux() {
 
 function openLoginUrl(url) {
     if (!url) return;
-    const opener = isTermux() ? 'termux-open-url' : 'xdg-open';
-    spawn(opener, [url], { detached: true, stdio: 'ignore' }).on('error', () => {});
+    let command = 'xdg-open';
+    let args = [url];
+
+    if (isTermux()) {
+        command = 'termux-open-url';
+    } else if (process.platform === 'win32') {
+        command = 'powershell';
+        args = ['-NoProfile', '-Command', 'Start-Process -FilePath $args[0]', url];
+    } else if (process.platform === 'darwin') {
+        command = 'open';
+    }
+
+    const child = spawn(command, args, { detached: true, stdio: 'ignore' });
+    child.on('error', () => {});
+    child.unref?.();
 }
 
 function emitLoginText(io, text) {
     fs.appendFileSync(LOGIN_LOG, text);
     if (io) io.emit('cloudflared-login-log', text);
+}
+
+function getLoginStatusSnapshot() {
+    const cert = certPath();
+    const loggedIn = fs.existsSync(cert);
+    return {
+        success: true,
+        ...loginStatus,
+        authUrl: loginStatus.authUrl || lastLoginUrl || getLastLoginUrl(),
+        loggedIn,
+        certPath: cert,
+        state: loggedIn ? 'success' : loginStatus.state,
+        message: loggedIn ? 'Login realizado com sucesso' : loginStatus.message
+    };
+}
+
+function emitLoginStatus(io, patch = {}) {
+    loginStatus = {
+        ...loginStatus,
+        ...patch,
+        updatedAt: new Date().toISOString()
+    };
+
+    const snapshot = getLoginStatusSnapshot();
+    if (io) io.emit('cloudflared-login-status', snapshot);
+    return snapshot;
+}
+
+function stopLoginWatcher() {
+    if (loginWatchTimer) {
+        clearInterval(loginWatchTimer);
+        loginWatchTimer = null;
+    }
+}
+
+function startLoginWatcher(io) {
+    stopLoginWatcher();
+    let certWasReported = fs.existsSync(certPath());
+    let checks = 0;
+
+    loginWatchTimer = setInterval(() => {
+        checks += 1;
+        const certExists = fs.existsSync(certPath());
+        if (certExists && !certWasReported) {
+            certWasReported = true;
+            emitLoginText(io, '\ncert.pem detectado. Login Cloudflare realizado com sucesso.\n');
+            emitLoginStatus(io, {
+                state: 'success',
+                message: 'Login realizado com sucesso',
+                running: false,
+                pid: null
+            });
+            stopLoginWatcher();
+            return;
+        }
+
+        if (checks >= 240 && loginStatus.state !== 'success') {
+            emitLoginStatus(io, {
+                running: false,
+                pid: null,
+                message: 'Tempo limite aguardando cert.pem'
+            });
+            stopLoginWatcher();
+            return;
+        }
+
+        emitLoginStatus(io);
+    }, 1500);
 }
 
 function handleLoginOutput(io, state, text) {
@@ -80,6 +173,11 @@ function handleLoginOutput(io, state, text) {
         state.url = found;
         lastLoginUrl = found;
         if (io) io.emit('cloudflared-login-url', found);
+        emitLoginStatus(io, {
+            state: 'url_detected',
+            message: 'Aguardando autorizacao Cloudflare',
+            authUrl: found
+        });
         openLoginUrl(found);
     }
 }
@@ -277,20 +375,48 @@ async function startLogin(io) {
     ensureModuleDirs();
     fs.writeFileSync(LOGIN_LOG, '');
     lastLoginUrl = '';
+    stopLoginWatcher();
 
     if (loginProcess && !loginProcess.killed) {
         try { loginProcess.kill('SIGTERM'); } catch (_) {}
         loginProcess = null;
     }
 
+    if (fs.existsSync(certPath())) {
+        const message = 'Login Cloudflare ja esta autenticado: cert.pem encontrado.';
+        emitLoginText(io, `${message}\n`);
+        return emitLoginStatus(io, {
+            state: 'success',
+            message,
+            authUrl: '',
+            running: false,
+            pid: null
+        });
+    }
+
+    emitLoginStatus(io, {
+        state: 'starting',
+        message: 'Conectando ao Cloudflare...',
+        authUrl: '',
+        running: true,
+        pid: null
+    });
+
     const version = await runCommand('cloudflared', ['--version']);
     if (version.code !== 0) {
         const message = `cloudflared nÃ£o encontrado ou nÃ£o executou corretamente: ${version.stderr || version.stdout || 'verifique a instalacao'}`;
         emitLoginText(io, `${message}\n`);
+        emitLoginStatus(io, {
+            state: 'error',
+            message,
+            running: false,
+            pid: null
+        });
         return { success: false, error: message };
     }
 
     ensureDir(cloudflaredHome());
+    emitLoginText(io, 'Executando cloudflared tunnel login...\nAguardando URL de autorizacao da Cloudflare...\n');
 
     const child = isTermux()
         ? startLoginWithPty(io)
@@ -299,6 +425,13 @@ async function startLogin(io) {
             env: { ...process.env }
         });
     loginProcess = child;
+    emitLoginStatus(io, {
+        state: 'waiting_url',
+        message: 'Aguardando autenticacao...',
+        running: true,
+        pid: child.pid
+    });
+    startLoginWatcher(io);
 
     const state = { buffer: '', url: '' };
     const onData = (data) => {
@@ -309,11 +442,37 @@ async function startLogin(io) {
     child.stderr.on('data', onData);
     child.on('error', err => {
         emitLoginText(io, `\nERRO: ${err.message}\n`);
+        emitLoginStatus(io, {
+            state: 'error',
+            message: err.message,
+            running: false,
+            pid: null
+        });
+        stopLoginWatcher();
     });
     child.on('close', code => {
         if (loginProcess === child) loginProcess = null;
-        fs.appendFileSync(LOGIN_LOG, `\nProcesso de login finalizado com código ${code}.\n`);
-        if (io) io.emit('cloudflared-login-log', `\nProcesso de login finalizado com código ${code}.\n`);
+        emitLoginText(io, `\nProcesso de login finalizado com código ${code}.\n`);
+
+        if (fs.existsSync(certPath())) {
+            emitLoginText(io, 'cert.pem detectado. Login Cloudflare realizado com sucesso.\n');
+            emitLoginStatus(io, {
+                state: 'success',
+                message: 'Login realizado com sucesso',
+                running: false,
+                pid: null
+            });
+            stopLoginWatcher();
+            return;
+        }
+
+        emitLoginStatus(io, {
+            state: code === 0 ? 'waiting_cert' : 'error',
+            message: code === 0 ? 'Aguardando criacao do cert.pem...' : 'Login Cloudflare finalizado sem gerar cert.pem',
+            running: false,
+            pid: null
+        });
+        if (code !== 0) stopLoginWatcher();
     });
 
     return { success: true, pid: child.pid, mode: isTermux() ? 'termux-pty' : 'pipe' };
@@ -337,6 +496,7 @@ module.exports = {
     deleteTunnel,
     startLogin,
     getLastLoginUrl,
+    getLoginStatusSnapshot,
     extractCloudflareUrl,
     runCommand,
     buildConfig

@@ -168,7 +168,10 @@ function switchTab(targetId) {
     if (targetId === 'tab-hosting')   fetchHostingServices();
     if (targetId === 'tab-cron')     fetchCron();
     if (targetId === 'tab-noip')     fetchNoipStatus();
-    if (targetId === 'tab-cloudflared') fetchCloudflaredTunnels();
+    if (targetId === 'tab-cloudflared') {
+        fetchCloudflaredTunnels();
+        loadCloudflaredLoginStatus();
+    }
     if (targetId === 'tab-docs')     loadDocumentation();
     if (targetId === 'tab-settings') {
         loadSettings();
@@ -202,6 +205,7 @@ function initSocket() {
         socket.on('log-data',      line => appendLogLine(line));
         socket.on('cloudflared-login-log', data => appendCloudflaredLoginLog(data));
         socket.on('cloudflared-login-url', url => openCloudflaredAuthUrl(url));
+        socket.on('cloudflared-login-status', data => updateCloudflaredLoginUi(data));
         // Terminal SSH — recebe dados do shell remoto
         socket.on('terminal-data', data => {
             if (window._term) window._term.write(data);
@@ -2449,6 +2453,7 @@ let cloudflaredLogInterval = null;
 let cloudflaredLoginInterval = null;
 let cloudflaredAuthWindow = null;
 let cloudflaredLastAuthUrl = null;
+let cloudflaredLoginState = 'idle';
 
 function cfEscape(value) {
     return String(value ?? '').replace(/[&<>"']/g, ch => ({
@@ -2458,6 +2463,48 @@ function cfEscape(value) {
         '"': '&quot;',
         "'": '&#039;'
     }[ch]));
+}
+
+function updateCloudflaredLoginUi(status = {}) {
+    const state = status.loggedIn
+        ? 'success'
+        : (status.state || (status.success === false ? 'error' : cloudflaredLoginState) || 'idle');
+    cloudflaredLoginState = state;
+
+    const statusMap = {
+        idle: ['badge-danger', 'Nao autenticado'],
+        starting: ['badge-warning', 'Conectando ao Cloudflare...'],
+        waiting_url: ['badge-warning', 'Aguardando autenticacao...'],
+        url_detected: ['badge-warning', 'Aguardando autorizacao Cloudflare'],
+        waiting_cert: ['badge-warning', 'Aguardando cert.pem...'],
+        success: ['badge-success', 'Cloudflare autenticado'],
+        error: ['badge-danger', status.message || status.error || 'Falha no login Cloudflare']
+    };
+    const [badgeClass, label] = statusMap[state] || statusMap.idle;
+    const busy = Boolean(status.running) || ['starting', 'waiting_url', 'url_detected', 'waiting_cert'].includes(state);
+
+    ['cloudflaredAuthStatus', 'cloudflaredAuthStatusInline'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.className = `badge ${badgeClass}`;
+        el.textContent = label;
+    });
+
+    const btn = document.getElementById('cloudflaredLoginBtn');
+    if (btn) {
+        btn.disabled = busy;
+        btn.innerHTML = busy
+            ? '<i data-lucide="loader" class="spin" style="width:14px;height:14px;"></i> Aguardando autenticacao...'
+            : '<i data-lucide="key-round"></i> Login Cloudflare';
+        if (window.lucide) lucide.createIcons();
+    }
+
+    if (state === 'success' || state === 'error') {
+        if (cloudflaredLoginInterval) {
+            clearInterval(cloudflaredLoginInterval);
+            cloudflaredLoginInterval = null;
+        }
+    }
 }
 
 function formatCfUptime(seconds) {
@@ -2766,7 +2813,13 @@ async function loadCloudflaredLogs() {
 
 async function cloudflaredLogin() {
     const box = document.getElementById('cloudflaredLoginBox');
-    if (box) box.innerHTML = 'Iniciando cloudflared tunnel login...\nAguardando URL de autorizacao da Cloudflare...\n';
+    updateCloudflaredLoginUi({
+        state: 'starting',
+        message: 'Conectando ao Cloudflare...',
+        running: true,
+        loggedIn: false
+    });
+    if (box) box.innerHTML = 'Conectando ao Cloudflare...\nAguardando URL de autorizacao da Cloudflare...\n';
     cloudflaredLastAuthUrl = null;
 
     try {
@@ -2780,17 +2833,28 @@ async function cloudflaredLogin() {
     }
 
     const data = await cloudflaredJsonFetch(`${API_BASE}/tunnel/login`, 'POST', {}, 30000);
+    updateCloudflaredLoginUi(data);
     if (!data?.success && box) box.innerHTML += `Falha ao iniciar login: ${cfEscape(data?.error || 'erro desconhecido')}\n`;
     if (cloudflaredLoginInterval) clearInterval(cloudflaredLoginInterval);
-    cloudflaredLoginInterval = setInterval(loadCloudflaredLoginLogs, 2000);
+    if (data?.success && !data.loggedIn) {
+        cloudflaredLoginInterval = setInterval(loadCloudflaredLoginLogs, 2000);
+    }
     setTimeout(loadCloudflaredLoginStatus, 800);
 }
 
 function openCloudflaredAuthUrl(url) {
     url = String(url || '').trim().replace(/[),.;\]]+$/g, '');
     if (!/^https:\/\/[^\s"'<>]+$/i.test(url || '')) return;
+    if (cloudflaredLoginState === 'success') return;
     const isNewUrl = url !== cloudflaredLastAuthUrl;
     cloudflaredLastAuthUrl = url;
+    updateCloudflaredLoginUi({
+        state: 'url_detected',
+        message: 'Aguardando autorizacao Cloudflare',
+        authUrl: url,
+        running: true,
+        loggedIn: false
+    });
 
     const box = document.getElementById('cloudflaredLoginBox');
     if (box && !box.innerHTML.includes(url)) {
@@ -2821,15 +2885,19 @@ async function loadCloudflaredLoginLogs() {
         box.textContent = text;
         const found = headerUrl || (text.match(/https:\/\/[^\s"'<>]+/i) || [])[0];
         if (found) openCloudflaredAuthUrl(found);
+        loadCloudflaredLoginStatus();
         box.scrollTop = box.scrollHeight;
     } catch (err) {
         box.textContent = err.message;
+        updateCloudflaredLoginUi({ success: false, error: err.message });
     }
 }
 
 async function loadCloudflaredLoginStatus() {
     const data = await cloudflaredJsonFetch(`${API_BASE}/tunnel/login/status`, 'GET', null, 8000);
-    if (data?.authUrl) openCloudflaredAuthUrl(data.authUrl);
+    updateCloudflaredLoginUi(data);
+    if (data?.authUrl && !data.loggedIn) openCloudflaredAuthUrl(data.authUrl);
+    return data;
 }
 
 function appendCloudflaredLoginLog(data) {
