@@ -526,7 +526,7 @@ async function getRemoteVersions(repo, installed) {
     return [...byTag.values()].sort((a, b) => compareSemver(b.tag, a.tag));
 }
 
-const PANEL_UPDATE_ITEMS = ['public', 'scripts', 'server.js', 'package.json', 'package-lock.json', 'README.md', 'install.sh', 'src', 'services'];
+const PANEL_UPDATE_ITEMS = ['modules', 'public', 'scripts', 'server.js', 'package.json', 'package-lock.json', 'README.md', 'install.sh', 'src', 'services'];
 const UPDATE_CACHE_FILE = path.join(BASE_DIR, 'config', 'update-cache.json');
 const UPDATE_INSTALLED_FILE = path.join(BASE_DIR, 'config', 'update-installed.json');
 

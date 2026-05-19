@@ -69,6 +69,7 @@ if [ -n "$GITHUB_REPO" ] && [ "$GITHUB_REPO" != "null" ] && [ "$GITHUB_REPO" != 
             log "Atualizando arquivos em: $PANEL_DIR"
 
             # Copia recursivamente mantendo e atualizando os diretórios locais
+            cp -rf "$TMP_EXTRACT/modules" "$PANEL_DIR/" 2>/dev/null || true
             cp -rf "$TMP_EXTRACT/public" "$PANEL_DIR/"
             cp -rf "$TMP_EXTRACT/scripts" "$PANEL_DIR/"
             cp -rf "$TMP_EXTRACT/services" "$PANEL_DIR/"
@@ -123,6 +124,7 @@ else
         mkdir -p "$TMP_EXTRACT"
         
         tar -xzvf "$TAR_PATH" -C "$TMP_EXTRACT" --strip-components=1
+        cp -rf "$TMP_EXTRACT/modules" "$PANEL_DIR/" 2>/dev/null || true
         cp -rf "$TMP_EXTRACT/public" "$PANEL_DIR/"
         cp -rf "$TMP_EXTRACT/scripts" "$PANEL_DIR/"
         cp -rf "$TMP_EXTRACT/services" "$PANEL_DIR/"
