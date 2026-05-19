@@ -139,7 +139,37 @@ configure_nginx_vhost() {
     fastcgi_pass="$(detect_fastcgi_pass)"
     fastcgi_include="$(detect_fastcgi_include)"
 
-    mkdir -p "$NGINX_CONF_DIR" "$PREFIX/var/log/nginx"
+    # Garante que o diretório etc/nginx exista e tem permissões corretas
+    local nginx_main_dir="$(dirname "$NGINX_CONF_DIR")"
+    mkdir -p "$nginx_main_dir" "$NGINX_CONF_DIR" "$PREFIX/var/log/nginx" "$PREFIX/var/run"
+    chmod -R 777 "$nginx_main_dir" "$PREFIX/var/log/nginx" "$PREFIX/var/run" 2>/dev/null || true
+    chown -R "$(whoami)" "$nginx_main_dir" "$PREFIX/var/log/nginx" "$PREFIX/var/run" 2>/dev/null || true
+
+    # Garante que o arquivo nginx.conf principal exista
+    local nginx_main="$nginx_main_dir/nginx.conf"
+    if [ ! -f "$nginx_main" ]; then
+        echo "  [-] nginx.conf principal ausente. Criando..."
+        cat > "$nginx_main" << 'NGINX_CONF'
+worker_processes  auto;
+error_log  /data/data/com.termux/files/usr/var/log/nginx/error.log warn;
+pid        /data/data/com.termux/files/usr/var/run/nginx.pid;
+
+events {
+    worker_connections  256;
+}
+
+http {
+    include       mime.types;
+    default_type  application/octet-stream;
+    sendfile      on;
+    keepalive_timeout  65;
+    client_max_body_size 100m;
+
+    include /data/data/com.termux/files/usr/etc/nginx/conf.d/*.conf;
+}
+NGINX_CONF
+        echo "  [+] nginx.conf principal criado com sucesso."
+    fi
 
     cat > "$PMA_NGINX_CONF" <<PMA_CONF
 server {
