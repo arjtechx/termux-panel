@@ -2608,15 +2608,45 @@ async function cfLoadLogs() {
     } catch {}
 }
 
+let cfLoginPollInterval = null;
+
 // LOGIN CLÁSSICO
 function cfShowLoginModal() {
     document.getElementById('cfLoginModal').classList.remove('hidden');
     document.getElementById('cfLoginStatus').textContent = 'Aguardando...';
     document.getElementById('cfLoginLink').classList.add('hidden');
+    
+    // Checa imediatamente e inicia o polling a cada 3 segundos
+    cfCheckLoginStatus();
+    if (cfLoginPollInterval) clearInterval(cfLoginPollInterval);
+    cfLoginPollInterval = setInterval(cfCheckLoginStatus, 3000);
 }
 
 function cfCloseLoginModal() {
     document.getElementById('cfLoginModal').classList.add('hidden');
+    if (cfLoginPollInterval) {
+        clearInterval(cfLoginPollInterval);
+        cfLoginPollInterval = null;
+    }
+}
+
+async function cfCheckLoginStatus() {
+    const statusBox = document.getElementById('cfLoginStatus');
+    try {
+        const res = await fetch(`${API_BASE}/auth/status`);
+        const data = await res.json();
+        if (data.success && data.authenticated) {
+            statusBox.innerHTML = '<span style="color:var(--success)">✓ Autenticado com Sucesso! (cert.pem ativo)</span>';
+            document.getElementById('cfLoginLink').classList.add('hidden');
+        } else {
+            // Se não estiver autenticado e o texto não for as mensagens temporárias de carregamento
+            if (statusBox.textContent === 'Aguardando...' || statusBox.innerHTML.includes('Autenticado')) {
+                statusBox.textContent = 'Nenhum login ativo. Clique abaixo para gerar a URL.';
+            }
+        }
+    } catch (e) {
+        console.error('Erro ao verificar status do login:', e);
+    }
 }
 
 async function cfGenerateLoginUrl() {

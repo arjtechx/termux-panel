@@ -93,7 +93,7 @@ function startTunnelProcess(id, options = {}) {
     stopTunnelProcess(id); // Ensure no old process is running
     
     const { token, quickUrl } = options;
-    const logFile = path.join(LOGS_DIR, `tunnel_${id}.log`);\
+    const logFile = path.join(LOGS_DIR, `tunnel_${id}.log`);
     
     const outStream = fs.openSync(logFile, 'a');
     
