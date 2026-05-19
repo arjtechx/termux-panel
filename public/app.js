@@ -2858,6 +2858,26 @@ async function cloudflaredLogin() {
     setTimeout(loadCloudflaredLoginStatus, 800);
 }
 
+async function resetCloudflaredSystem() {
+    if (!confirm('ATENCAO: Isso vai deslogar da sua conta (excluir cert.pem) e APAGAR todos os tuneis criados! Deseja realmente continuar?')) return;
+    
+    const btn = document.getElementById('cloudflaredLoginBtn');
+    if (btn) btn.innerHTML = '<i data-lucide="loader" class="spin"></i> Resetando...';
+    
+    const data = await cloudflaredJsonFetch(`${API_BASE}/tunnel/reset`, 'POST', {}, 30000);
+    if (!data?.success) {
+        alert('Falha ao resetar: ' + (data?.error || 'erro desconhecido'));
+        return;
+    }
+    
+    alert('Cloudflared resetado com sucesso!');
+    await fetchCloudflaredTunnels();
+    loadCloudflaredLoginStatus();
+    
+    const box = document.getElementById('cloudflaredLoginBox');
+    if (box) box.innerHTML = 'Sistema Cloudflared resetado localmente.\nVocê pode fazer Login novamente quando quiser.\n';
+}
+
 function openCloudflaredAuthUrl(url) {
     url = String(url || '').trim().replace(/[),.;\]]+$/g, '');
     if (!/^https:\/\/[^\s"'<>]+$/i.test(url || '')) return;

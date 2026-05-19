@@ -488,6 +488,44 @@ function getLastLoginUrl() {
     }
 }
 
+function resetManager() {
+    stopLoginWatcher();
+    if (loginProcess && !loginProcess.killed) {
+        try { loginProcess.kill('SIGTERM'); } catch (_) {}
+        loginProcess = null;
+    }
+
+    const cert = certPath();
+    if (fs.existsSync(cert)) {
+        try { fs.unlinkSync(cert); } catch (err) { console.error('Erro ao excluir cert.pem', err); }
+    }
+
+    if (fs.existsSync(TUNNELS_DIR)) {
+        fs.readdirSync(TUNNELS_DIR).forEach(file => {
+            const p = path.join(TUNNELS_DIR, file);
+            if (fs.statSync(p).isDirectory()) {
+                try {
+                    stopTunnel(file);
+                    fs.rmSync(p, { recursive: true, force: true });
+                } catch (err) { console.error('Erro ao excluir tunel', file, err); }
+            }
+        });
+    }
+
+    loginStatus = {
+        state: 'idle',
+        message: 'Nao autenticado',
+        authUrl: '',
+        running: false,
+        pid: null,
+        updatedAt: new Date().toISOString()
+    };
+    lastLoginUrl = '';
+    if (fs.existsSync(LOGIN_LOG)) fs.writeFileSync(LOGIN_LOG, '');
+
+    return { success: true };
+}
+
 module.exports = {
     listTunnels,
     createTunnel,
@@ -499,5 +537,6 @@ module.exports = {
     getLoginStatusSnapshot,
     extractCloudflareUrl,
     runCommand,
-    buildConfig
+    buildConfig,
+    resetManager
 };
