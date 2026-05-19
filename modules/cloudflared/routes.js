@@ -168,5 +168,15 @@ module.exports = function createCloudflaredRoutes() {
         res.json(processManager.killAllZombies());
     });
 
+    // Reset Manager / Clear all configs and certificate
+    router.post('/system/reset', async (req, res) => {
+        try {
+            const result = await manager.resetManager();
+            res.json(result);
+        } catch (err) {
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
     return router;
 };

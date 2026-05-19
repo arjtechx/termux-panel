@@ -1007,34 +1007,14 @@
                 <div class="page-header">
                     <div>
                         <h1>Cloudflared Manager</h1>
-                        <p style="color:var(--text-muted); font-size:0.875rem; margin-top:2px;">Controle de Cloudflare Tunnel otimizado para Termux.</p>
-                    </div>
-                    <div class="toolbar-group">
-                        <button class="btn btn-warning btn-sm" onclick="cfKillZombies()">
-                            <i data-lucide="skull"></i> Matar Zumbis
-                        </button>
-                        <button class="btn btn-secondary btn-sm" onclick="cfShowLoginModal()">
-                            <i data-lucide="key-round"></i> Login Clássico
-                        </button>
-                        <button class="btn btn-primary btn-sm" onclick="cfShowCreateModal()">
-                            <i data-lucide="plus"></i> Novo Tunel
-                        </button>
-                        <button class="btn btn-secondary btn-sm" onclick="cfFetchTunnels()">
-                            <i data-lucide="refresh-cw"></i> Atualizar
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            <div id="tab-cloudflared" class="tab-pane">
-                <div class="page-header">
-                    <div>
-                        <h1>Cloudflared Manager</h1>
                         <p style="color:var(--text-muted); font-size:0.875rem; margin-top:2px;">Painel de Gerenciamento de Túneis Profissional (Watchdog Integrado).</p>
                     </div>
                     <div class="toolbar-group">
                         <button class="btn btn-warning btn-sm" onclick="cfKillZombies()">
                             <i data-lucide="skull"></i> Matar Zumbis
+                        </button>
+                        <button class="btn btn-danger btn-sm" onclick="cfResetManager()">
+                            <i data-lucide="trash-2"></i> Limpar Configurações
                         </button>
                         <button class="btn btn-secondary btn-sm" onclick="cfShowLoginModal()">
                             <i data-lucide="key-round"></i> Login Clássico
@@ -1582,7 +1562,7 @@
 </div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.57"></script>
+<script src="filemanager.js?v=0.2.58"></script>
 <script src="app.js?v=4.2"></script>
 </body>
 </html>

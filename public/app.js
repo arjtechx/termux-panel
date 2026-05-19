@@ -3030,6 +3030,25 @@ async function cfClearCert() {
     }
 }
 
+async function cfResetManager() {
+    if (!confirm('ATENÇÃO: Deseja realmente LIMPAR TODAS as configurações de túneis e EXCLUIR o arquivo cert.pem do Cloudflared?\n\nEsta ação é irreversível e irá parar todos os túneis ativos!')) {
+        return;
+    }
+    try {
+        const res = await fetch(`${API_BASE}/system/reset`, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+            alert('Configurações e certificado removidos com sucesso!');
+            cfFetchTunnels();
+            cfCheckLoginStatus();
+        } else {
+            alert('Falha ao limpar configurações: ' + (data.error || 'Erro desconhecido.'));
+        }
+    } catch (e) {
+        alert('Erro ao se conectar com o backend: ' + e.message);
+    }
+}
+
 // ============================================================
 //  START
 // ============================================================

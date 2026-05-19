@@ -150,7 +150,7 @@ function startTunnelProcess(id, options = {}) {
         env: { 
             ...process.env, 
             TUNNEL_ORIGIN_CERT: path.join(
-                process.env.HOME || '/data/data/com.termux/files/home', 
+                process.env.HOME || require('os').homedir() || '/data/data/com.termux/files/home', 
                 '.cloudflared', 'cert.pem'
             ) 
         }
