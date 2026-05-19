@@ -1534,12 +1534,8 @@ router.get('/api/mariadb/diagnose', async (req, res) => {
                 });
             });
             nginxConfigTestOutput = testOut;
-            if (isTermux) {
-                nginxConfigTestOk = testOut.includes('syntax is ok') && testOut.includes('test is successful');
-            } else {
-                // No WSL/Linux, rodar como não-root pode falhar ao abrir o arquivo .pid, mas a sintaxe está OK
-                nginxConfigTestOk = testOut.includes('syntax is ok');
-            }
+            // No Termux e no WSL/Linux, rodar como não-root pode falhar ao abrir o arquivo .pid, mas se a sintaxe estiver OK, está correto
+            nginxConfigTestOk = testOut.includes('syntax is ok');
         } catch(e) {
             nginxConfigTestOutput = e.message;
             nginxConfigTestOk = false;

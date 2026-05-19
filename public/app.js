@@ -2512,6 +2512,15 @@ function updateCloudflaredLoginUi(status = {}) {
         if (window.lucide) lucide.createIcons();
     }
 
+    const resetBtn = document.getElementById('cloudflaredResetBtn');
+    if (resetBtn) {
+        resetBtn.disabled = busy;
+        if (!busy) {
+            resetBtn.innerHTML = '<i data-lucide="trash-2"></i> Remover Dados & Cert';
+        }
+        if (window.lucide) lucide.createIcons();
+    }
+
     if (state === 'success' || state === 'error') {
         if (cloudflaredLoginInterval) {
             clearInterval(cloudflaredLoginInterval);
@@ -2932,6 +2941,48 @@ async function resetCloudflaredAndLogin() {
             : '<i data-lucide="rotate-ccw"></i> Limpar e novo login';
     }
     if (window.lucide) lucide.createIcons();
+}
+
+async function resetCloudflaredOnly() {
+    if (!confirm('ATENÇÃO: Isso vai parar todos os túneis ativos do Cloudflared, excluir o arquivo cert.pem, apagar as credenciais locais e limpar todas as configurações de túneis no painel. Esta ação NÃO pode ser desfeita. Deseja continuar?')) return;
+
+    const resetBtn = document.getElementById('cloudflaredResetBtn');
+    const freshBtn = document.getElementById('cloudflaredFreshLoginBtn');
+    const loginBtn = document.getElementById('cloudflaredLoginBtn');
+    
+    if (resetBtn) {
+        resetBtn.disabled = true;
+        resetBtn.innerHTML = '<i data-lucide="loader" class="spin"></i> Removendo...';
+    }
+    if (freshBtn) freshBtn.disabled = true;
+    if (loginBtn) loginBtn.disabled = true;
+    if (window.lucide) lucide.createIcons();
+
+    const box = document.getElementById('cloudflaredLoginBox');
+    if (box) box.textContent = 'Executando remoção completa dos dados e cert.pem no terminal...\n';
+
+    try {
+        const data = await runCloudflaredAction('reset', 60000);
+        if (!data?.success) {
+            alert('Falha ao remover dados: ' + (data?.error || 'erro desconhecido'));
+            return;
+        }
+
+        alert('✅ Dados locais, cert.pem e configurações do Cloudflared removidos com sucesso!');
+        await fetchCloudflaredTunnels();
+        updateCloudflaredLoginUi(data);
+        if (box) box.textContent = 'Use "Login Cloudflare" para iniciar uma nova autenticação.\n';
+    } catch (err) {
+        alert('Erro na requisição: ' + err.message);
+    } finally {
+        if (resetBtn) {
+            resetBtn.disabled = false;
+            resetBtn.innerHTML = '<i data-lucide="trash-2"></i> Remover Dados & Cert';
+        }
+        if (freshBtn) freshBtn.disabled = false;
+        if (loginBtn) loginBtn.disabled = false;
+        if (window.lucide) lucide.createIcons();
+    }
 }
 
 function openCloudflaredAuthUrl(url) {

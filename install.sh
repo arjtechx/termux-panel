@@ -178,6 +178,49 @@ function install_mariadb_clean() {
     ok "MariaDB instalado com sucesso."
 }
 
+# ─── [5.5] GERAR CONFIGURAÇÃO MY.CNF DO MARIADB ──────────────────
+function generate_my_cnf() {
+    log "Gerando configuração do MariaDB (my.cnf)..."
+    if [ "$IS_TERMUX" = true ]; then
+        mkdir -p "$ENV_PREFIX/etc"
+        mkdir -p "$ENV_PREFIX/var/run/mysqld"
+        chmod 777 "$ENV_PREFIX/var/run/mysqld" 2>/dev/null || true
+        
+        cat <<EOF > "$ENV_PREFIX/etc/my.cnf"
+[client]
+socket = $ENV_PREFIX/var/run/mysqld/mysqld.sock
+port = 3306
+
+[mysqld]
+socket = $ENV_PREFIX/var/run/mysqld/mysqld.sock
+port = 3306
+datadir = $MYSQL_DIR
+bind-address = 127.0.0.1
+default-storage-engine = InnoDB
+innodb_file_per_table = 1
+EOF
+    else
+        ${SUDO}mkdir -p "/etc"
+        ${SUDO}mkdir -p "/var/run/mysqld"
+        ${SUDO}chmod 777 "/var/run/mysqld" 2>/dev/null || true
+        
+        cat <<EOF | ${SUDO}tee "/etc/my.cnf" >/dev/null
+[client]
+socket = /var/run/mysqld/mysqld.sock
+port = 3306
+
+[mysqld]
+socket = /var/run/mysqld/mysqld.sock
+port = 3306
+datadir = $MYSQL_DIR
+bind-address = 127.0.0.1
+default-storage-engine = InnoDB
+innodb_file_per_table = 1
+EOF
+    fi
+    ok "my.cnf gerado com sucesso."
+}
+
 # ─── [6] INICIALIZAR BANCO DE DADOS ─────────────────────────────
 function init_mariadb() {
     log "Inicializando banco de dados..."
@@ -477,6 +520,7 @@ function install_panel() {
     fi
 
     # Subir MariaDB
+    generate_my_cnf
     start_mariadb_temp
 
     # Verificar deps restantes (nodejs, nginx, etc.)
@@ -521,6 +565,16 @@ function install_panel() {
         bash scripts/setup-pma-sso.sh || warn "SSO do phpMyAdmin nao foi configurado. Rode scripts/health-check.sh para detalhes."
     fi
 
+    # ─── Ajustar Permissões Críticas ─────────────────────────────
+    log "Garantindo permissões corretas para o usuário local..."
+    if [ "$IS_TERMUX" = true ]; then
+        local current_user
+        current_user=$(whoami)
+        mkdir -p "$ENV_PREFIX/var/run" "$ENV_PREFIX/var/log/nginx" "$ENV_PREFIX/var/lib/mysql" "$ENV_PREFIX/tmp"
+        chmod -R 777 "$ENV_PREFIX/var/run" "$ENV_PREFIX/var/log/nginx" "$ENV_PREFIX/var/lib/mysql" "$ENV_PREFIX/tmp" 2>/dev/null || true
+        chown -R "$current_user" "$ENV_PREFIX/var/run" "$ENV_PREFIX/var/log/nginx" "$ENV_PREFIX/var/lib/mysql" "$ENV_PREFIX/tmp" 2>/dev/null || true
+    fi
+
     # ─── Node.js deps ────────────────────────────────────────────
     echo ""
     log "Instalando bibliotecas Node.js..."
@@ -535,6 +589,21 @@ function install_panel() {
 
 function update_panel() {
     show_banner
+    detect_os
+    
+    # ─── Gerar my.cnf robusto se necessário ──────────────────────
+    generate_my_cnf
+    
+    # ─── Ajustar Permissões Críticas ─────────────────────────────
+    log "Garantindo permissões corretas para o usuário local..."
+    if [ "$IS_TERMUX" = true ]; then
+        local current_user
+        current_user=$(whoami)
+        mkdir -p "$ENV_PREFIX/var/run" "$ENV_PREFIX/var/log/nginx" "$ENV_PREFIX/var/lib/mysql" "$ENV_PREFIX/tmp"
+        chmod -R 777 "$ENV_PREFIX/var/run" "$ENV_PREFIX/var/log/nginx" "$ENV_PREFIX/var/lib/mysql" "$ENV_PREFIX/tmp" 2>/dev/null || true
+        chown -R "$current_user" "$ENV_PREFIX/var/run" "$ENV_PREFIX/var/log/nginx" "$ENV_PREFIX/var/lib/mysql" "$ENV_PREFIX/tmp" 2>/dev/null || true
+    fi
+
     log "Atualizando dependências Node..."
     npm install
     ok "Atualização concluída!"

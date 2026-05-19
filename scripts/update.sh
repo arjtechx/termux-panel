@@ -141,6 +141,40 @@ fi
 cd "$PANEL_DIR"
 mkdir -p "$PANEL_DIR/logs"
 
+# Garante o arquivo de configuração my.cnf robusto para socket consistente
+log "Aplicando regras robustas do MariaDB (my.cnf) e permissões..."
+mkdir -p "$PREFIX/etc"
+mkdir -p "$PREFIX/var/run/mysqld"
+chmod 777 "$PREFIX/var/run/mysqld" 2>/dev/null || true
+
+# Define o caminho do banco de dados (MARIADB_DATA) padrão do Termux se não estiver setado
+MARIADB_DATA="${MARIADB_DATA:-$PREFIX/var/lib/mysql}"
+
+if [ ! -f "$PREFIX/etc/my.cnf" ]; then
+    cat <<EOF > "$PREFIX/etc/my.cnf"
+[client]
+socket = $PREFIX/var/run/mysqld/mysqld.sock
+port = 3306
+
+[mysqld]
+socket = $PREFIX/var/run/mysqld/mysqld.sock
+port = 3306
+datadir = $MARIADB_DATA
+bind-address = 127.0.0.1
+default-storage-engine = InnoDB
+innodb_file_per_table = 1
+EOF
+    ok "my.cnf configurado com sucesso."
+fi
+
+# Garante permissões corretas para o usuário local no Termux
+current_user=$(whoami)
+mkdir -p "$PREFIX/var/run" "$PREFIX/var/log/nginx" "$PREFIX/var/lib/mysql" "$PREFIX/tmp"
+chmod -R 777 "$PREFIX/var/run" "$PREFIX/var/log/nginx" "$PREFIX/var/lib/mysql" "$PREFIX/tmp" 2>/dev/null || true
+chown -R "$current_user" "$PREFIX/var/run" "$PREFIX/var/log/nginx" "$PREFIX/var/lib/mysql" "$PREFIX/tmp" 2>/dev/null || true
+# Remove arquivo PID órfão/travado que pode ter sido criado por root/su
+rm -f "$PREFIX/var/run/nginx.pid" 2>/dev/null || true
+
 log "Atualizando dependências Node.js..."
 npm install --no-audit --no-fund
 

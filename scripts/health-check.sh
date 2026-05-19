@@ -104,6 +104,29 @@ ensure_dir "$PREFIX/var/run"       "var/run"
 log_sep
 log_info "Verificando MariaDB..."
 
+# Garante o arquivo de configuração my.cnf robusto para socket consistente
+mkdir -p "$PREFIX/etc"
+mkdir -p "$PREFIX/var/run/mysqld"
+chmod 777 "$PREFIX/var/run/mysqld" 2>/dev/null || true
+
+if [ ! -f "$PREFIX/etc/my.cnf" ]; then
+    log_fix "Criando configuração my.cnf do MariaDB..."
+    cat <<EOF > "$PREFIX/etc/my.cnf"
+[client]
+socket = $PREFIX/var/run/mysqld/mysqld.sock
+port = 3306
+
+[mysqld]
+socket = $PREFIX/var/run/mysqld/mysqld.sock
+port = 3306
+datadir = $MARIADB_DATA
+bind-address = 127.0.0.1
+default-storage-engine = InnoDB
+innodb_file_per_table = 1
+EOF
+    log_ok "my.cnf configurado com sucesso"
+fi
+
 if [ -d "$MARIADB_DATA" ] && [ "$(ls -A "$MARIADB_DATA" 2>/dev/null)" ]; then
     log_ok "Data directory do MariaDB existe"
 else
@@ -224,6 +247,12 @@ fi
 # =============================================================
 log_sep
 log_info "Verificando configuração do NGINX..."
+
+# Garante que o diretório de execução existe e tem permissões corretas
+mkdir -p "$PREFIX/var/run"
+chmod 777 "$PREFIX/var/run" 2>/dev/null || true
+# Remove arquivo PID órfão/travado que pode ter sido criado por root/su
+rm -f "$PREFIX/var/run/nginx.pid" 2>/dev/null || true
 
 NGINX_MAIN="$NGINX_CONF_DIR/nginx.conf"
 
