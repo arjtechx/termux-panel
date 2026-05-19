@@ -2,12 +2,14 @@
 set +e
 
 PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PANEL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 NGINX_DIR="$PREFIX/etc/nginx"
 NGINX_CONF="$NGINX_DIR/nginx.conf"
 MIME_TYPES="$NGINX_DIR/mime.types"
 CONF_D="$NGINX_DIR/conf.d"
-LOG_DIR="$PREFIX/var/log/nginx"
-RUN_DIR="$PREFIX/var/run"
+LOG_DIR="$PANEL_DIR/logs"
+RUN_DIR="$PANEL_DIR/logs"
 
 echo "[nginx] Reparando bootstrap do NGINX no Termux"
 echo "[nginx] PREFIX=$PREFIX"

@@ -144,9 +144,10 @@ configure_nginx_vhost() {
     # Garante que o diretório etc/nginx exista e tem permissões corretas
     local nginx_main_dir="$(dirname "$NGINX_CONF_DIR")"
     local mime_types="$nginx_main_dir/mime.types"
-    mkdir -p "$nginx_main_dir" "$NGINX_CONF_DIR" "$PREFIX/var/log/nginx" "$PREFIX/var/run"
-    chmod -R 777 "$nginx_main_dir" "$PREFIX/var/log/nginx" "$PREFIX/var/run" 2>/dev/null || true
-    chown -R "$(whoami)" "$nginx_main_dir" "$PREFIX/var/log/nginx" "$PREFIX/var/run" 2>/dev/null || true
+    local PANEL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+    mkdir -p "$nginx_main_dir" "$NGINX_CONF_DIR" "$PANEL_DIR/logs"
+    chmod -R 777 "$nginx_main_dir" "$PANEL_DIR/logs" 2>/dev/null || true
+    chown -R "$(whoami)" "$nginx_main_dir" "$PANEL_DIR/logs" 2>/dev/null || true
 
     if [ -f "$SCRIPT_DIR/nginx-termux-repair.sh" ]; then
         sh "$SCRIPT_DIR/nginx-termux-repair.sh" >/dev/null 2>&1 || true
@@ -156,10 +157,10 @@ configure_nginx_vhost() {
     local nginx_main="$nginx_main_dir/nginx.conf"
     if [ ! -f "$nginx_main" ]; then
         echo "  [-] nginx.conf principal ausente. Criando..."
-        cat > "$nginx_main" << 'NGINX_CONF'
+        cat > "$nginx_main" << NGINX_CONF
 worker_processes  auto;
-error_log  /data/data/com.termux/files/usr/var/log/nginx/error.log warn;
-pid        /data/data/com.termux/files/usr/var/run/nginx.pid;
+error_log  ${PANEL_DIR}/logs/nginx_error.log warn;
+pid        ${PANEL_DIR}/logs/nginx.pid;
 
 events {
     worker_connections  256;
@@ -183,8 +184,8 @@ server {
     listen       ${PMA_PORT};
     server_name  localhost 127.0.0.1 _;
 
-    access_log  ${PREFIX}/var/log/nginx/phpmyadmin_access.log;
-    error_log   ${PREFIX}/var/log/nginx/phpmyadmin_error.log;
+    access_log  ${PANEL_DIR}/logs/phpmyadmin_access.log;
+    error_log   ${PANEL_DIR}/logs/phpmyadmin_error.log;
 
     client_max_body_size 100m;
 

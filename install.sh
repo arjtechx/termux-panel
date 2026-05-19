@@ -196,6 +196,10 @@ function install_mariadb_clean() {
 # ─── [5.5] GERAR CONFIGURAÇÃO MY.CNF DO MARIADB ──────────────────
 function generate_my_cnf() {
     log "Gerando configuração do MariaDB (my.cnf)..."
+    local PANEL_DIR="$(pwd)"
+    mkdir -p "$PANEL_DIR/logs"
+    chmod 777 "$PANEL_DIR/logs" 2>/dev/null || true
+
     if [ "$IS_TERMUX" = true ]; then
         mkdir -p "$ENV_PREFIX/etc"
         mkdir -p "$ENV_PREFIX/var/run/mysqld"
@@ -213,6 +217,7 @@ datadir = $MYSQL_DIR
 bind-address = 127.0.0.1
 default-storage-engine = InnoDB
 innodb_file_per_table = 1
+log-error = $PANEL_DIR/logs/mariadb.log
 EOF
     else
         ${SUDO}mkdir -p "/etc"
@@ -231,6 +236,7 @@ datadir = $MYSQL_DIR
 bind-address = 127.0.0.1
 default-storage-engine = InnoDB
 innodb_file_per_table = 1
+log-error = $PANEL_DIR/logs/mariadb.log
 EOF
     fi
     ok "my.cnf gerado com sucesso."
