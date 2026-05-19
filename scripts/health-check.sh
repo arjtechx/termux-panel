@@ -283,9 +283,9 @@ rm -f "$PREFIX/var/run/nginx.pid" 2>/dev/null || true
 
 if [ -f "$SCRIPT_DIR/nginx-termux-repair.sh" ]; then
     log_fix "Aplicando reparo base do NGINX/mime.types..."
-    sh "$SCRIPT_DIR/nginx-termux-repair.sh" >/tmp/termux-panel-nginx-repair.log 2>&1 || {
+    sh "$SCRIPT_DIR/nginx-termux-repair.sh" >"$PREFIX/tmp/termux-panel-nginx-repair.log" 2>&1 || {
         log_warn "Reparo base do NGINX retornou erro. Detalhes:"
-        cat /tmp/termux-panel-nginx-repair.log 2>/dev/null || true
+        cat "$PREFIX/tmp/termux-panel-nginx-repair.log" 2>/dev/null || true
     }
 fi
 

@@ -240,8 +240,8 @@ fi
 log "Verificando NGINX..."
 if command -v nginx >/dev/null 2>&1; then
     if [ -f "$PANEL_DIR/scripts/nginx-termux-repair.sh" ]; then
-        sh "$PANEL_DIR/scripts/nginx-termux-repair.sh" >/tmp/termux-panel-nginx-repair.log 2>&1 || \
-            warn "Reparo NGINX/mime.types falhou. Veja /tmp/termux-panel-nginx-repair.log"
+        sh "$PANEL_DIR/scripts/nginx-termux-repair.sh" >"$PREFIX/tmp/termux-panel-nginx-repair.log" 2>&1 || \
+            warn "Reparo NGINX/mime.types falhou. Veja $PREFIX/tmp/termux-panel-nginx-repair.log"
     fi
 
     log "Aplicando SSO do phpMyAdmin..."
