@@ -1397,7 +1397,8 @@ router.post('/api/filebrowser/token', (req, res) => {
         }
 
         const host = req.hostname || '127.0.0.1';
-        const url = `http://${host}:${PORT}/__filebrowser?token=${token}`;
+        const activePort = req.socket.localPort || 8088;
+        const url = `http://${host}:${activePort}/__filebrowser?token=${token}`;
 
         res.json({ success: true, token, url });
     } catch (err) {
@@ -1665,7 +1666,8 @@ router.get('/api/mariadb/diagnose', async (req, res) => {
         ssoTokens.set(testToken, { database: '', expiresAt: Date.now() + 10000, used: false });
         let tokenValidationOk = false;
         try {
-            const resp = await axios.get(`http://127.0.0.1:${PORT}/api/phpmyadmin/validate?token=${testToken}`, { timeout: 1500 });
+            const activePort = req.socket.localPort || 8088;
+            const resp = await axios.get(`http://127.0.0.1:${activePort}/api/phpmyadmin/validate?token=${testToken}`, { timeout: 1500 });
             tokenValidationOk = resp.data && resp.data.success === true;
         } catch(e) {}
         ssoTokens.delete(testToken);
