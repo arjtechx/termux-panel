@@ -55,6 +55,46 @@ function runCommand(command, args, options = {}) {
     });
 }
 
+function shellQuote(value) {
+    return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+function runTerminalScript(script, options = {}) {
+    const shell = process.platform === 'win32' ? 'powershell' : 'sh';
+    const args = process.platform === 'win32'
+        ? ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script]
+        : ['-lc', script];
+
+    return new Promise((resolve) => {
+        let stdout = '';
+        let stderr = '';
+        const child = spawn(shell, args, { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env } });
+        const timer = setTimeout(() => {
+            try { child.kill('SIGKILL'); } catch (_) {}
+            resolve({ code: -1, stdout, stderr: `${stderr}\nTimeout ao executar comandos de limpeza`.trim() });
+        }, options.timeoutMs || 30000);
+
+        child.stdout.on('data', data => {
+            const text = data.toString();
+            stdout += text;
+            options.onData?.(text);
+        });
+        child.stderr.on('data', data => {
+            const text = data.toString();
+            stderr += text;
+            options.onData?.(text);
+        });
+        child.on('error', err => {
+            clearTimeout(timer);
+            resolve({ code: -1, stdout, stderr: err.message });
+        });
+        child.on('close', code => {
+            clearTimeout(timer);
+            resolve({ code, stdout, stderr });
+        });
+    });
+}
+
 function parseTunnelCreateOutput(output) {
     const uuid = (output.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i) || [])[0];
     const credentials = (output.match(/(?:[A-Za-z]:)?[^\r\n"'<>]*\.json/i) || [])[0]?.trim();
@@ -371,9 +411,13 @@ function deleteTunnel(id) {
     return { success: true };
 }
 
-async function startLogin(io) {
+async function startLogin(io, options = {}) {
     ensureModuleDirs();
-    fs.writeFileSync(LOGIN_LOG, '');
+    if (options.preserveLog) {
+        emitLoginText(io, '\n--- Novo login Cloudflare ---\n');
+    } else {
+        fs.writeFileSync(LOGIN_LOG, '');
+    }
     lastLoginUrl = '';
     stopLoginWatcher();
 
@@ -475,7 +519,12 @@ async function startLogin(io) {
         if (code !== 0) stopLoginWatcher();
     });
 
-    return { success: true, pid: child.pid, mode: isTermux() ? 'termux-pty' : 'pipe' };
+    return {
+        success: true,
+        ...getLoginStatusSnapshot(),
+        pid: child.pid,
+        mode: isTermux() ? 'termux-pty' : 'pipe'
+    };
 }
 
 function getLastLoginUrl() {
@@ -488,51 +537,49 @@ function getLastLoginUrl() {
     }
 }
 
-function resetManager() {
+async function resetManagerViaTerminal(io) {
+    ensureModuleDirs();
     stopLoginWatcher();
     if (loginProcess && !loginProcess.killed) {
         try { loginProcess.kill('SIGTERM'); } catch (_) {}
         loginProcess = null;
     }
 
-    const removed = {
-        cert: false,
-        tunnels: 0,
-        credentials: 0
-    };
-
+    const home = cloudflaredHome();
     const cert = certPath();
-    if (fs.existsSync(cert)) {
-        try {
-            fs.unlinkSync(cert);
-            removed.cert = true;
-        } catch (err) { console.error('Erro ao excluir cert.pem', err); }
-    }
+    const tunnels = TUNNELS_DIR;
 
-    if (fs.existsSync(TUNNELS_DIR)) {
-        fs.readdirSync(TUNNELS_DIR).forEach(file => {
-            const p = path.join(TUNNELS_DIR, file);
-            if (fs.statSync(p).isDirectory()) {
-                try {
-                    const meta = readJson(metaPath(file), null);
-                    stopTunnel(file);
-                    const credentialsFile = meta?.credentialsFile ? path.resolve(meta.credentialsFile) : '';
-                    const credentialsHome = path.resolve(cloudflaredHome());
-                    const canRemoveCredentials = credentialsFile
-                        && credentialsFile.startsWith(`${credentialsHome}${path.sep}`)
-                        && path.extname(credentialsFile).toLowerCase() === '.json';
-                    if (canRemoveCredentials && fs.existsSync(credentialsFile)) {
-                        try {
-                            fs.unlinkSync(credentialsFile);
-                            removed.credentials += 1;
-                        } catch (err) { console.error('Erro ao excluir credenciais do tunel', file, err); }
-                    }
-                    fs.rmSync(p, { recursive: true, force: true });
-                    removed.tunnels += 1;
-                } catch (err) { console.error('Erro ao excluir tunel', file, err); }
-            }
-        });
-    }
+    const script = process.platform === 'win32'
+        ? [
+            `$ErrorActionPreference = 'Continue'`,
+            `Write-Output "[cloudflared] Limpando processos antigos..."`,
+            `Get-Process cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue`,
+            `Write-Output "[cloudflared] Removendo cert.pem..."`,
+            `Remove-Item -LiteralPath ${JSON.stringify(cert)} -Force -ErrorAction SilentlyContinue`,
+            `Write-Output "[cloudflared] Removendo credenciais .json antigas..."`,
+            `if (Test-Path -LiteralPath ${JSON.stringify(home)}) { Get-ChildItem -LiteralPath ${JSON.stringify(home)} -Filter *.json -File -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue }`,
+            `Write-Output "[cloudflared] Removendo tuneis do painel..."`,
+            `if (Test-Path -LiteralPath ${JSON.stringify(tunnels)}) { Get-ChildItem -LiteralPath ${JSON.stringify(tunnels)} -Directory -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue }`,
+            `Write-Output "[cloudflared] Limpeza concluida."`
+        ].join('; ')
+        : [
+            `set +e`,
+            `echo "[cloudflared] Limpando processos antigos..."`,
+            `pkill -f 'cloudflared.*tunnel' 2>/dev/null || true`,
+            `echo "[cloudflared] Removendo cert.pem..."`,
+            `rm -f ${shellQuote(cert)}`,
+            `echo "[cloudflared] Removendo credenciais .json antigas..."`,
+            `find ${shellQuote(home)} -maxdepth 1 -type f -name '*.json' -delete 2>/dev/null || true`,
+            `echo "[cloudflared] Removendo tuneis do painel..."`,
+            `find ${shellQuote(tunnels)} -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true`,
+            `echo "[cloudflared] Limpeza concluida."`
+        ].join('\n');
+
+    fs.writeFileSync(LOGIN_LOG, '');
+    const result = await runTerminalScript(script, {
+        timeoutMs: 30000,
+        onData: text => emitLoginText(io, text)
+    });
 
     loginStatus = {
         state: 'idle',
@@ -543,9 +590,29 @@ function resetManager() {
         updatedAt: new Date().toISOString()
     };
     lastLoginUrl = '';
-    if (fs.existsSync(LOGIN_LOG)) fs.writeFileSync(LOGIN_LOG, '');
 
-    return { success: true, removed };
+    return {
+        success: result.code === 0,
+        code: result.code,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        error: result.code === 0 ? undefined : (result.stderr || result.stdout || 'Falha ao executar comandos de limpeza')
+    };
+}
+
+async function resetAndStartLogin(io) {
+    const reset = await resetManagerViaTerminal(io);
+    if (!reset.success) {
+        return { success: false, reset, error: reset.error || 'Falha ao limpar dados do Cloudflared' };
+    }
+
+    const login = await startLogin(io, { preserveLog: true });
+    return {
+        ...login,
+        success: Boolean(login.success),
+        reset,
+        login
+    };
 }
 
 module.exports = {
@@ -560,5 +627,6 @@ module.exports = {
     extractCloudflareUrl,
     runCommand,
     buildConfig,
-    resetManager
+    resetManagerViaTerminal,
+    resetAndStartLogin
 };

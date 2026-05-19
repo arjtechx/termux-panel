@@ -1019,9 +1019,6 @@
                         <button class="btn btn-warning btn-sm" id="cloudflaredFreshLoginBtn" onclick="resetCloudflaredAndLogin()" title="Limpar dados, excluir cert.pem e iniciar nova autorização">
                             <i data-lucide="rotate-ccw"></i> Nova configuração
                         </button>
-                        <button class="btn btn-danger btn-sm" onclick="resetCloudflaredSystem()" title="Limpar Configurações e Excluir Cert.pem">
-                            <i data-lucide="trash-2"></i> Limpar / Logout
-                        </button>
                         <span id="cloudflaredAuthStatus" class="badge badge-danger">Nao autenticado</span>
                         <button class="btn btn-primary btn-sm" onclick="newCloudflaredTunnel()">
                             <i data-lucide="plus"></i> Novo Tunel
@@ -1371,7 +1368,7 @@
 </div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.34"></script>
+<script src="filemanager.js?v=0.2.35"></script>
 <script src="app.js?v=4.0"></script>
 </body>
 </html>

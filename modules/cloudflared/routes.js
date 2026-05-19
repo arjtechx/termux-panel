@@ -131,16 +131,23 @@ module.exports = function createCloudflaredRoutes(io) {
         }
     });
 
-    const resetCloudflaredManager = (req, res) => {
+    router.post('/tunnel/reset', async (req, res) => {
         try {
-            res.json(manager.resetManager());
+            const result = await manager.resetManagerViaTerminal(io);
+            res.status(result.success ? 200 : 500).json(result);
         } catch (err) {
             res.status(500).json({ success: false, error: err.message });
         }
-    };
+    });
 
-    router.post('/tunnel/reset', resetCloudflaredManager);
-    router.post('/cloudflared/reset', resetCloudflaredManager);
+    router.post('/tunnel/fresh-login', async (req, res) => {
+        try {
+            const result = await manager.resetAndStartLogin(io);
+            res.status(result.success ? 200 : 500).json(result);
+        } catch (err) {
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
 
     return router;
 };
