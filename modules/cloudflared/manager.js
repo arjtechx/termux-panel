@@ -44,24 +44,17 @@ function createTunnel(data) {
     const { name, type, token, domain, localPort } = data;
     const tunnels = getTunnels();
     
+    if (!name) throw new Error('O nome do túnel é obrigatório.');
     if (tunnels.find(t => t.name === name)) {
         throw new Error('Um túnel com este nome já existe.');
     }
+    if (type === 'token' && !token) throw new Error('Token é obrigatório para modo Token.');
+    if (type === 'classic' && !localPort) throw new Error('Porta Local é obrigatória para modo Clássico.');
 
     const id = Date.now().toString();
+    // Modo Clássico = Quick Tunnel via --url (não precisa registrar no Cloudflare)
+    // Modo Token = Tunnel via token do Zero Trust Dashboard
     const newTunnel = { id, name, type, token, domain, localPort, createdAt: new Date().toISOString() };
-
-    // If classic mode, we must interact with CLI
-    if (type === 'classic') {
-        try {
-            // Create tunnel (generates credentials file)
-            execSync(`cloudflared tunnel create "${name}"`, { stdio: 'pipe' });
-            // Route DNS
-            execSync(`cloudflared tunnel route dns "${name}" "${domain}"`, { stdio: 'pipe' });
-        } catch (err) {
-            throw new Error('Falha ao registrar túnel no Cloudflare: ' + err.message);
-        }
-    }
 
     tunnels.push(newTunnel);
     saveTunnels(tunnels);
@@ -119,13 +112,15 @@ function startTunnel(id) {
     if (!tunnel) throw new Error('Túnel não encontrado.');
 
     if (tunnel.type === 'token') {
+        // Zero Trust: cloudflared tunnel run --token <TOKEN>
         return processManager.startTunnelProcess(id, { token: tunnel.token });
     } else {
-        // Classic mode requires routing to local port dynamically
-        const targetUrl = tunnel.localPort.includes('://') ? tunnel.localPort : `http://localhost:${tunnel.localPort.replace(/[^0-9]/g, '')}`;
-        return processManager.startTunnelProcess(id, { 
-            commandOpts: ['--url', targetUrl]
-        });
+        // Modo Clássico: Quick Tunnel  → cloudflared tunnel --url http://localhost:PORT
+        // IMPORTANTE: usa 'quickTunnel' flag, NÃO 'tunnel run'
+        const targetUrl = /^https?:\///i.test(tunnel.localPort)
+            ? tunnel.localPort
+            : `http://localhost:${tunnel.localPort.replace(/\D/g, '')}`;
+        return processManager.startTunnelProcess(id, { quickUrl: targetUrl });
     }
 }
 

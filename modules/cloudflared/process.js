@@ -92,22 +92,33 @@ function killAllZombies() {
 function startTunnelProcess(id, options = {}) {
     stopTunnelProcess(id); // Ensure no old process is running
     
-    const { token, commandOpts = [] } = options;
-    const logFile = path.join(LOGS_DIR, `tunnel_${id}.log`);
+    const { token, quickUrl } = options;
+    const logFile = path.join(LOGS_DIR, `tunnel_${id}.log`);\
     
     const outStream = fs.openSync(logFile, 'a');
     
     let args = [];
     if (token) {
+        // Zero Trust Mode: cloudflared tunnel run --token TOKEN
         args = ['tunnel', '--no-autoupdate', 'run', '--token', token];
+    } else if (quickUrl) {
+        // Classic Quick Tunnel: cloudflared tunnel --url http://localhost:PORT
+        // NOTE: No "run" subcommand here — different syntax
+        args = ['tunnel', '--no-autoupdate', '--url', quickUrl];
     } else {
-        args = ['tunnel', '--no-autoupdate', 'run', ...commandOpts, id];
+        return { success: false, error: 'Opções de início insuficientes.' };
     }
 
     const child = spawn('cloudflared', args, {
         detached: true,
         stdio: ['ignore', outStream, outStream],
-        env: { ...process.env, TUNNEL_ORIGIN_CERT: path.join(process.env.HOME || '/data/data/com.termux/files/home', '.cloudflared', 'cert.pem') }
+        env: { 
+            ...process.env, 
+            TUNNEL_ORIGIN_CERT: path.join(
+                process.env.HOME || '/data/data/com.termux/files/home', 
+                '.cloudflared', 'cert.pem'
+            ) 
+        }
     });
 
     child.unref(); // Allow Node to exit independently of this process
