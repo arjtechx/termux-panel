@@ -65,13 +65,12 @@ router.get('/status', async (req, res) => {
 
     const [
         nginxRunning, mariadbRunning, phpfpmRunning,
-        port80, port8080, port3306,
+        port8080, port3306,
         hasNginx, hasPHP, hasMariadb, hasPMA,
     ] = await Promise.all([
         checkProcess('nginx'),
         checkProcess('mariadbd').then(r => r || checkProcess('mysqld')),
         checkProcess('php-fpm'),
-        checkPort('127.0.0.1', 80),
         checkPort('127.0.0.1', 8080),
         checkPort('127.0.0.1', 3306),
         checkCmd('nginx'),
@@ -86,7 +85,7 @@ router.get('/status', async (req, res) => {
 
     res.json({
         services: {
-            nginx:    { installed: hasNginx,    running: nginxRunning,   port80 },
+            nginx:    { installed: hasNginx,    running: nginxRunning,   port8080 },
             mariadb:  { installed: hasMariadb,  running: mariadbRunning, port3306 },
             phpfpm:   { installed: hasPHP,      running: phpfpmRunning },
             phpmyadmin: { installed: hasPMA,    port8080 },

@@ -69,6 +69,10 @@ function execAsync(cmd, opts = {}) {
     });
 }
 
+function shellQuote(value) {
+    return `'${String(value).replace(/'/g, "'\\''")}'`;
+}
+
 // ── ROTAS EXISTENTES (mantidas 100% compatíveis) ─────────────
 
 // GET /api/files/list?path=<dir>   [Header X-FM-Root: 1 → usa su]
@@ -147,7 +151,11 @@ router.post('/upload', multerUpload.array('files'), (req, res) => {
         if (!fs.existsSync(targetDir)) return res.status(400).json({ error: 'Diretório destino não existe' });
 
         req.files.forEach(file => {
-            const destPath = path.join(targetDir, file.originalname);
+            const safeName = path.basename(file.originalname || file.filename || '');
+            if (!safeName || safeName === '.' || safeName === '..') {
+                throw new Error('Nome de upload invalido.');
+            }
+            const destPath = path.join(targetDir, safeName);
             fs.renameSync(file.path, destPath);
         });
         res.json({ success: true });
@@ -299,7 +307,7 @@ router.post('/chmod', async (req, res) => {
         const mode = String(req.body.mode || '').replace(/[^0-7]/g, '').slice(0, 4);
         if (!mode) return res.status(400).json({ success: false, error: 'Modo inválido.' });
         if (!fs.existsSync(targetPath)) return res.status(404).json({ success: false, error: 'Não encontrado.' });
-        await execAsync(`chmod ${mode} "${targetPath.replace(/"/g, '\\"')}"`);
+        await execAsync(`chmod ${mode} ${shellQuote(targetPath)}`);
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
@@ -311,9 +319,10 @@ router.post('/compress', async (req, res) => {
     try {
         const { paths, destDir, name } = req.body;
         if (!paths?.length) return res.status(400).json({ success: false, error: 'Nenhum arquivo selecionado.' });
-        const dest = path.join(safePath(destDir), (name || 'archive') + '.tar.gz');
-        const srcList = paths.map(p => `"${safePath(p).replace(/"/g, '\\"')}"`).join(' ');
-        await execAsync(`tar -czf "${dest.replace(/"/g, '\\"')}" ${srcList}`);
+        const archiveName = path.basename(String(name || 'archive')).replace(/[^A-Za-z0-9._-]/g, '_') || 'archive';
+        const dest = path.join(safePath(destDir), `${archiveName}.tar.gz`);
+        const srcList = paths.map(p => shellQuote(safePath(p))).join(' ');
+        await execAsync(`tar -czf ${shellQuote(dest)} ${srcList}`);
         res.json({ success: true, dest });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
@@ -329,13 +338,13 @@ router.post('/extract', async (req, res) => {
         const name = path.basename(src).toLowerCase();
         let cmd;
         if (name.endsWith('.tar.gz') || name.endsWith('.tgz')) {
-            cmd = `tar -xzf "${src}" -C "${dest}"`;
+            cmd = `tar -xzf ${shellQuote(src)} -C ${shellQuote(dest)}`;
         } else if (name.endsWith('.tar.bz2') || name.endsWith('.tbz2')) {
-            cmd = `tar -xjf "${src}" -C "${dest}"`;
+            cmd = `tar -xjf ${shellQuote(src)} -C ${shellQuote(dest)}`;
         } else if (name.endsWith('.tar')) {
-            cmd = `tar -xf "${src}" -C "${dest}"`;
+            cmd = `tar -xf ${shellQuote(src)} -C ${shellQuote(dest)}`;
         } else if (name.endsWith('.zip')) {
-            cmd = `unzip -o "${src}" -d "${dest}"`;
+            cmd = `unzip -o ${shellQuote(src)} -d ${shellQuote(dest)}`;
         } else {
             return res.status(400).json({ success: false, error: 'Formato não suportado. Use .tar.gz, .tar.bz2, .tar ou .zip' });
         }

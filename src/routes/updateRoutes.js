@@ -10,6 +10,20 @@ const { runCmd } = require('../utils/shell');
 const BASE_DIR = path.join(__dirname, '..', '..');
 const UPDATE_SCRIPT = path.join(BASE_DIR, 'scripts', 'update.sh');
 
+function normalizeGithubRepo(repo) {
+    const clean = String(repo || '')
+        .replace(/https?:\/\/github\.com\//i, '')
+        .replace(/^\/+|\/+$/g, '')
+        .trim();
+    return /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(clean) ? clean : '';
+}
+
+function normalizeReleaseTag(tag, fallback = 'latest') {
+    const clean = String(tag || '').trim();
+    if (clean === 'latest') return clean;
+    return /^v?[A-Za-z0-9._-]{1,80}$/.test(clean) ? clean : fallback;
+}
+
 // SSE: Executa atualização do painel em tempo real
 router.get('/api/system/update/run', (req, res) => {
     try { require('fs').chmodSync(UPDATE_SCRIPT, '755'); } catch(e) {}
@@ -56,24 +70,67 @@ const UPDATE_CONFIG_FILE = path.join(BASE_DIR, 'config', 'update.json');
 function getUpdateConfig() {
     try {
         if (fs.existsSync(UPDATE_CONFIG_FILE)) {
-            return JSON.parse(fs.readFileSync(UPDATE_CONFIG_FILE, 'utf8'));
+            const config = JSON.parse(fs.readFileSync(UPDATE_CONFIG_FILE, 'utf8'));
+            return { ...config, github_repo: normalizeGithubRepo(config.github_repo) };
         }
     } catch(e) {}
     return { github_repo: '', update_channel: 'release' };
 }
 
 // GET/POST config de update (repositório GitHub)
+function runPanelScript(scriptName, sendLog) {
+    return new Promise((resolve) => {
+        const scriptPath = path.join(BASE_DIR, 'scripts', scriptName);
+        if (!fs.existsSync(scriptPath)) {
+            sendLog('WARN', `Script nao encontrado: scripts/${scriptName}`);
+            return resolve(false);
+        }
+
+        const proc = spawn('bash', [scriptPath], {
+            cwd: BASE_DIR,
+            env: { ...process.env, TERM: 'xterm' }
+        });
+
+        proc.stdout.on('data', chunk => {
+            chunk.toString().split('\n').forEach(line => {
+                if (line.trim()) sendLog('SCRIPT', line.trim());
+            });
+        });
+        proc.stderr.on('data', chunk => {
+            chunk.toString().split('\n').forEach(line => {
+                if (line.trim()) sendLog('SCRIPT', line.trim());
+            });
+        });
+        proc.on('close', code => {
+            if (code === 0) sendLog('OK', `${scriptName} executado.`);
+            else sendLog('WARN', `${scriptName} terminou com codigo ${code}.`);
+            resolve(code === 0);
+        });
+        proc.on('error', err => {
+            sendLog('WARN', `${scriptName} falhou: ${err.message}`);
+            resolve(false);
+        });
+    });
+}
+
+async function applyTermuxWebRepair(sendLog) {
+    if (!systemConfig.is_termux) return;
+    sendLog('INFO', 'Aplicando reparo Termux do NGINX/mime.types...');
+    await runPanelScript('nginx-termux-repair.sh', sendLog);
+    sendLog('INFO', 'Reaplicando SSO do phpMyAdmin...');
+    await runPanelScript('setup-pma-sso.sh', sendLog);
+}
+
 router.get('/api/system/update/config', (req, res) => {
     res.json(getUpdateConfig());
 });
 
 router.post('/api/system/update/config', (req, res) => {
     try {
-        let repo = req.body.github_repo || '';
-        // Sanitiza URL completa caso o usuário cole: https://github.com/user/repo
-        repo = repo.replace(/https?:\/\/github\.com\//i, '').trim();
-        // Remove barras extras no início ou fim
-        repo = repo.replace(/^\/+|\/+$/g, '');
+        const repo = normalizeGithubRepo(req.body.github_repo || '');
+        if (!repo) {
+            return res.status(400).json({ error: 'Repositorio invalido. Use usuario/repositorio do GitHub.' });
+        }
 
         const config = { ...getUpdateConfig(), github_repo: repo };
         fs.writeFileSync(UPDATE_CONFIG_FILE, JSON.stringify(config, null, 2));
@@ -870,7 +927,7 @@ router.get('/api/update/install', async (req, res) => {
         res.write(`data: ${JSON.stringify({ line: `[${type}] ${message}` })}\n\n`);
     };
 
-    const targetTag = req.query.tag || 'latest';
+    const targetTag = normalizeReleaseTag(req.query.tag || 'latest');
     sendLog('INFO', `Verificando releases GitHub para tag: ${targetTag}...`);
 
     try {
@@ -1021,6 +1078,8 @@ router.get('/api/update/install', async (req, res) => {
             return res.end();
         }
 
+        await applyTermuxWebRepair(sendLog);
+
         sendLog('INFO', `Atualizando dependências Node.js...`);
         try {
             await new Promise((resolve, reject) => {
@@ -1126,7 +1185,7 @@ router.get('/api/update/rollback', async (req, res) => {
         res.write(`data: ${JSON.stringify({ line: `[${type}] ${message}` })}\n\n`);
     };
 
-    const targetVersion = req.query.version || '';
+    const targetVersion = normalizeReleaseTag(req.query.version || '', '');
     if (!targetVersion) {
         sendLog('ERR', 'Versão para rollback não especificada.');
         res.write(`data: ${JSON.stringify({ line: '__DONE__:1' })}\n\n`);
@@ -1152,6 +1211,8 @@ router.get('/api/update/rollback', async (req, res) => {
             }
         }
         
+        await applyTermuxWebRepair(sendLog);
+
         sendLog('OK', `Rollback para a versão ${targetVersion} concluído com sucesso!`);
         res.write(`data: ${JSON.stringify({ line: '__DONE__:0' })}\n\n`);
         res.end();

@@ -237,18 +237,18 @@ else
 fi
 
 # ─── 3. NGINX ────────────────────────────────────────────────────
-log "Aplicando SSO do phpMyAdmin..."
-if [ -f "$PANEL_DIR/scripts/setup-pma-sso.sh" ]; then
-    bash "$PANEL_DIR/scripts/setup-pma-sso.sh" >/dev/null 2>&1 && \
-        ok "SSO do phpMyAdmin configurado." || \
-        warn "SSO do phpMyAdmin nao foi configurado. Rode scripts/health-check.sh para detalhes."
-fi
-
 log "Verificando NGINX..."
 if command -v nginx >/dev/null 2>&1; then
     if [ -f "$PANEL_DIR/scripts/nginx-termux-repair.sh" ]; then
         sh "$PANEL_DIR/scripts/nginx-termux-repair.sh" >/tmp/termux-panel-nginx-repair.log 2>&1 || \
             warn "Reparo NGINX/mime.types falhou. Veja /tmp/termux-panel-nginx-repair.log"
+    fi
+
+    log "Aplicando SSO do phpMyAdmin..."
+    if [ -f "$PANEL_DIR/scripts/setup-pma-sso.sh" ]; then
+        bash "$PANEL_DIR/scripts/setup-pma-sso.sh" >/dev/null 2>&1 && \
+            ok "SSO do phpMyAdmin configurado." || \
+            warn "SSO do phpMyAdmin nao foi configurado. Rode scripts/health-check.sh para detalhes."
     fi
 
     if [ "$USE_SU" = "true" ]; then

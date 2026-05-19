@@ -11,6 +11,7 @@ const PREFIX = systemConfig.prefix;
 const NGINX_CONF_DIR = systemConfig.nginx_conf_dir || `${PREFIX}/etc/nginx/conf.d`;
 const HOSTING_FILE = path.join(__dirname, '..', '..', 'config', 'hosting.json');
 const HOSTING_LOGS_DIR = path.join(__dirname, '..', '..', 'logs');
+const NGINX_REPAIR_SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'nginx-termux-repair.sh');
 
 if (!fs.existsSync(HOSTING_FILE)) {
     fs.writeFileSync(HOSTING_FILE, '[]');
@@ -48,6 +49,74 @@ function ensureHostingLogFile(filePath) {
     }
     if (!fs.existsSync(filePath)) {
         fs.closeSync(fs.openSync(filePath, 'a'));
+    }
+}
+
+function nginxFastcgiInclude() {
+    const params = path.join(PREFIX, 'etc', 'nginx', 'fastcgi_params');
+    const conf = path.join(PREFIX, 'etc', 'nginx', 'fastcgi.conf');
+    if (fs.existsSync(params)) return params;
+    if (fs.existsSync(conf)) return conf;
+    return params;
+}
+
+async function repairNginxBootstrap() {
+    if (systemConfig.is_termux && fs.existsSync(NGINX_REPAIR_SCRIPT)) {
+        await runCmd(`sh "${NGINX_REPAIR_SCRIPT}"`);
+    }
+}
+
+function execStrict(cmd, timeout = 20000) {
+    return new Promise((resolve, reject) => {
+        exec(cmd, { timeout, killSignal: 'SIGKILL' }, (error, stdout, stderr) => {
+            const output = `${stdout || ''}${stderr || ''}`.trim();
+            if (error) return reject(new Error(output || error.message));
+            resolve(output);
+        });
+    });
+}
+
+function validatePort(value, label) {
+    const port = Number.parseInt(value, 10);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+        throw new Error(`${label} invalida.`);
+    }
+    if (systemConfig.is_termux && port < 1024 && !systemConfig.has_root) {
+        throw new Error(`${label} menor que 1024 requer root no Termux. Use 8080 ou superior.`);
+    }
+    return port;
+}
+
+function safeServiceName(value) {
+    const clean = String(value || 'site').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    if (!clean) throw new Error('Nome do servico invalido.');
+    return clean.slice(0, 64);
+}
+
+function safeServerName(value) {
+    const raw = String(value || '_').trim();
+    const names = raw.split(/\s+/).filter(name => /^(\*\.)?[A-Za-z0-9_.-]+$|^_$/.test(name));
+    return names.length ? names.join(' ') : '_';
+}
+
+function nginxPath(value) {
+    return `"${String(value).replace(/\\/g, '/').replace(/"/g, '\\"')}"`;
+}
+
+async function reloadOrStartNginx(requireRoot = false) {
+    if (requireRoot) {
+        try {
+            await runCmd('nginx -s reload', true);
+        } catch (_) {
+            await runCmd('nginx', true);
+        }
+        return;
+    }
+
+    try {
+        await execStrict('nginx -s reload');
+    } catch (_) {
+        await execStrict('nginx');
     }
 }
 
@@ -93,13 +162,17 @@ router.post('/', async (req, res) => {
     const { name, domain, type, listenPort, targetPort, path: sitePath, startCmd, autoRestart, createIndex } = req.body;
     
     const id = Date.now().toString();
-    const parsedListenPort = parseInt(listenPort);
-    const parsedTargetPort = targetPort ? parseInt(targetPort) : null;
+    let parsedListenPort;
+    let parsedTargetPort;
     
     try {
-        if (parsedListenPort < 1024 && !systemConfig.has_root) {
-            return res.status(400).json({ error: `A porta pública ${parsedListenPort} é restrita (menor que 1024) e requer permissão de Root. Ative o Root no instalador ou use uma porta maior (ex: 8080).` });
+        const allowedTypes = ['php', 'static', 'node', 'python', 'proxy'];
+        if (!allowedTypes.includes(type)) {
+            return res.status(400).json({ error: 'Tipo de hospedagem invalido.' });
         }
+
+        parsedListenPort = validatePort(listenPort, 'Porta publica');
+        parsedTargetPort = targetPort ? validatePort(targetPort, 'Porta interna') : null;
 
         if (await isPortListening(parsedListenPort)) {
             return res.status(400).json({ error: `A porta pública ${parsedListenPort} já está em uso por outro serviço.` });
@@ -111,12 +184,26 @@ router.post('/', async (req, res) => {
             }
         }
         
-        const cleanName = name.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+        if ((type === 'node' || type === 'python' || type === 'proxy') && !parsedTargetPort) {
+            return res.status(400).json({ error: 'Porta interna e obrigatoria para proxy, Node.js e Python.' });
+        }
+
+        if ((type === 'node' || type === 'python') && (!startCmd || !startCmd.trim())) {
+            return res.status(400).json({ error: 'Comando de inicio e obrigatorio para Node.js/Python.' });
+        }
+
+        if (type !== 'proxy' && (!sitePath || !String(sitePath).trim())) {
+            return res.status(400).json({ error: 'Pasta do projeto/site e obrigatoria.' });
+        }
+
+        const cleanName = safeServiceName(name || domain || type);
+        const serverName = safeServerName(domain);
         const nginxConf = `hosting-${cleanName}-${id}.conf`;
         const confPath = path.join(NGINX_CONF_DIR, nginxConf);
         const logFile = `logs/hosting-${cleanName}-${id}.log`;
         const errorLog = `logs/hosting-${cleanName}-${id}-error.log`;
-        const publicUrl = `http://${domain || '127.0.0.1'}:${parsedListenPort}`;
+        const publicHost = serverName === '_' ? '127.0.0.1' : serverName.split(/\s+/)[0];
+        const publicUrl = `http://${publicHost}:${parsedListenPort}`;
         
         let resolvedPath = sitePath ? path.resolve(sitePath.trim()) : '';
         if (resolvedPath && (type === 'php' || type === 'static' || type === 'node' || type === 'python')) {
@@ -142,20 +229,21 @@ router.post('/', async (req, res) => {
         ensureHostingLogFile(fullErrorLogPath);
         
         if (type === 'php' || type === 'static') {
+            const fastcgiInclude = nginxFastcgiInclude();
             content = `server {
     listen 0.0.0.0:${parsedListenPort};
-    server_name _;
-    root ${resolvedPath};
+    server_name ${serverName};
+    root ${nginxPath(resolvedPath)};
     index index.php index.html index.htm;
-    access_log ${fullLogPath};
-    error_log ${fullErrorLogPath};
+    access_log ${nginxPath(fullLogPath)};
+    error_log ${nginxPath(fullErrorLogPath)};
 
     location / {
         try_files $uri $uri/ /index.php?$query_string;
     }
 
     location ~ \\.php$ {
-        include fastcgi_params;
+        include ${fastcgiInclude};
         fastcgi_pass 127.0.0.1:9000;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
     }
@@ -164,9 +252,9 @@ router.post('/', async (req, res) => {
             const proxyPort = parsedTargetPort;
             content = `server {
     listen 0.0.0.0:${parsedListenPort};
-    server_name _;
-    access_log ${fullLogPath};
-    error_log ${fullErrorLogPath};
+    server_name ${serverName};
+    access_log ${nginxPath(fullLogPath)};
+    error_log ${nginxPath(fullErrorLogPath)};
 
     location / {
         proxy_pass http://127.0.0.1:${proxyPort};
@@ -190,6 +278,8 @@ router.post('/', async (req, res) => {
         let isNginxOk = true;
         let nginxError = '';
         
+        await repairNginxBootstrap();
+
         let testCmd = requireRoot && systemConfig.is_termux ? `su -c 'nginx -t'` : (requireRoot && !systemConfig.is_termux ? `sudo nginx -t` : `nginx -t`);
         
         await new Promise((resolve) => {
@@ -210,7 +300,7 @@ router.post('/', async (req, res) => {
         }
         
         try {
-            await runCmd('nginx -s reload', requireRoot);
+            await reloadOrStartNginx(requireRoot);
             if (requireRoot) {
                 await chownToUser([NGINX_CONF_DIR, HOSTING_LOGS_DIR]);
             }
@@ -296,7 +386,9 @@ router.delete('/:id', async (req, res) => {
         
         const requireRoot = (svc.listenPort < 1024);
         try {
-            await runCmd('nginx -s reload', requireRoot);
+            await repairNginxBootstrap();
+            await execStrict('nginx -t');
+            await reloadOrStartNginx(requireRoot);
             if (requireRoot) {
                 await chownToUser([NGINX_CONF_DIR, HOSTING_LOGS_DIR]);
             }

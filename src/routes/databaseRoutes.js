@@ -15,7 +15,7 @@ const { runCmd, chownToUser } = require('../utils/shell');
 
 const DB_FILE = path.join(__dirname, '..', '..', 'config', 'db.json');
 const LOGS_DIR = path.join(__dirname, '..', '..', 'logs');
-// const DB_ACTIONS_LOG = path.join(LOGS_DIR, 'database-actions.log');
+const DB_ACTIONS_LOG = path.join(LOGS_DIR, 'database-actions.log');
 
 // --- Database Manager Logic ---
 async function getDbConn() {
@@ -121,11 +121,13 @@ router.post('/api/db/setup', (req, res) => {
 router.post('/api/db/create', async (req, res) => {
     const { dbName, dbUser, dbPass } = req.body;
     try {
+        const safeDbName = assertDbName(dbName);
         const conn = await getDbConn();
-        await conn.query(`CREATE DATABASE IF NOT EXISTS \`${dbName}\``);
+        await conn.query(`CREATE DATABASE IF NOT EXISTS ${quoteDbIdentifier(safeDbName)}`);
         if (dbUser && dbPass) {
-            await conn.query(`CREATE USER IF NOT EXISTS ?@'localhost' IDENTIFIED BY ?`, [dbUser, dbPass]);
-            await conn.query(`GRANT ALL PRIVILEGES ON \`${dbName}\`.* TO ?@'localhost'`, [dbUser]);
+            const account = quoteDbAccount(dbUser, 'localhost');
+            await conn.query(`CREATE USER IF NOT EXISTS ${account} IDENTIFIED BY ?`, [dbPass]);
+            await conn.query(`GRANT ALL PRIVILEGES ON ${quoteDbIdentifier(safeDbName)}.* TO ${account}`);
             await conn.query('FLUSH PRIVILEGES');
         }
         await conn.end();
@@ -138,8 +140,12 @@ router.post('/api/db/create', async (req, res) => {
 // Drop banco
 router.delete('/api/db/:name', async (req, res) => {
     try {
+        const dbName = assertDbName(req.params.name);
+        if (isSystemDb(dbName)) {
+            return res.status(403).json({ error: 'Remocao bloqueada em banco de sistema.' });
+        }
         const conn = await getDbConn();
-        await conn.query(`DROP DATABASE IF EXISTS \`${req.params.name}\``);
+        await conn.query(`DROP DATABASE IF EXISTS ${quoteDbIdentifier(dbName)}`);
         await conn.end();
         res.json({ success: true });
     } catch (err) {
@@ -151,10 +157,12 @@ router.delete('/api/db/:name', async (req, res) => {
 router.post('/api/db/user', async (req, res) => {
     const { username, password, database } = req.body;
     try {
+        const account = quoteDbAccount(username, 'localhost');
         const conn = await getDbConn();
-        await conn.query(`CREATE USER IF NOT EXISTS ?@'localhost' IDENTIFIED BY ?`, [username, password]);
+        await conn.query(`CREATE USER IF NOT EXISTS ${account} IDENTIFIED BY ?`, [password]);
         if (database) {
-            await conn.query(`GRANT ALL PRIVILEGES ON \`${database}\`.* TO ?@'localhost'`, [username]);
+            const dbName = assertDbName(database);
+            await conn.query(`GRANT ALL PRIVILEGES ON ${quoteDbIdentifier(dbName)}.* TO ${account}`);
         }
         await conn.query('FLUSH PRIVILEGES');
         await conn.end();
@@ -171,11 +179,11 @@ router.post('/api/db/backup', async (req, res) => {
         if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
         const config = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
         const ts = new Date().toISOString().replace(/[:.]/g, '-');
-        const filename = `db-${dbName || 'all'}-${ts}.sql`;
-        const filePath = path.join(BACKUP_DIR, filename);
-        const passArg = config.password ? `-p${config.password}` : '';
-        const dbArg = dbName ? `\`${dbName}\`` : '--all-databases';
-        await runCmd(`mysqldump -u ${config.user} ${passArg} ${dbArg} > "${filePath}"`);
+        const safeDbName = dbName ? assertDbName(dbName) : '';
+        const filename = `db-${safeDbName || 'all'}-${ts}.sql`;
+        const filePath = safeBackupPath(filename);
+        const dbArg = safeDbName ? shellQuote(safeDbName) : '--all-databases';
+        await runCmd(`mysqldump ${mysqlCliArgs(config)} ${dbArg} > ${shellQuote(filePath)}`);
         res.json({ success: true, filename });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -187,11 +195,10 @@ router.post('/api/db/restore', async (req, res) => {
     const { filename, dbName } = req.body;
     try {
         const config   = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-        const filePath = path.join(BACKUP_DIR, filename);
+        const filePath = safeBackupPath(filename);
         if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Arquivo não encontrado' });
-        const passArg = config.password ? `-p${config.password}` : '';
-        const dbArg   = dbName ? `\`${dbName}\`` : '';
-        await runCmd(`mysql -u ${config.user} ${passArg} ${dbArg} < "${filePath}"`);
+        const dbArg   = dbName ? shellQuote(assertDbName(dbName)) : '';
+        await runCmd(`mysql ${mysqlCliArgs(config)} ${dbArg} < ${shellQuote(filePath)}`);
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -250,6 +257,66 @@ function sanitizeDbName(name) {
 function sanitizeUsername(name) {
     if (!name) return '';
     return name.replace(/[^a-zA-Z0-9_-]/g, '');
+}
+
+function assertDbName(name, label = 'Banco') {
+    const raw = String(name || '').trim();
+    if (!/^[A-Za-z0-9_]{1,64}$/.test(raw)) {
+        throw new Error(`${label} invalido. Use apenas letras, numeros e underline.`);
+    }
+    return raw;
+}
+
+function assertUsername(name, label = 'Usuario') {
+    const raw = String(name || '').trim();
+    if (!/^[A-Za-z0-9_-]{1,80}$/.test(raw)) {
+        throw new Error(`${label} invalido. Use apenas letras, numeros, underline ou hifen.`);
+    }
+    return raw;
+}
+
+function assertSqlHost(host) {
+    const raw = String(host || 'localhost').trim();
+    if (!/^[A-Za-z0-9_.:%-]{1,255}$/.test(raw)) {
+        throw new Error('Host do usuario MariaDB invalido.');
+    }
+    return raw;
+}
+
+function quoteSqlString(value) {
+    return `'${String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+}
+
+function quoteDbIdentifier(name) {
+    return `\`${assertDbName(name)}\``;
+}
+
+function quoteDbAccount(username, host = 'localhost') {
+    return `${quoteSqlString(assertUsername(username))}@${quoteSqlString(assertSqlHost(host))}`;
+}
+
+function shellQuote(value) {
+    return `'${String(value).replace(/'/g, "'\\''")}'`;
+}
+
+function mysqlCliArgs(config) {
+    const args = [
+        '-h', config.host || '127.0.0.1',
+        '-P', String(config.port || 3306),
+        '-u', config.user || 'root'
+    ];
+    if (config.password) {
+        args.push(`--password=${config.password}`);
+    }
+    return args.map(shellQuote).join(' ');
+}
+
+function safeBackupPath(filename) {
+    const base = path.basename(String(filename || ''));
+    if (!base || !base.endsWith('.sql')) {
+        throw new Error('Arquivo de backup invalido.');
+    }
+    return path.join(BACKUP_DIR, base);
 }
 
 // API: Database details (size, engine, collations, tables count, total rows, mtime)
@@ -336,21 +403,20 @@ router.post('/api/db/rename', async (req, res) => {
 
     try {
         const config = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-        const passArg = config.password ? `-p${config.password}` : '';
         const ts = new Date().toISOString().replace(/[:.]/g, '-');
         
         // 1. Efetua backup automático pré-rename
         if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
         const backupFile = `db-RENAME-AUTO-${oldName}-${ts}.sql`;
         const backupPath = path.join(BACKUP_DIR, backupFile);
-        await runCmd(`mysqldump -u ${config.user} ${passArg} \`${oldName}\` > "${backupPath}"`);
+        await runCmd(`mysqldump ${mysqlCliArgs(config)} ${shellQuote(oldName)} > ${shellQuote(backupPath)}`);
 
         // 2. Cria novo banco
         const conn = await getDbConn();
-        await conn.query(`CREATE DATABASE IF NOT EXISTS \`${newName}\``);
+        await conn.query(`CREATE DATABASE IF NOT EXISTS ${quoteDbIdentifier(newName)}`);
         
         // 3. Importa backup para o novo banco
-        await runCmd(`mysql -u ${config.user} ${passArg} \`${newName}\` < "${backupPath}"`);
+        await runCmd(`mysql ${mysqlCliArgs(config)} ${shellQuote(newName)} < ${shellQuote(backupPath)}`);
 
         // 4. Validação: Contagem de tabelas & Tamanho
         const [[{ count: oldTables }]] = await conn.query('SELECT COUNT(*) AS count FROM information_schema.tables WHERE table_schema = ?', [oldName]);
@@ -369,7 +435,7 @@ router.post('/api/db/rename', async (req, res) => {
         let deletedOldDb = false;
         if (deleteOld) {
             const dropConn = await getDbConn();
-            await dropConn.query(`DROP DATABASE IF EXISTS \`${oldName}\``);
+            await dropConn.query(`DROP DATABASE IF EXISTS ${quoteDbIdentifier(oldName)}`);
             await dropConn.end();
             deletedOldDb = true;
         }
@@ -424,7 +490,8 @@ router.post('/api/db/user/create', async (req, res) => {
 
     try {
         const conn = await getDbConn();
-        await conn.query(`CREATE USER IF NOT EXISTS ?@? IDENTIFIED BY ?`, [username, host, password]);
+        const account = quoteDbAccount(username, host);
+        await conn.query(`CREATE USER IF NOT EXISTS ${account} IDENTIFIED BY ?`, [password]);
         await conn.query('FLUSH PRIVILEGES');
         await conn.end();
 
@@ -445,7 +512,7 @@ router.post('/api/db/user/delete', async (req, res) => {
 
     try {
         const conn = await getDbConn();
-        await conn.query(`DROP USER ?@?`, [username, host]);
+        await conn.query(`DROP USER ${quoteDbAccount(username, host)}`);
         await conn.query('FLUSH PRIVILEGES');
         await conn.end();
 
@@ -474,10 +541,11 @@ router.post('/api/db/user/privileges', async (req, res) => {
 
     try {
         const conn = await getDbConn();
+        const account = quoteDbAccount(username, host);
         if (action === 'grant') {
-            await conn.query(`GRANT ALL PRIVILEGES ON \`${dbName}\`.* TO ?@?`, [username, host]);
+            await conn.query(`GRANT ALL PRIVILEGES ON ${quoteDbIdentifier(dbName)}.* TO ${account}`);
         } else {
-            await conn.query(`REVOKE ALL PRIVILEGES ON \`${dbName}\`.* FROM ?@?`, [username, host]);
+            await conn.query(`REVOKE ALL PRIVILEGES ON ${quoteDbIdentifier(dbName)}.* FROM ${account}`);
         }
         await conn.query('FLUSH PRIVILEGES');
         await conn.end();
@@ -581,7 +649,7 @@ router.post('/api/db/user/reset-password', async (req, res) => {
     try {
         // 1. ALTER USER
         const conn = await getDbConn();
-        await conn.query(`ALTER USER ?@? IDENTIFIED BY ?`, [username, host, newPassword]);
+        await conn.query(`ALTER USER ${quoteDbAccount(username, host)} IDENTIFIED BY ?`, [newPassword]);
         await conn.query('FLUSH PRIVILEGES');
         await conn.end();
 
@@ -650,8 +718,7 @@ router.post('/api/db/optimize', async (req, res) => {
 
     try {
         const config = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-        const passArg = config.password ? `-p${config.password}` : '';
-        const raw = await runCmd(`mysqlcheck -o -u ${config.user} ${passArg} \`${dbName}\` 2>&1`).catch(e => e.message);
+        const raw = await runCmd(`mysqlcheck -o ${mysqlCliArgs(config)} ${shellQuote(dbName)} 2>&1`).catch(e => e.message);
         
         logDbAction('OPTIMIZE', dbName, req.session.adminUser, 'SUCCESS');
         res.json({ success: true, output: raw });
@@ -672,8 +739,7 @@ router.post('/api/db/repair', async (req, res) => {
 
     try {
         const config = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-        const passArg = config.password ? `-p${config.password}` : '';
-        const raw = await runCmd(`mysqlcheck -r -u ${config.user} ${passArg} \`${dbName}\` 2>&1`).catch(e => e.message);
+        const raw = await runCmd(`mysqlcheck -r ${mysqlCliArgs(config)} ${shellQuote(dbName)} 2>&1`).catch(e => e.message);
 
         logDbAction('REPAIR', dbName, req.session.adminUser, 'SUCCESS');
         res.json({ success: true, output: raw });
@@ -894,9 +960,8 @@ router.post('/api/mariadb/remove', async (req, res) => {
 
         // Remove pacotes — sem pkg autoremove
         if (isTermux) {
-            await runCmd('apt remove mariadb -y 2>/dev/null || true').catch(() => '');
+            await runCmd('pkg uninstall mariadb -y 2>/dev/null || apt remove mariadb -y 2>/dev/null || true').catch(() => '');
             await runCmd('apt purge mariadb -y 2>/dev/null || true').catch(() => '');
-            await runCmd('apt autoremove -y 2>/dev/null || true').catch(() => '');
         } else {
             await runCmd('apt-get remove --purge mariadb-server mariadb-client -y 2>/dev/null || true').catch(() => '');
             await runCmd('apt-get autoremove -y 2>/dev/null || true').catch(() => '');
@@ -1007,29 +1072,34 @@ router.post('/api/db/setup-full', async (req, res) => {
 
     try {
         // Conecta como root sem senha (instalação nova)
+        const safeUser = assertUsername(user);
+        const safeDatabase = assertDbName(database || 'painel');
+        const parsedPort = parseInt(port, 10) || 3306;
         let rootConn;
         try {
-            rootConn = await mysql.createConnection({ host: '127.0.0.1', port: parseInt(port), user: 'root', password: '' });
+            rootConn = await mysql.createConnection({ host: '127.0.0.1', port: parsedPort, user: 'root', password: '' });
         } catch(e) {
             // Tenta com credenciais salvas
             const cur = getFullDbConfig();
-            rootConn = await mysql.createConnection({ host: '127.0.0.1', port: parseInt(port), user: cur.user, password: cur.password });
+            rootConn = await mysql.createConnection({ host: '127.0.0.1', port: parsedPort, user: cur.user, password: cur.password });
         }
 
-        await rootConn.query(`CREATE DATABASE IF NOT EXISTS \`${database}\``);
-        await rootConn.query(`CREATE USER IF NOT EXISTS ?@'localhost' IDENTIFIED BY ?`, [user, password]);
-        await rootConn.query(`CREATE USER IF NOT EXISTS ?@'127.0.0.1' IDENTIFIED BY ?`, [user, password]);
-        await rootConn.query(`GRANT ALL PRIVILEGES ON *.* TO ?@'localhost' WITH GRANT OPTION`, [user]);
-        await rootConn.query(`GRANT ALL PRIVILEGES ON *.* TO ?@'127.0.0.1' WITH GRANT OPTION`, [user]);
+        const localAccount = quoteDbAccount(safeUser, 'localhost');
+        const tcpAccount = quoteDbAccount(safeUser, '127.0.0.1');
+        await rootConn.query(`CREATE DATABASE IF NOT EXISTS ${quoteDbIdentifier(safeDatabase)}`);
+        await rootConn.query(`CREATE USER IF NOT EXISTS ${localAccount} IDENTIFIED BY ?`, [password]);
+        await rootConn.query(`CREATE USER IF NOT EXISTS ${tcpAccount} IDENTIFIED BY ?`, [password]);
+        await rootConn.query(`GRANT ALL PRIVILEGES ON *.* TO ${localAccount} WITH GRANT OPTION`);
+        await rootConn.query(`GRANT ALL PRIVILEGES ON *.* TO ${tcpAccount} WITH GRANT OPTION`);
         await rootConn.query('FLUSH PRIVILEGES');
         await rootConn.end();
 
         // Salva config
-        const config = { host: '127.0.0.1', port: parseInt(port), database, user, password };
+        const config = { host: '127.0.0.1', port: parsedPort, database: safeDatabase, user: safeUser, password };
         fs.writeFileSync(DB_FULL_FILE, JSON.stringify(config, null, 4));
         fs.writeFileSync(DB_FILE,      JSON.stringify(config, null, 4));
 
-        res.json({ success: true, message: `Usuário '${user}' e banco '${database}' criados com sucesso.` });
+        res.json({ success: true, message: `Usuario '${safeUser}' e banco '${safeDatabase}' criados com sucesso.` });
     } catch(err) {
         res.status(500).json({ error: err.message });
     }
@@ -1064,8 +1134,7 @@ router.get('/api/db/config-check', async (req, res) => {
 router.post('/api/mariadb/repair-tables', async (req, res) => {
     try {
         const cfg = getFullDbConfig();
-        const passArg = cfg.password ? `-p${cfg.password}` : '';
-        const out = await runCmd(`mysqlcheck --all-databases --repair --auto-repair -u ${cfg.user} ${passArg} 2>&1`).catch(e => e.message);
+        const out = await runCmd(`mysqlcheck --all-databases --repair --auto-repair ${mysqlCliArgs(cfg)} 2>&1`).catch(e => e.message);
         res.json({ success: true, output: out });
     } catch(err) {
         res.status(500).json({ error: err.message });
@@ -1096,8 +1165,7 @@ async function isMariaDBRunning() {
 
         // 3. Fallback: mysqladmin ping caso porta esteja ativa mas restrita ao socket local
         const cfg = getFullDbConfig();
-        const passArg = cfg.password ? `-p${cfg.password}` : '';
-        const adminPing = await runCmd(`mysqladmin ping -u ${cfg.user} ${passArg} 2>/dev/null`).then(r => r.includes('alive')).catch(() => false);
+        const adminPing = await runCmd(`mysqladmin ${mysqlCliArgs(cfg)} ping 2>/dev/null`).then(r => r.includes('alive')).catch(() => false);
         return adminPing;
     } catch (e) {
         return false;
@@ -1182,10 +1250,9 @@ router.post('/api/database/service', async (req, res) => {
 
         if (action === 'stop') {
             const cfg = getFullDbConfig();
-            const passArg = cfg.password ? `-p${cfg.password}` : '';
 
             // 1. Parada graciosa via mysqladmin
-            await runCmd(`mysqladmin shutdown -u ${cfg.user} ${passArg} 2>/dev/null`).catch(() => {});
+            await runCmd(`mysqladmin ${mysqlCliArgs(cfg)} shutdown 2>/dev/null`).catch(() => {});
 
             // Aguarda até 4 segundos
             let stopped = false;

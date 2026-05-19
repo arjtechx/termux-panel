@@ -142,9 +142,8 @@ function remove_mariadb_completely() {
     log "Removendo pacotes MariaDB..."
     if [ "$IS_TERMUX" = true ]; then
         # NÃO usar pkg autoremove — não existe no Termux
-        apt remove mariadb -y 2>/dev/null || true
+        pkg uninstall mariadb -y 2>/dev/null || apt remove mariadb -y 2>/dev/null || true
         apt purge  mariadb -y 2>/dev/null || true
-        apt autoremove -y     2>/dev/null || true
     else
         ${SUDO}apt-get remove  --purge mariadb-server mariadb-client -y 2>/dev/null || true
         ${SUDO}apt-get autoremove -y 2>/dev/null || true
@@ -622,6 +621,11 @@ function update_panel() {
         chown -R "$current_user" "$ENV_PREFIX/var/run" "$ENV_PREFIX/var/log/nginx" "$ENV_PREFIX/var/lib/mysql" "$ENV_PREFIX/tmp" "$ENV_PREFIX/etc/nginx" "$ENV_PREFIX/etc/nginx/conf.d" 2>/dev/null || true
     fi
 
+    repair_nginx_bootstrap
+    if [ -f "scripts/setup-pma-sso.sh" ]; then
+        bash scripts/setup-pma-sso.sh || warn "SSO do phpMyAdmin nao foi configurado. Rode scripts/health-check.sh para detalhes."
+    fi
+
     log "Atualizando dependências Node..."
     npm install
     ok "Atualização concluída!"
@@ -646,9 +650,8 @@ function remove_dependencies_menu() {
     stop_mariadb
     if [ "$IS_TERMUX" = true ]; then
         # NÃO usar pkg autoremove
-        apt remove mariadb nodejs nginx php -y 2>/dev/null || true
+        pkg uninstall mariadb nodejs nginx php -y 2>/dev/null || apt remove mariadb nodejs nginx php -y 2>/dev/null || true
         apt purge  mariadb nodejs nginx php -y 2>/dev/null || true
-        apt autoremove -y 2>/dev/null || true
     else
         ${SUDO}apt-get remove --purge mariadb-server nodejs nginx php-fpm -y 2>/dev/null || true
         ${SUDO}apt-get autoremove -y 2>/dev/null || true

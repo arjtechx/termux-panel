@@ -109,6 +109,9 @@ app.use('/api/apps', appsRoutes);
 const backupRoutes = require('./src/routes/backupRoutes');
 app.use('/api/backup', backupRoutes);
 
+const healthRoutes = require('./src/routes/healthRoutes');
+app.use('/api/health', healthRoutes);
+
 const cronRoutes = require('./src/routes/cronRoutes');
 app.use('/api/cron', cronRoutes);
 

@@ -97,12 +97,19 @@ if [ -n "$GITHUB_REPO" ] && [ "$GITHUB_REPO" != "null" ] && [ "$GITHUB_REPO" != 
 # MÉTODO 2: Git pull (se for repositório Git local)
 # -----------------------------------------------------------------
 elif git -C "$PANEL_DIR" rev-parse --is-inside-work-tree > /dev/null 2>&1; then
-    log "Repositório Git detectado. Rodando git pull..."
+    log "Repositorio Git detectado. Rodando atualizacao segura..."
     cd "$PANEL_DIR"
-    git fetch --all
-    git reset --hard origin/master || git reset --hard origin/main
-    git pull
-    ok "Código atualizado via git pull."
+    CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)"
+    if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+        warn "Mudancas locais detectadas. Nao sera usado reset --hard para nao apagar ajustes do painel."
+    fi
+    git fetch origin
+    if ! git pull --ff-only origin "$CURRENT_BRANCH"; then
+        err "Atualizacao Git bloqueada por divergencia local."
+        err "Resolva as alteracoes locais ou atualize por release/tarball."
+        exit 1
+    fi
+    ok "Codigo atualizado via git pull seguro."
 
 # -----------------------------------------------------------------
 # MÉTODO 3: Tarball manual no diretório home
