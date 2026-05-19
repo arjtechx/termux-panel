@@ -169,8 +169,7 @@ function switchTab(targetId) {
     if (targetId === 'tab-cron')     fetchCron();
     if (targetId === 'tab-noip')     fetchNoipStatus();
     if (targetId === 'tab-cloudflared') {
-        fetchCloudflaredTunnels();
-        loadCloudflaredLoginStatus();
+        if (typeof cfFetchTunnels === 'function') cfFetchTunnels();
     }
     if (targetId === 'tab-docs')     loadDocumentation();
     if (targetId === 'tab-settings') {
@@ -2638,6 +2637,23 @@ async function cfGenerateLoginUrl() {
         }
     } catch (e) {
         statusBox.textContent = 'Erro ao se comunicar com o backend: ' + e.message;
+    }
+}
+
+async function cfClearCert() {
+    if (!confirm('Deseja excluir o arquivo cert.pem? Isso deslogará o modo clássico, mas não afetará túneis do tipo Token.')) return;
+    try {
+        const res = await fetch(`${API_BASE}/auth/logout`, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+            alert('Certificado removido! Você já pode gerar um novo.');
+            document.getElementById('cfLoginStatus').textContent = 'Pronto para um novo Login.';
+            document.getElementById('cfLoginLink').classList.add('hidden');
+        } else {
+            alert('Falha ao remover certificado: ' + data.error);
+        }
+    } catch (e) {
+        alert('Erro: ' + e.message);
     }
 }
 

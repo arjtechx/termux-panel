@@ -1116,6 +1116,7 @@
                         <div style="display:flex; flex-direction:column; gap:8px;">
                             <button class="btn btn-primary" onclick="cfGenerateLoginUrl()">Gerar URL de Autorização</button>
                             <a id="cfLoginLink" href="#" target="_blank" class="btn btn-success hidden">👉 Abrir URL no Navegador</a>
+                            <button class="btn btn-danger" onclick="cfClearCert()" style="margin-top: 8px;"><i data-lucide="trash-2"></i> Excluir cert.pem (Deslogar)</button>
                         </div>
                     </div>
                     <div class="modal-actions" style="margin-top:20px; display:flex; justify-content:flex-end;">
@@ -1384,7 +1385,7 @@
 </div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.53"></script>
+<script src="filemanager.js?v=0.2.54"></script>
 <script src="app.js?v=4.0"></script>
 </body>
 </html>

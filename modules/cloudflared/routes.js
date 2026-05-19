@@ -79,6 +79,15 @@ module.exports = function createCloudflaredRoutes() {
         res.json({ success: true, authenticated: manager.isClassicAuthenticated() });
     });
 
+    router.post('/auth/logout', (req, res) => {
+        try {
+            manager.clearCertificate();
+            res.json({ success: true });
+        } catch (err) {
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
     router.post('/auth/login', async (req, res) => {
         try {
             const result = await manager.getLoginUrl();

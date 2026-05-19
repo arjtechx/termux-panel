@@ -199,6 +199,13 @@ function isClassicAuthenticated() {
     return fs.existsSync(certPath);
 }
 
+function clearCertificate() {
+    const certPath = path.join(process.env.HOME || '/data/data/com.termux/files/home', '.cloudflared', 'cert.pem');
+    if (fs.existsSync(certPath)) {
+        fs.unlinkSync(certPath);
+    }
+}
+
 module.exports = {
     getTunnels,
     createTunnel,
@@ -208,5 +215,6 @@ module.exports = {
     stopTunnel,
     listTunnels,
     getLoginUrl,
-    isClassicAuthenticated
+    isClassicAuthenticated,
+    clearCertificate
 };
