@@ -7,6 +7,8 @@ const PORT = 3030;
 const PROJECT_DIR = __dirname;
 
 let pendingPublishParams = null;
+let pendingRemoteSteps = [];
+let lastReleaseVersion = null;
 
 // Helper para enviar respostas JSON
 const sendJSON = (res, statusCode, data) => {
@@ -91,6 +93,28 @@ const server = http.createServer((req, res) => {
         return;
     }
 
+    // 5. GET /api/pending-push: Verifica operações remotas pendentes
+    if (pathname === '/api/pending-push' && req.method === 'GET') {
+        sendJSON(res, 200, {
+            hasPending: pendingRemoteSteps.length > 0,
+            stepsCount: pendingRemoteSteps.length,
+            version: lastReleaseVersion,
+            steps: pendingRemoteSteps.map(s => s.desc)
+        });
+        return;
+    }
+
+    // 6. GET /api/retry-push: Retenta operações remotas pendentes via SSE
+    if (pathname === '/api/retry-push' && req.method === 'GET') {
+        if (pendingRemoteSteps.length === 0) {
+            res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+            res.end('Nenhuma operação remota pendente.');
+            return;
+        }
+        retryPendingPush(res);
+        return;
+    }
+
     // Rota 404
     res.writeHead(404, { 'Content-Type': 'text/plain' });
     res.end('Not Found');
@@ -172,6 +196,8 @@ function startPublishing(res, params) {
         }
 
         // 3. Executa comandos do PowerShell sequencialmente
+        pendingRemoteSteps = []; // Reset pending antes de iniciar
+        lastReleaseVersion = newVersion;
         const steps = [];
 
         // Contingência de tar local
@@ -182,7 +208,7 @@ function startPublishing(res, params) {
             });
         }
 
-        // Git workflow
+        // Git workflow (local)
         steps.push({
             desc: 'Adicionando arquivos modificados ao Git...',
             cmd: 'git add -A'
@@ -194,14 +220,17 @@ function startPublishing(res, params) {
             cmd: `git commit -m "${commitMsg.replace(/"/g, '\\"')}"`
         });
 
+        // Git workflow (network - marcadas para resiliência)
         steps.push({
             desc: 'Atualizando branch remota (git pull --rebase)...',
-            cmd: 'git pull origin master --rebase'
+            cmd: 'git pull origin master --rebase',
+            networkStep: true
         });
 
         steps.push({
             desc: 'Enviando alterações para o repositório GitHub...',
-            cmd: 'git push origin master'
+            cmd: 'git push origin master',
+            networkStep: true
         });
 
         // Tagging
@@ -217,17 +246,25 @@ function startPublishing(res, params) {
 
         steps.push({
             desc: `Enviando tag v${newVersion} para o GitHub...`,
-            cmd: `git push origin v${newVersion}`
+            cmd: `git push origin v${newVersion}`,
+            networkStep: true
         });
 
         runSequentially(steps, 0, sendLog, () => {
-            sendLog(`🎉 Release v${newVersion} publicada com 100% de sucesso!`, 'success');
-            sendLog(`[OK] O GitHub Actions está construindo a sua release agora.`, 'success');
-            sendLog(`[DICA] Em 1-2 minutos, clique em Atualizar no painel do Termux!`, 'info');
-            res.write(`data: ${JSON.stringify({ done: true, version: newVersion })}\n\n`);
+            if (pendingRemoteSteps.length > 0) {
+                sendLog(`\n⚠️ Release v${newVersion} criada localmente com sucesso!`, 'success');
+                sendLog(`⚠️ ${pendingRemoteSteps.length} operação(ões) remota(s) pendente(s) — sem conexão com GitHub.`, 'error');
+                sendLog(`💡 Clique em "🔄 Retentar Push" quando a internet estiver disponível.`, 'info');
+                res.write(`data: ${JSON.stringify({ partialDone: true, version: newVersion, pendingCount: pendingRemoteSteps.length })}\n\n`);
+            } else {
+                sendLog(`🎉 Release v${newVersion} publicada com 100% de sucesso!`, 'success');
+                sendLog(`[OK] O GitHub Actions está construindo a sua release agora.`, 'success');
+                sendLog(`[DICA] Em 1-2 minutos, clique em Atualizar no painel do Termux!`, 'info');
+                res.write(`data: ${JSON.stringify({ done: true, version: newVersion })}\n\n`);
+            }
             res.end();
         }, () => {
-            sendLog(`❌ Processo interrompido por falha em alguma etapa.`, 'error');
+            sendLog(`❌ Processo interrompido por falha em alguma etapa local.`, 'error');
             res.end();
         });
 
@@ -237,7 +274,7 @@ function startPublishing(res, params) {
     }
 }
 
-// Executador de Fila de Processos em PowerShell
+// Executador de Fila de Processos em PowerShell (com resiliência a falhas de rede)
 function runSequentially(steps, index, sendLog, onDone, onError) {
     if (index >= steps.length) {
         onDone();
@@ -245,6 +282,15 @@ function runSequentially(steps, index, sendLog, onDone, onError) {
     }
 
     const step = steps[index];
+
+    // Se já houve falha de rede, pula automaticamente etapas de rede restantes
+    if (step.networkStep && pendingRemoteSteps.length > 0) {
+        pendingRemoteSteps.push(step);
+        sendLog(`⏭ Pulando: ${step.desc} (sem conexão)`, 'output');
+        runSequentially(steps, index + 1, sendLog, onDone, onError);
+        return;
+    }
+
     sendLog(`\n🔹 [${index + 1}/${steps.length}] ${step.desc}`, 'step');
 
     // Executa em powershell para compatibilidade total com Windows
@@ -257,16 +303,85 @@ function runSequentially(steps, index, sendLog, onDone, onError) {
 
     proc.stderr.on('data', chunk => {
         const text = chunk.toString().trim();
-        if (text) sendLog(`[WARN/INFO] ${text}`, 'output'); // Algumas ferramentas mostram avisos inofensivos no stderr
+        if (text) sendLog(`[WARN/INFO] ${text}`, 'output');
     });
 
     proc.on('close', code => {
         // Ignora erros de exclusão de tags inexistentes para evitar interrupções bobas
         if (code === 0 || step.cmd.includes('refs/tags')) {
             runSequentially(steps, index + 1, sendLog, onDone, onError);
+        } else if (step.networkStep) {
+            // Falha de rede — salva como pendente e continua etapas locais
+            sendLog(`⚠️ Falha de rede (código ${code}). Operação salva para retentar.`, 'error');
+            pendingRemoteSteps.push(step);
+            runSequentially(steps, index + 1, sendLog, onDone, onError);
         } else {
-            sendLog(`❌ Etapa falhou com código de saída ${code}`, 'error');
+            sendLog(`❌ Etapa local falhou com código de saída ${code}`, 'error');
             onError();
+        }
+    });
+}
+
+// Retenta operações remotas pendentes via SSE
+function retryPendingPush(res) {
+    res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no'
+    });
+
+    const sendLog = (message, type = 'info') => {
+        res.write(`data: ${JSON.stringify({ text: message, type })}\n\n`);
+    };
+
+    const stepsToRetry = [...pendingRemoteSteps];
+    pendingRemoteSteps = [];
+
+    sendLog(`🔄 Retentando ${stepsToRetry.length} operação(ões) remota(s)...`, 'success');
+
+    runRetrySequentially(stepsToRetry, 0, sendLog, () => {
+        if (pendingRemoteSteps.length > 0) {
+            sendLog(`\n⚠️ Ainda há ${pendingRemoteSteps.length} operação(ões) pendente(s).`, 'error');
+            sendLog(`💡 Tente novamente quando a conexão estiver estável.`, 'info');
+            res.write(`data: ${JSON.stringify({ partialDone: true, pendingCount: pendingRemoteSteps.length })}\n\n`);
+        } else {
+            sendLog(`🎉 Todas as operações remotas concluídas com sucesso!`, 'success');
+            sendLog(`[OK] O GitHub Actions está construindo a sua release agora.`, 'success');
+            res.write(`data: ${JSON.stringify({ done: true, version: lastReleaseVersion })}\n\n`);
+        }
+        res.end();
+    });
+}
+
+function runRetrySequentially(steps, index, sendLog, onDone) {
+    if (index >= steps.length) {
+        onDone();
+        return;
+    }
+
+    const step = steps[index];
+    sendLog(`\n🔹 [${index + 1}/${steps.length}] ${step.desc}`, 'step');
+
+    const proc = spawn('powershell', ['-Command', step.cmd], { cwd: PROJECT_DIR });
+
+    proc.stdout.on('data', chunk => {
+        const text = chunk.toString().trim();
+        if (text) sendLog(text, 'output');
+    });
+
+    proc.stderr.on('data', chunk => {
+        const text = chunk.toString().trim();
+        if (text) sendLog(`[WARN/INFO] ${text}`, 'output');
+    });
+
+    proc.on('close', code => {
+        if (code === 0 || step.cmd.includes('refs/tags')) {
+            runRetrySequentially(steps, index + 1, sendLog, onDone);
+        } else {
+            sendLog(`⚠️ Etapa ainda falhou (código ${code}). Salva novamente.`, 'error');
+            pendingRemoteSteps.push(step);
+            runRetrySequentially(steps, index + 1, sendLog, onDone);
         }
     });
 }
@@ -679,6 +794,22 @@ function getHTMLContent() {
             transform: none !important;
         }
 
+        .btn-retry {
+            background: linear-gradient(135deg, #e67e22 0%, #f1c40f 100%) !important;
+            color: #1a1a2e !important;
+            box-shadow: 0 10px 20px rgba(230, 126, 34, 0.25), 0 0 30px rgba(230, 126, 34, 0.15) !important;
+            animation: retryPulse 2s ease-in-out infinite;
+        }
+
+        .btn-retry:hover {
+            box-shadow: 0 12px 25px rgba(230, 126, 34, 0.4), 0 0 40px rgba(230, 126, 34, 0.25) !important;
+        }
+
+        @keyframes retryPulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.85; }
+        }
+
         /* Scrollbar styling */
         ::-webkit-scrollbar {
             width: 8px;
@@ -756,6 +887,10 @@ function getHTMLContent() {
 
             <button class="btn-publish" id="publish-btn" onclick="publishRelease()">
                 🚀 Publicar Nova Release
+            </button>
+
+            <button class="btn-publish btn-retry" id="retry-btn" onclick="retryPush()" style="display:none;">
+                🔄 Retentar Push para GitHub
             </button>
         </div>
     </div>
@@ -879,7 +1014,18 @@ function getHTMLContent() {
                     btn.disabled = false;
                     statusBadge.className = 'terminal-badge';
                     statusBadge.innerText = 'Concluído';
-                    loadStatus(); // Atualiza versão ativa
+                    document.getElementById('retry-btn').style.display = 'none';
+                    loadStatus();
+                    return;
+                }
+
+                if (data.partialDone) {
+                    source.close();
+                    btn.disabled = false;
+                    document.getElementById('retry-btn').style.display = 'flex';
+                    statusBadge.className = 'terminal-badge running';
+                    statusBadge.innerText = 'Push Pendente';
+                    loadStatus();
                     return;
                 }
                 
@@ -903,8 +1049,71 @@ function getHTMLContent() {
         });
     }
 
+    // Retenta push pendente via SSE
+    function retryPush() {
+        const btn = document.getElementById('retry-btn');
+        const statusBadge = document.getElementById('terminal-status');
+        const terminal = document.getElementById('terminal-body');
+
+        terminal.innerHTML = '';
+        btn.disabled = true;
+        statusBadge.className = 'terminal-badge running';
+        statusBadge.innerText = 'Retentando...';
+
+        const source = new EventSource('/api/retry-push');
+
+        source.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+
+            if (data.done) {
+                source.close();
+                btn.disabled = false;
+                btn.style.display = 'none';
+                statusBadge.className = 'terminal-badge';
+                statusBadge.innerText = 'Concluído';
+                loadStatus();
+                return;
+            }
+
+            if (data.partialDone) {
+                source.close();
+                btn.disabled = false;
+                statusBadge.className = 'terminal-badge running';
+                statusBadge.innerText = 'Push Pendente';
+                return;
+            }
+
+            if (data.text) {
+                appendLog(data.text, data.type);
+            }
+        };
+
+        source.onerror = function() {
+            source.close();
+            btn.disabled = false;
+            statusBadge.className = 'terminal-badge';
+            statusBadge.innerText = 'Erro';
+            appendLog('❌ Conexão SSE encerrada.', 'error');
+        };
+    }
+
+    // Verifica push pendente ao carregar
+    async function checkPendingPush() {
+        try {
+            const resp = await fetch('/api/pending-push');
+            const data = await resp.json();
+            const retryBtn = document.getElementById('retry-btn');
+            if (data.hasPending) {
+                retryBtn.style.display = 'flex';
+            } else {
+                retryBtn.style.display = 'none';
+            }
+        } catch(e) {}
+    }
+
     // Inicialização
     loadStatus();
+    checkPendingPush();
 </script>
 </body>
 </html>`;
