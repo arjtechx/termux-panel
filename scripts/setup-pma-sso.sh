@@ -32,8 +32,8 @@ find_phpmyadmin_dir() {
 }
 
 detect_fastcgi_pass() {
-    # Termux/Android: Força comunicação TCP 127.0.0.1:9000 para evitar instabilidade/falhas de Sockets Unix
-    printf '127.0.0.1:9000\n'
+    # Termux/Android: Força comunicação TCP 127.0.0.1:9070 para evitar instabilidade/falhas de Sockets Unix
+    printf '127.0.0.1:9070\n'
 }
 
 detect_fastcgi_include() {

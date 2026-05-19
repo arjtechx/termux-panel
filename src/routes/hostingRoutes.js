@@ -244,7 +244,7 @@ router.post('/', async (req, res) => {
 
     location ~ \\.php$ {
         include ${fastcgiInclude};
-        fastcgi_pass 127.0.0.1:9000;
+        fastcgi_pass 127.0.0.1:9070;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
     }
 }`;

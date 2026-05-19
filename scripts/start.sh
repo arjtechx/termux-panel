@@ -139,8 +139,8 @@ mkdir -p "$PREFIX/var/run" "$PREFIX/tmp"
         fi
     done
     if [ -n "$fpm_conf" ]; then
-        if grep -q "listen =.*\.sock" "$fpm_conf" 2>/dev/null || ! grep -q "listen = 127.0.0.1:9000" "$fpm_conf" 2>/dev/null; then
-            sed -i 's|^listen =.*|listen = 127.0.0.1:9000|' "$fpm_conf" 2>/dev/null || true
+        if grep -q "listen =.*\.sock" "$fpm_conf" 2>/dev/null || ! grep -q "listen = 127.0.0.1:9070" "$fpm_conf" 2>/dev/null; then
+            sed -i 's|^listen =.*|listen = 127.0.0.1:9070|' "$fpm_conf" 2>/dev/null || true
         fi
     fi
     if command -v php-fpm >/dev/null 2>&1; then

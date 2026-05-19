@@ -205,7 +205,7 @@ else
     log_err "PHP não encontrado no PATH"
 fi
 
-# Garante que PHP-FPM escute via TCP 127.0.0.1:9000 para estabilidade
+# Garante que PHP-FPM escute via TCP 127.0.0.1:9070 para estabilidade
 local fpm_conf=""
 for f in "$PREFIX/etc/php-fpm.d/www.conf" "$PREFIX/etc/php-fpm.conf"; do
     if [ -f "$f" ]; then
@@ -214,9 +214,9 @@ for f in "$PREFIX/etc/php-fpm.d/www.conf" "$PREFIX/etc/php-fpm.conf"; do
     fi
 done
 if [ -n "$fpm_conf" ]; then
-    if grep -q "listen =.*\.sock" "$fpm_conf" 2>/dev/null || ! grep -q "listen = 127.0.0.1:9000" "$fpm_conf" 2>/dev/null; then
-        log_fix "Corrigindo PHP-FPM para escutar na porta TCP 127.0.0.1:9000..."
-        sed -i 's|^listen =.*|listen = 127.0.0.1:9000|' "$fpm_conf" 2>/dev/null || true
+    if grep -q "listen =.*\.sock" "$fpm_conf" 2>/dev/null || ! grep -q "listen = 127.0.0.1:9070" "$fpm_conf" 2>/dev/null; then
+        log_fix "Corrigindo PHP-FPM para escutar na porta TCP 127.0.0.1:9070..."
+        sed -i 's|^listen =.*|listen = 127.0.0.1:9070|' "$fpm_conf" 2>/dev/null || true
     fi
 fi
 
@@ -383,8 +383,8 @@ fi
 log_sep
 log_info "Verificando configuração phpMyAdmin no NGINX..."
 
-# Termux/Android: Força comunicação TCP 127.0.0.1:9000 para evitar instabilidade/falhas de Sockets Unix
-DETECTED_SOCK="127.0.0.1:9000"
+# Termux/Android: Força comunicação TCP 127.0.0.1:9070 para evitar instabilidade/falhas de Sockets Unix
+DETECTED_SOCK="127.0.0.1:9070"
 log_info "Comunicação PHP-FPM forçada via TCP: $DETECTED_SOCK"
 
 # Verifica se o diretório do phpMyAdmin existe
@@ -420,7 +420,7 @@ else
 fi
 
 if [ "$REWRITE_PMA" = true ]; then
-    FASTCGI_PASS="127.0.0.1:9000"
+    FASTCGI_PASS="127.0.0.1:9070"
     FASTCGI_INCLUDE=""
     for try_include in \
         "$PREFIX/etc/nginx/fastcgi_params" \
