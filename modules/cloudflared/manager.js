@@ -21,14 +21,17 @@ const {
     escapeYaml,
     makeLocalService,
     createFallbackUuid,
+    cloudflaredHome,
     defaultCredentialsPath,
     appendLog
 } = require('./utils');
 const { getStatus, startTunnel, stopTunnel } = require('./process');
+const systemConfig = require('../../src/utils/env');
 
 ensureModuleDirs();
 
 let lastLoginUrl = '';
+let loginProcess = null;
 
 function runCommand(command, args, options = {}) {
     return new Promise((resolve) => {
@@ -49,9 +52,84 @@ function parseTunnelCreateOutput(output) {
 }
 
 function extractCloudflareUrl(text) {
-    const found = String(text || '').match(/https:\/\/[^\s"'<>]+/i);
+    const found = String(text || '').match(/https:\/\/dash\.cloudflare\.com[^\s\x1b"'<>]+|https:\/\/[^\s\x1b"'<>]+/i);
     if (!found) return '';
     return found[0].replace(/[),.;\]]+$/g, '');
+}
+
+function isTermux() {
+    return !!(systemConfig.is_termux || (process.env.PREFIX || '').includes('com.termux'));
+}
+
+function openLoginUrl(url) {
+    if (!url) return;
+    const opener = isTermux() ? 'termux-open-url' : 'xdg-open';
+    spawn(opener, [url], { detached: true, stdio: 'ignore' }).on('error', () => {});
+}
+
+function emitLoginText(io, text) {
+    fs.appendFileSync(LOGIN_LOG, text);
+    if (io) io.emit('cloudflared-login-log', text);
+}
+
+function handleLoginOutput(io, state, text) {
+    emitLoginText(io, text);
+    state.buffer = `${state.buffer}${text}`.slice(-16384);
+    const found = extractCloudflareUrl(state.buffer);
+    if (found && !state.url) {
+        state.url = found;
+        lastLoginUrl = found;
+        if (io) io.emit('cloudflared-login-url', found);
+        openLoginUrl(found);
+    }
+}
+
+function startLoginWithPty(io) {
+    const script = String.raw`
+import os, pty, select, subprocess, sys, time
+
+master, slave = pty.openpty()
+proc = subprocess.Popen(
+    ["cloudflared", "tunnel", "login"],
+    stdout=slave,
+    stderr=slave,
+    stdin=slave,
+    close_fds=True,
+    env=os.environ.copy()
+)
+os.close(slave)
+
+try:
+    while proc.poll() is None:
+        ready, _, _ = select.select([master], [], [], 1.0)
+        if not ready:
+            continue
+        data = os.read(master, 1024)
+        if not data:
+            break
+        sys.stdout.buffer.write(data)
+        sys.stdout.buffer.flush()
+    while True:
+        ready, _, _ = select.select([master], [], [], 0.1)
+        if not ready:
+            break
+        data = os.read(master, 1024)
+        if not data:
+            break
+        sys.stdout.buffer.write(data)
+        sys.stdout.buffer.flush()
+finally:
+    try:
+        os.close(master)
+    except OSError:
+        pass
+    sys.exit(proc.wait())
+`;
+
+    return spawn('python', ['-c', script], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env }
+    });
 }
 
 function buildConfig(meta) {
@@ -200,48 +278,45 @@ async function startLogin(io) {
     fs.writeFileSync(LOGIN_LOG, '');
     lastLoginUrl = '';
 
+    if (loginProcess && !loginProcess.killed) {
+        try { loginProcess.kill('SIGTERM'); } catch (_) {}
+        loginProcess = null;
+    }
+
     const version = await runCommand('cloudflared', ['--version']);
     if (version.code !== 0) {
         const message = `cloudflared nÃ£o encontrado ou nÃ£o executou corretamente: ${version.stderr || version.stdout || 'verifique a instalacao'}`;
-        fs.appendFileSync(LOGIN_LOG, `${message}\n`);
-        if (io) io.emit('cloudflared-login-log', `${message}\n`);
+        emitLoginText(io, `${message}\n`);
         return { success: false, error: message };
     }
 
-    const child = spawn('cloudflared', ['tunnel', 'login'], {
-        stdio: ['ignore', 'pipe', 'pipe'],
-        env: { ...process.env }
-    });
+    ensureDir(cloudflaredHome());
 
-    let buffer = '';
-    let loginUrl = '';
+    const child = isTermux()
+        ? startLoginWithPty(io)
+        : spawn('cloudflared', ['tunnel', 'login'], {
+            stdio: ['ignore', 'pipe', 'pipe'],
+            env: { ...process.env }
+        });
+    loginProcess = child;
+
+    const state = { buffer: '', url: '' };
     const onData = (data) => {
-        const text = data.toString();
-        fs.appendFileSync(LOGIN_LOG, text);
-        buffer = `${buffer}${text}`.slice(-8192);
-        const found = extractCloudflareUrl(buffer);
-        if (found && !loginUrl) {
-            loginUrl = found;
-            lastLoginUrl = found;
-            if (io) io.emit('cloudflared-login-url', loginUrl);
-            const opener = process.env.PREFIX ? 'termux-open-url' : 'xdg-open';
-            spawn(opener, [loginUrl], { detached: true, stdio: 'ignore' }).on('error', () => {});
-        }
-        if (io) io.emit('cloudflared-login-log', text);
+        handleLoginOutput(io, state, data.toString());
     };
 
     child.stdout.on('data', onData);
     child.stderr.on('data', onData);
     child.on('error', err => {
-        fs.appendFileSync(LOGIN_LOG, `\nERRO: ${err.message}\n`);
-        if (io) io.emit('cloudflared-login-log', `ERRO: ${err.message}\n`);
+        emitLoginText(io, `\nERRO: ${err.message}\n`);
     });
     child.on('close', code => {
+        if (loginProcess === child) loginProcess = null;
         fs.appendFileSync(LOGIN_LOG, `\nProcesso de login finalizado com código ${code}.\n`);
         if (io) io.emit('cloudflared-login-log', `\nProcesso de login finalizado com código ${code}.\n`);
     });
 
-    return { success: true, pid: child.pid };
+    return { success: true, pid: child.pid, mode: isTermux() ? 'termux-pty' : 'pipe' };
 }
 
 function getLastLoginUrl() {

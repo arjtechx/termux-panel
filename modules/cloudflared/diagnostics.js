@@ -126,6 +126,7 @@ async function runDiagnostics() {
     const loginLog = fs.existsSync(LOGIN_LOG) ? logs.getLoginLogs(80) : '';
     const termuxOpenUrl = IS_TERMUX ? await commandExists('termux-open-url') : false;
     const termuxApi = IS_TERMUX ? await commandExists('termux-api') : false;
+    const python = IS_TERMUX ? await commandExists('python') : true;
 
     const tunnelMetas = fs.readdirSync(TUNNELS_DIR, { withFileTypes: true })
         .filter(entry => entry.isDirectory())
@@ -171,7 +172,8 @@ async function runDiagnostics() {
             moduleWritable,
             cloudflaredHomeWritable: homeWritable,
             termuxOpenUrl,
-            termuxApi
+            termuxApi,
+            python
         },
         issues,
         tunnels,

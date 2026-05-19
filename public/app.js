@@ -2568,6 +2568,7 @@ function formatCloudflaredDiagnostics(data) {
         `login Cloudflare/cert.pem: ${checks.loggedIn ? 'OK' : 'PENDENTE'}`,
         `pasta do painel gravavel: ${checks.moduleWritable ? 'OK' : 'ERRO'}`,
         `pasta ~/.cloudflared gravavel: ${checks.cloudflaredHomeWritable ? 'OK' : 'ERRO'}`,
+        env.isTermux ? `python/PTY: ${checks.python ? 'OK' : 'AUSENTE'}` : '',
         env.isTermux ? `termux-open-url: ${checks.termuxOpenUrl ? 'OK' : 'AUSENTE'}` : '',
         env.isTermux ? `termux-api: ${checks.termuxApi ? 'OK' : 'AUSENTE'}` : '',
         data.version ? `versao: ${data.version}` : '',
