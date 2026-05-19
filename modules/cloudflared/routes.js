@@ -81,11 +81,11 @@ module.exports = function createCloudflaredRoutes() {
 
     router.post('/auth/login', async (req, res) => {
         try {
-            const url = await manager.getLoginUrl();
-            if (url) {
-                res.json({ success: true, url });
+            const result = await manager.getLoginUrl();
+            if (result && result.url) {
+                res.json({ success: true, url: result.url });
             } else {
-                res.status(400).json({ success: false, error: 'Falha ao extrair URL de login. Verifique se o Cloudflared está instalado.' });
+                res.status(400).json({ success: false, error: 'Falha: ' + (result?.error || 'Desconhecida.') });
             }
         } catch (err) {
             res.status(500).json({ success: false, error: err.message });

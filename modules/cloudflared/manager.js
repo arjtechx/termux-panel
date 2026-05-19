@@ -158,28 +158,38 @@ async function getLoginUrl() {
             const child = spawn('cloudflared', ['tunnel', 'login'], { shell: true });
             
             let found = false;
+            let fullOutput = '';
 
             const handleData = (data) => {
                 if (found) return;
                 const text = data.toString();
-                const match = text.match(/https:\/\/(?:[a-zA-Z0-9-]+\.)*cloudflare\.com\/a\/[^\s]+/);
+                fullOutput += text;
+                
+                // Nova Regex: Captura o novo padrão dash.cloudflare.com e o padrão antigo
+                const match = text.match(/https:\/\/(?:[a-zA-Z0-9-]+\.)*cloudflare\.com\/[^\s"'<>]+/i);
                 if (match) {
                     found = true;
                     child.unref(); // Deixa o processo rodando solto para aguardar o navegador
-                    resolve(match[0]);
+                    resolve({ url: match[0] });
                 }
             };
 
             child.stdout.on('data', handleData);
             child.stderr.on('data', handleData);
 
-            child.on('error', () => { if (!found) resolve(null); });
-            child.on('close', () => { if (!found) resolve(null); });
+            child.on('error', (err) => { 
+                if (!found) resolve({ error: 'Falha ao iniciar cloudflared: ' + err.message }); 
+            });
+            child.on('close', () => { 
+                if (!found) resolve({ error: 'Processo encerrou antes da URL. Saída gerada:\n' + fullOutput }); 
+            });
 
             // Timeout de segurança se o link não aparecer em 8s
-            setTimeout(() => { if (!found) resolve(null); }, 8000);
-        } catch {
-            resolve(null);
+            setTimeout(() => { 
+                if (!found) resolve({ error: 'Timeout de 8s excedido. Saída parcial:\n' + fullOutput }); 
+            }, 8000);
+        } catch (e) {
+            resolve({ error: 'Erro Try-Catch: ' + e.message });
         }
     });
 }
