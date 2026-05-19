@@ -103,33 +103,41 @@ configure_phpmyadmin_sso() {
     chown "$CURRENT_USER" "$pma_dir/test.php" 2>/dev/null || true
     echo "  [+] test.php de diagnóstico criado"
 
-    # Remove configurações SSO antigas ou conflitantes
-    sed -i "/\['auth_type'\]/d" "$pma_config" 2>/dev/null || true
-    sed -i "/\['SignonSession'\]/d" "$pma_config" 2>/dev/null || true
-    sed -i "/\['SignonURL'\]/d" "$pma_config" 2>/dev/null || true
-    sed -i "/\['LogoutURL'\]/d" "$pma_config" 2>/dev/null || true
-    sed -i "/\['host'\]/d" "$pma_config" 2>/dev/null || true
-    sed -i "/\['port'\]/d" "$pma_config" 2>/dev/null || true
+    # Remove antigas configurações e insere as estáveis de Cookie Auth via script Node para evitar que o sed-i trave no Termux
+    node -e '
+const fs = require("fs");
+const file = process.argv[1];
+let content = fs.readFileSync(file, "utf8");
 
-    # Insere configurações 100% estáveis usando TCP/IP 127.0.0.1 e Cookie Auth (evita loops)
-    if grep -q "\['Servers'\]" "$pma_config"; then
-        # Adiciona na primeira Server config
-        sed -i "/\['Servers'\]/a \
-\$cfg['Servers'][\$i]['host'] = '127.0.0.1';\n\
-\$cfg['Servers'][\$i]['port'] = '3306';\n\
-\$cfg['Servers'][\$i]['auth_type'] = 'cookie';\n\
-\$cfg['Servers'][\$i]['AllowNoPassword'] = true;\n\
-" "$pma_config"
-    else
-        cat >> "$pma_config" <<'PHP_CONFIG'
+// Remover linhas de config antiga conflitantes
+const toRemove = [
+    /\x5B\x27auth_type\x27\x5D/i,
+    /\x5B\x27SignonSession\x27\x5D/i,
+    /\x5B\x27SignonURL\x27\x5D/i,
+    /\x5B\x27LogoutURL\x27\x5D/i,
+    /\x5B\x27host\x27\x5D/i,
+    /\x5B\x27port\x27\x5D/i
+];
 
-$i = $i ?? 1;
-$cfg['Servers'][$i]['host'] = '127.0.0.1';
-$cfg['Servers'][$i]['port'] = '3306';
-$cfg['Servers'][$i]['auth_type'] = 'cookie';
-$cfg['Servers'][$i]['AllowNoPassword'] = true;
-PHP_CONFIG
-    fi
+content = content.split("\n").filter(line => {
+    return !toRemove.some(regex => regex.test(line));
+}).join("\n");
+
+const configBlock = `
+$cfg[\x27Servers\x27][$i][\x27host\x27] = \x27127.0.0.1\x27;
+$cfg[\x27Servers\x27][$i][\x27port\x27] = \x273306\x27;
+$cfg[\x27Servers\x27][$i][\x27auth_type\x27] = \x27cookie\x27;
+$cfg[\x27Servers\x27][$i][\x27AllowNoPassword\x27] = true;
+`;
+
+if (content.includes("[\x27Servers\x27]")) {
+    content = content.replace(/(\x5B\x27Servers\x27\x5D)/, "$1\n" + configBlock);
+} else {
+    content += "\n\n$i = $i ?? 1;" + configBlock + "\n";
+}
+
+fs.writeFileSync(file, content, "utf8");
+' "$pma_config"
 
     echo "  [+] config.inc.php ajustado para Cookie Auth (TCP/IP 127.0.0.1)"
 }
