@@ -130,7 +130,20 @@ MYSQL_DATA_DIR="$PREFIX/var/lib/mysql"
 log "Verificando PHP-FPM..."
 mkdir -p "$PREFIX/var/run" "$PREFIX/tmp"
 
-if command -v php-fpm >/dev/null 2>&1; then
+    # Garante que PHP-FPM escute via TCP 127.0.0.1:9000 para estabilidade
+    fpm_conf=""
+    for f in "$PREFIX/etc/php-fpm.d/www.conf" "$PREFIX/etc/php-fpm.conf"; do
+        if [ -f "$f" ]; then
+            fpm_conf="$f"
+            break
+        fi
+    done
+    if [ -n "$fpm_conf" ]; then
+        if grep -q "listen =.*\.sock" "$fpm_conf" 2>/dev/null || ! grep -q "listen = 127.0.0.1:9000" "$fpm_conf" 2>/dev/null; then
+            sed -i 's|^listen =.*|listen = 127.0.0.1:9000|' "$fpm_conf" 2>/dev/null || true
+        fi
+    fi
+    if command -v php-fpm >/dev/null 2>&1; then
     if [ "$USE_SU" = "true" ]; then
         PHPOUT=$(su -c "php-fpm --daemonize" 2>&1)
     else

@@ -736,7 +736,7 @@ while true; do
             node server.js
             break
             ;;
-        6) bash scripts/start.sh; break ;;
+        6) exec bash scripts/start.sh ;;
         7) setup_boot_autostart ;;
         8) mariadb_recovery ;;
         9)
