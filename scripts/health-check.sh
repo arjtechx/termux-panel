@@ -352,7 +352,7 @@ fi
 if [ -f "$PMA_NGINX_CONF" ]; then
     log_ok "Arquivo de vhost phpMyAdmin existe"
     # Verifica se o conteúdo referencia o diretório correto
-    if grep -q "$PMA_DIR" "$PMA_NGINX_CONF" 2>/dev/null; then
+    if grep -q "$PMA_DIR" "$PMA_NGINX_CONF" 2>/dev/null && grep -q "/phpmyadmin/" "$PMA_NGINX_CONF" 2>/dev/null; then
         log_ok "Vhost aponta para o diretório correto"
     else
         log_warn "Vhost phpMyAdmin com referência incorreta de path"
@@ -366,31 +366,40 @@ else
 fi
 
 if [ "$REWRITE_PMA" = true ]; then
+    FASTCGI_PASS="unix:${DETECTED_SOCK}"
+    if [ ! -S "$DETECTED_SOCK" ]; then
+        FASTCGI_PASS="127.0.0.1:9000"
+    fi
+
     cat > "$PMA_NGINX_CONF" << PMA_CONF
 server {
     listen       ${PMA_PORT};
-    server_name  localhost 127.0.0.1;
-
-    root   ${PMA_DIR};
-    index  index.php index.html;
+    server_name  localhost 127.0.0.1 _;
 
     access_log  ${PREFIX}/var/log/nginx/phpmyadmin_access.log;
     error_log   ${PREFIX}/var/log/nginx/phpmyadmin_error.log;
 
     client_max_body_size 100m;
 
-    location / {
-        try_files \$uri \$uri/ =404;
+    location = / {
+        return 302 /phpmyadmin/;
     }
 
-    location ~ \.php$ {
-        fastcgi_pass  unix:${DETECTED_SOCK};
+    location /phpmyadmin/ {
+        alias ${PMA_DIR}/;
+        index index.php index.html;
+        try_files \$uri \$uri/ /phpmyadmin/index.php?\$query_string;
+    }
+
+    location ~ ^/phpmyadmin/(.+\\.php)$ {
+        alias ${PMA_DIR}/\$1;
+        fastcgi_pass  ${FASTCGI_PASS};
         fastcgi_index index.php;
-        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+        fastcgi_param SCRIPT_FILENAME \$request_filename;
         include       fastcgi_params;
     }
 
-    location ~ /\.(ht|git) {
+    location ~ /\\.(ht|git) {
         deny all;
     }
 }

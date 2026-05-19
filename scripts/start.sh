@@ -194,6 +194,13 @@ else
 fi
 
 # ─── 3. NGINX ────────────────────────────────────────────────────
+log "Aplicando SSO do phpMyAdmin..."
+if [ -f "$PANEL_DIR/scripts/setup-pma-sso.sh" ]; then
+    bash "$PANEL_DIR/scripts/setup-pma-sso.sh" >/dev/null 2>&1 && \
+        ok "SSO do phpMyAdmin configurado." || \
+        warn "SSO do phpMyAdmin nao foi configurado. Rode scripts/health-check.sh para detalhes."
+fi
+
 log "Verificando NGINX..."
 if command -v nginx >/dev/null 2>&1; then
     NGOUT=$(nginx 2>&1)

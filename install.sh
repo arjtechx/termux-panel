@@ -482,7 +482,7 @@ function install_panel() {
     # Verificar deps restantes (nodejs, nginx, etc.)
     log "Instalando outras dependências..."
     if [ "$IS_TERMUX" = true ]; then
-        pkg install -y nodejs nginx cloudflared termux-api coreutils procps zip unzip psmisc lsof python php 2>/dev/null || true
+        pkg install -y nodejs nginx cloudflared termux-api coreutils procps zip unzip psmisc lsof python php php-fpm phpmyadmin 2>/dev/null || true
     else
         ${SUDO}apt-get install -y nodejs nginx coreutils procps zip unzip psmisc lsof python3 php-fpm 2>/dev/null || true
     fi
@@ -517,6 +517,9 @@ function install_panel() {
 
     # ─── phpMyAdmin ──────────────────────────────────────────────
     generate_phpmyadmin_config
+    if [ -f "scripts/setup-pma-sso.sh" ]; then
+        bash scripts/setup-pma-sso.sh || warn "SSO do phpMyAdmin nao foi configurado. Rode scripts/health-check.sh para detalhes."
+    fi
 
     # ─── Node.js deps ────────────────────────────────────────────
     echo ""

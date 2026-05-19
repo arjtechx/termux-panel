@@ -2493,9 +2493,13 @@ function updateCloudflaredLoginUi(status = {}) {
     const btn = document.getElementById('cloudflaredLoginBtn');
     if (btn) {
         btn.disabled = busy;
-        btn.innerHTML = busy
-            ? '<i data-lucide="loader" class="spin" style="width:14px;height:14px;"></i> Aguardando autenticacao...'
-            : '<i data-lucide="key-round"></i> Login Cloudflare';
+        if (busy) {
+            btn.innerHTML = '<i data-lucide="loader" class="spin" style="width:14px;height:14px;"></i> Aguardando autenticacao...';
+        } else if (state === 'success') {
+            btn.innerHTML = '<i data-lucide="check-circle"></i> Autenticado';
+        } else {
+            btn.innerHTML = '<i data-lucide="key-round"></i> Login Cloudflare';
+        }
         if (window.lucide) lucide.createIcons();
     }
 
@@ -2834,7 +2838,19 @@ async function cloudflaredLogin() {
 
     const data = await cloudflaredJsonFetch(`${API_BASE}/tunnel/login`, 'POST', {}, 30000);
     updateCloudflaredLoginUi(data);
-    if (!data?.success && box) box.innerHTML += `Falha ao iniciar login: ${cfEscape(data?.error || 'erro desconhecido')}\n`;
+    
+    if (!data?.success && box) {
+        box.innerHTML += `Falha ao iniciar login: ${cfEscape(data?.error || 'erro desconhecido')}\n`;
+    }
+
+    // FECHA o popup se já estiver logado (evita que a tela fique travada aguardando)
+    if (data?.loggedIn) {
+        if (cloudflaredAuthWindow) {
+            cloudflaredAuthWindow.close();
+            cloudflaredAuthWindow = null;
+        }
+    }
+
     if (cloudflaredLoginInterval) clearInterval(cloudflaredLoginInterval);
     if (data?.success && !data.loggedIn) {
         cloudflaredLoginInterval = setInterval(loadCloudflaredLoginLogs, 2000);
@@ -2897,6 +2913,12 @@ async function loadCloudflaredLoginStatus() {
     const data = await cloudflaredJsonFetch(`${API_BASE}/tunnel/login/status`, 'GET', null, 8000);
     updateCloudflaredLoginUi(data);
     if (data?.authUrl && !data.loggedIn) openCloudflaredAuthUrl(data.authUrl);
+    
+    if (data?.loggedIn && cloudflaredAuthWindow) {
+        cloudflaredAuthWindow.close();
+        cloudflaredAuthWindow = null;
+    }
+    
     return data;
 }
 
