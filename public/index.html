@@ -1024,10 +1024,83 @@
                         </button>
                     </div>
                 </div>
+            </div>
+
+            <div id="tab-cloudflared" class="tab-pane">
+                <div class="page-header">
+                    <div>
+                        <h1>Cloudflared Manager</h1>
+                        <p style="color:var(--text-muted); font-size:0.875rem; margin-top:2px;">Painel de Gerenciamento de Túneis Profissional (Watchdog Integrado).</p>
+                    </div>
+                    <div class="toolbar-group">
+                        <button class="btn btn-warning btn-sm" onclick="cfKillZombies()">
+                            <i data-lucide="skull"></i> Matar Zumbis
+                        </button>
+                        <button class="btn btn-secondary btn-sm" onclick="cfShowLoginModal()">
+                            <i data-lucide="key-round"></i> Login Clássico
+                        </button>
+                        <button class="btn btn-success btn-sm" onclick="cfExportConfigs()">
+                            <i data-lucide="download"></i> Exportar
+                        </button>
+                        <button class="btn btn-secondary btn-sm" onclick="cfTriggerImport()">
+                            <i data-lucide="upload"></i> Importar
+                        </button>
+                        <input type="file" id="cfImportFile" accept=".json" style="display:none" onchange="cfImportConfigs(event)">
+                        <button class="btn btn-primary btn-sm" onclick="cfShowCreateModal()">
+                            <i data-lucide="plus"></i> Novo Túnel
+                        </button>
+                        <button class="btn btn-secondary btn-sm" onclick="cfFetchTunnels()">
+                            <i data-lucide="refresh-cw"></i> Atualizar
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Metrics Panel -->
+                <div class="stats-grid" style="margin-bottom: 20px;">
+                    <div class="stat-card">
+                        <span class="card-label">Total de Túneis</span>
+                        <strong id="cfMetricTotal">0</strong>
+                    </div>
+                    <div class="stat-card">
+                        <span class="card-label">Túneis Online</span>
+                        <strong id="cfMetricOnline" style="color:var(--success)">0</strong>
+                    </div>
+                    <div class="stat-card">
+                        <span class="card-label">Watchdog Termux</span>
+                        <strong style="color:var(--info)">ATIVO (5s)</strong>
+                    </div>
+                    <div class="stat-card">
+                        <span class="card-label">Conexões Ativas</span>
+                        <strong id="cfMetricConnections">0</strong>
+                    </div>
+                </div>
+
+                <!-- Filters & Search Toolbar -->
+                <div class="card" style="margin-bottom: 20px; padding: 12px;">
+                    <div class="form-row" style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+                        <div style="flex:2; min-width:200px;">
+                            <input type="text" id="cfSearchInput" placeholder="Buscar túneis pelo nome ou domínio..." onkeyup="cfFilterTunnels()" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
+                        </div>
+                        <div style="flex:1; min-width:120px;">
+                            <select id="cfFilterType" onchange="cfFilterTunnels()" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
+                                <option value="all">Todos os Tipos</option>
+                                <option value="token">Modo Token</option>
+                                <option value="classic">Modo Clássico (Quick)</option>
+                                <option value="classic_custom">Modo Clássico (YAML)</option>
+                            </select>
+                        </div>
+                        <div style="flex:1; min-width:120px;">
+                            <select id="cfFilterStatus" onchange="cfFilterTunnels()" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
+                                <option value="all">Todos os Status</option>
+                                <option value="online">Online</option>
+                                <option value="offline">Offline</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
 
                 <!-- Tunnels Grid -->
                 <div class="hosting-grid" id="cfTunnelsGrid">
-                    <!-- Dynamic Tunnel Cards Rendered by JS -->
                     <div style="color:var(--text-muted); padding:20px;">Carregando túneis...</div>
                 </div>
             </div>
@@ -1042,39 +1115,57 @@
                     <form onsubmit="cfCreateTunnel(event)">
                         <div class="form-stack">
                             <div>
-                                <label class="form-label">Tipo de Autenticação</label>
-                                <select id="cfAuthType" onchange="cfToggleAuthType()" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-lighter); color:var(--text-color);">
+                                <label class="form-label">Tipo de Autenticação / Modo</label>
+                                <select id="cfAuthType" onchange="cfToggleAuthType()" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
                                     <option value="token">Zero Trust Token (Recomendado)</option>
-                                    <option value="classic">Modo Clássico (Exige Login Prévio)</option>
+                                    <option value="classic">Modo Clássico Quick (trycloudflare.com)</option>
+                                    <option value="classic_custom">Modo Clássico Custom (Config YAML)</option>
                                 </select>
-                                <p style="font-size:0.75rem; color:var(--text-muted); margin-top:4px;">
-                                    O modo Token é 100% nativo no Termux e ignora problemas com arquivos cert.pem.
-                                </p>
                             </div>
 
                             <div>
                                 <label class="form-label">Nome de Identificação (Visível só no Painel)</label>
-                                <input type="text" id="cfName" placeholder="ex: meutunel-app" required>
+                                <input type="text" id="cfName" placeholder="ex: meutunel-app" required style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
                             </div>
 
                             <!-- MODO TOKEN -->
                             <div id="cfTokenGroup">
                                 <label class="form-label">Cloudflare Tunnel Token</label>
-                                <input type="text" id="cfToken" placeholder="eyJhIjoiY2I...">
+                                <input type="text" id="cfToken" placeholder="eyJhIjoiY2I..." style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
                             </div>
 
-                            <!-- MODO CLÁSSICO -->
+                            <!-- MODO CLÁSSICO E CUSTOM -->
                             <div id="cfClassicGroup" class="hidden">
-                                <div style="display:flex; gap:10px;">
-                                    <div style="flex:1;">
-                                        <label class="form-label">Subdomínio Público</label>
-                                        <input type="text" id="cfDomain" placeholder="app.meusite.com">
+                                <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom: 12px;">
+                                    <div style="flex:1; min-width:140px;">
+                                        <label class="form-label">Protocolo Local</label>
+                                        <select id="cfProto" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
+                                            <option value="http">http://</option>
+                                            <option value="https">https://</option>
+                                            <option value="tcp">tcp:// (SSH/DB/etc.)</option>
+                                            <option value="ssh">ssh://</option>
+                                            <option value="rdp">rdp://</option>
+                                        </select>
                                     </div>
-                                    <div style="flex:1;">
+                                    <div style="flex:1; min-width:140px;">
+                                        <label class="form-label">IP/Host Local</label>
+                                        <input type="text" id="cfLocalHost" value="localhost" placeholder="ex: 127.0.0.1" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
+                                    </div>
+                                    <div style="flex:1; min-width:120px;">
                                         <label class="form-label">Porta Local Alvo</label>
-                                        <input type="text" id="cfLocalPort" placeholder="ex: 8080 ou http://localhost:8080">
+                                        <input type="text" id="cfLocalPort" placeholder="ex: 8080" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
                                     </div>
                                 </div>
+
+                                <div id="cfDomainGroup">
+                                    <label class="form-label">Subdomínio Público (Modo YAML exige domínio configurado)</label>
+                                    <input type="text" id="cfDomain" placeholder="app.meusite.com" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
+                                </div>
+                            </div>
+
+                            <div style="display:flex; align-items:center; gap:8px; margin-top:8px;">
+                                <input type="checkbox" id="cfAutoStart" style="width:16px; height:16px;">
+                                <label for="cfAutoStart" style="font-weight:600; cursor:pointer;">Auto-start (Iniciar junto com o painel e auto-recuperação)</label>
                             </div>
                         </div>
 
@@ -1083,6 +1174,112 @@
                             <button type="submit" class="btn btn-success btn-sm">Criar Túnel</button>
                         </div>
                     </form>
+                </div>
+            </div>
+
+            <!-- === MODAL: EDITAR TÚNEL CLOUDFLARED === -->
+            <div id="cfEditModal" class="modal-overlay hidden">
+                <div class="modal-card">
+                    <div class="modal-header">
+                        <h2>⚙️ Editar Configurações do Túnel</h2>
+                        <button class="btn-icon-ghost" type="button" onclick="cfCloseEditModal()"><i data-lucide="x"></i></button>
+                    </div>
+                    <form onsubmit="cfUpdateTunnelSubmit(event)">
+                        <input type="hidden" id="cfEditId">
+                        <div class="form-stack">
+                            <div>
+                                <label class="form-label">Nome de Identificação</label>
+                                <input type="text" id="cfEditName" required style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
+                            </div>
+
+                            <div id="cfEditTokenGroup">
+                                <label class="form-label">Cloudflare Tunnel Token</label>
+                                <input type="text" id="cfEditToken" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
+                            </div>
+
+                            <div id="cfEditClassicGroup">
+                                <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
+                                    <div style="flex:1; min-width:140px;">
+                                        <label class="form-label">Protocolo Local</label>
+                                        <select id="cfEditProto" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
+                                            <option value="http">http://</option>
+                                            <option value="https">https://</option>
+                                            <option value="tcp">tcp:// (SSH/DB/etc.)</option>
+                                            <option value="ssh">ssh://</option>
+                                            <option value="rdp">rdp://</option>
+                                        </select>
+                                    </div>
+                                    <div style="flex:1; min-width:140px;">
+                                        <label class="form-label">IP/Host Local</label>
+                                        <input type="text" id="cfEditLocalHost" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
+                                    </div>
+                                    <div style="flex:1; min-width:120px;">
+                                        <label class="form-label">Porta Local Alvo</label>
+                                        <input type="text" id="cfEditLocalPort" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
+                                    </div>
+                                </div>
+
+                                <div id="cfEditDomainGroup">
+                                    <label class="form-label">Subdomínio Público</label>
+                                    <input type="text" id="cfEditDomain" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
+                                </div>
+                            </div>
+
+                            <div style="display:flex; align-items:center; gap:8px; margin-top:8px;">
+                                <input type="checkbox" id="cfEditAutoStart" style="width:16px; height:16px;">
+                                <label for="cfEditAutoStart" style="font-weight:600; cursor:pointer;">Auto-start (Iniciar junto com o painel e auto-recuperação)</label>
+                            </div>
+                        </div>
+
+                        <div class="modal-actions" style="margin-top:20px; display:flex; justify-content:flex-end; gap:10px;">
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="cfCloseEditModal()">Cancelar</button>
+                            <button type="submit" class="btn btn-success btn-sm">Salvar Alterações</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- === MODAL: EDITOR YAML CLOUDFLARED === -->
+            <div id="cfYamlModal" class="modal-overlay hidden">
+                <div class="modal-card modal-lg">
+                    <div class="modal-header">
+                        <h2>📝 Editor YAML Ingress Rules</h2>
+                        <button class="btn-icon-ghost" type="button" onclick="cfCloseYamlModal()"><i data-lucide="x"></i></button>
+                    </div>
+                    <div style="padding:10px 0;">
+                        <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px;">
+                            Customize as regras de entrada (Ingress Rules) e fallbacks do seu túnel. Não use Tabulações (Tab), use 2 ou 4 espaços.
+                        </p>
+                        
+                        <div id="cfYamlError" class="hidden" style="padding:10px; border-radius:6px; background:rgba(239,68,68,0.1); border:1px solid var(--danger); color:var(--danger); font-size:0.85rem; font-weight:600; margin-bottom:12px; white-space:pre-wrap;"></div>
+                        
+                        <textarea id="cfYamlTextarea" onkeyup="cfLiveValidateYaml()" style="width:100%; height:320px; font-family:var(--font-mono); font-size:0.875rem; padding:12px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-secondary); color:var(--text-color); resize:vertical; line-height:1.4; tab-size: 4;"></textarea>
+                    </div>
+                    <div class="modal-actions" style="margin-top:20px; display:flex; justify-content:space-between; align-items:center;">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="cfGenerateYamlTemplate()">Restaurar Modelo Padrão</button>
+                        <div style="display:flex; gap:10px;">
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="cfCloseYamlModal()">Cancelar</button>
+                            <button type="button" class="btn btn-success btn-sm" onclick="cfSaveYaml()">Salvar YAML</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- === MODAL: QR CODE DE ACESSO === -->
+            <div id="cfQrModal" class="modal-overlay hidden">
+                <div class="modal-card" style="max-width: 320px; text-align: center;">
+                    <div class="modal-header" style="justify-content:center;">
+                        <h2>📱 QRCode de Acesso Rápido</h2>
+                    </div>
+                    <div style="padding: 20px 0; display:flex; flex-direction:column; align-items:center; gap:12px;">
+                        <div id="cfQrImageContainer" style="padding:10px; background:#fff; border-radius:12px; width:220px; height:220px; display:flex; justify-content:center; align-items:center;">
+                            <!-- QR Code loaded dynamically -->
+                        </div>
+                        <p id="cfQrUrlText" style="font-size:0.85rem; font-family:var(--font-mono); word-break:break-all; color:var(--text-muted);"></p>
+                    </div>
+                    <div class="modal-actions" style="display:flex; justify-content:center;">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="cfCloseQrModal()">Fechar</button>
+                    </div>
                 </div>
             </div>
 
@@ -1385,7 +1582,7 @@
 </div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.56"></script>
-<script src="app.js?v=4.1"></script>
+<script src="filemanager.js?v=0.2.57"></script>
+<script src="app.js?v=4.2"></script>
 </body>
 </html>

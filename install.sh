@@ -565,6 +565,67 @@ function install_panel() {
         ${SUDO}apt-get install -y nodejs nginx coreutils procps zip unzip psmisc lsof python3 php-fpm 2>/dev/null || true
     fi
 
+    # Validação e Download do Cloudflared oficial se ausente ou quebrado
+    function ensure_cloudflared_binary() {
+        if command -v cloudflared >/dev/null 2>&1; then
+            ok "Cloudflared já está instalado e funcional no sistema."
+            return 0
+        fi
+
+        log "Aviso: 'cloudflared' não foi encontrado no PATH. Iniciando download do binário oficial da Cloudflare..."
+        
+        local arch
+        arch=$(uname -m)
+        local download_url=""
+        
+        case "$arch" in
+            x86_64)
+                download_url="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64"
+                ;;
+            aarch64)
+                download_url="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64"
+                ;;
+            armv7l|armhf)
+                download_url="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm"
+                ;;
+            i386|i686)
+                download_url="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-386"
+                ;;
+            *)
+                warn "Arquitetura '$arch' desconhecida para download automatizado. Instale o cloudflared manualmente."
+                return 1
+                ;;
+        esac
+
+        local install_dest
+        if [ "$IS_TERMUX" = true ]; then
+            install_dest="$PREFIX/bin/cloudflared"
+        else
+            install_dest="/usr/local/bin/cloudflared"
+        fi
+
+        log "Baixando binário oficial ($arch) de: $download_url"
+        local tmp_bin
+        tmp_bin=$(mktemp)
+        if curl -L -s -S -o "$tmp_bin" "$download_url"; then
+            if [ "$IS_TERMUX" = true ]; then
+                cp "$tmp_bin" "$install_dest"
+                chmod +x "$install_dest"
+            else
+                ${SUDO}cp "$tmp_bin" "$install_dest"
+                ${SUDO}chmod +x "$install_dest"
+            fi
+            rm -f "$tmp_bin"
+            ok "Cloudflared instalado com sucesso em $install_dest."
+        else
+            rm -f "$tmp_bin"
+            warn "Falha ao baixar o cloudflared. Certifique-se de que possui internet ativa e tente novamente."
+            return 1
+        fi
+    }
+
+    ensure_cloudflared_binary
+
     save_system_config
 
     # ─── Configurar acesso ao painel ────────────────────────────

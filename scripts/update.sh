@@ -194,6 +194,71 @@ fi
 log "Atualizando dependências Node.js..."
 npm install --no-audit --no-fund
 
+# Garante a existência do cloudflared atualizado no sistema
+function ensure_cloudflared_binary() {
+    if command -v cloudflared >/dev/null 2>&1; then
+        return 0
+    fi
+
+    log "Aviso: 'cloudflared' não encontrado. Baixando binário oficial da Cloudflare para o túnel..."
+    
+    local arch
+    arch=$(uname -m)
+    local download_url=""
+    
+    case "$arch" in
+        x86_64)
+            download_url="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64"
+            ;;
+        aarch64)
+            download_url="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64"
+            ;;
+        armv7l|armhf)
+            download_url="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm"
+            ;;
+        i386|i686)
+            download_url="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-386"
+            ;;
+        *)
+            warn "Arquitetura '$arch' não suportada para download automatizado."
+            return 1
+            ;;
+    esac
+
+    local install_dest
+    if echo "$PREFIX" | grep -q "com.termux"; then
+        install_dest="$PREFIX/bin/cloudflared"
+    else
+        install_dest="/usr/local/bin/cloudflared"
+    fi
+
+    log "Baixando binário oficial ($arch) de: $download_url"
+    local tmp_bin
+    tmp_bin=$(mktemp)
+    if curl -L -s -S -o "$tmp_bin" "$download_url"; then
+        if echo "$PREFIX" | grep -q "com.termux"; then
+            cp "$tmp_bin" "$install_dest"
+            chmod +x "$install_dest"
+        else
+            if [ "$(id -u)" -eq 0 ]; then
+                cp "$tmp_bin" "$install_dest"
+                chmod +x "$install_dest"
+            else
+                sudo cp "$tmp_bin" "$install_dest"
+                sudo chmod +x "$install_dest"
+            fi
+        fi
+        rm -f "$tmp_bin"
+        ok "Cloudflared instalado com sucesso em $install_dest."
+    else
+        rm -f "$tmp_bin"
+        warn "Falha ao baixar o cloudflared."
+        return 1
+    fi
+}
+
+ensure_cloudflared_binary
+
 log "Aplicando configuração SSO do phpMyAdmin..."
 if [ -f "$SCRIPT_DIR/setup-pma-sso.sh" ]; then
     bash "$SCRIPT_DIR/setup-pma-sso.sh"

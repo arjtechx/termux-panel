@@ -150,6 +150,12 @@ function switchTab(targetId) {
     document.querySelectorAll('.tab-pane').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('[data-target]').forEach(l => l.classList.remove('active'));
 
+    // Limpa o loop do Cloudflared se o usuário mudar de aba
+    if (window.cfTabInterval) {
+        clearInterval(window.cfTabInterval);
+        window.cfTabInterval = null;
+    }
+
     // Mostra a tab alvo
     const tab = document.getElementById(targetId);
     if (tab) tab.classList.add('active');
@@ -169,7 +175,10 @@ function switchTab(targetId) {
     if (targetId === 'tab-cron')     fetchCron();
     if (targetId === 'tab-noip')     fetchNoipStatus();
     if (targetId === 'tab-cloudflared') {
-        if (typeof cfFetchTunnels === 'function') cfFetchTunnels();
+        if (typeof cfFetchTunnels === 'function') {
+            cfFetchTunnels();
+            window.cfTabInterval = setInterval(cfFetchTunnels, 4000);
+        }
     }
     if (targetId === 'tab-docs')     loadDocumentation();
     if (targetId === 'tab-settings') {
@@ -2431,13 +2440,18 @@ function closeHostingLogsModal() {
 let cfTunnels = [];
 let cfLogInterval = null;
 let cfSelectedTunnelId = null;
+let cfSelectedYamlTunnelId = null;
 
 function cfShowCreateModal() {
     document.getElementById('cfCreateModal').classList.remove('hidden');
     document.getElementById('cfName').value = '';
     document.getElementById('cfToken').value = '';
     document.getElementById('cfDomain').value = '';
+    document.getElementById('cfLocalHost').value = 'localhost';
     document.getElementById('cfLocalPort').value = '';
+    document.getElementById('cfProto').value = 'http';
+    document.getElementById('cfAutoStart').checked = false;
+    cfToggleAuthType();
 }
 
 function cfCloseCreateModal() {
@@ -2457,16 +2471,20 @@ function cfToggleAuthType() {
 
 async function cfCreateTunnel(e) {
     e.preventDefault();
+    const type = document.getElementById('cfAuthType').value;
     const payload = {
         name: document.getElementById('cfName').value.trim(),
-        type: document.getElementById('cfAuthType').value,
+        type: type,
         token: document.getElementById('cfToken').value.trim(),
         domain: document.getElementById('cfDomain').value.trim(),
-        localPort: document.getElementById('cfLocalPort').value.trim()
+        proto: document.getElementById('cfProto').value,
+        localHost: document.getElementById('cfLocalHost').value.trim() || 'localhost',
+        localPort: document.getElementById('cfLocalPort').value.trim(),
+        autoStart: document.getElementById('cfAutoStart').checked
     };
 
     if (payload.type === 'token' && !payload.token) return alert('Insira o Token.');
-    if (payload.type === 'classic' && (!payload.domain || !payload.localPort)) return alert('Preencha Domínio e Porta Local.');
+    if (payload.type !== 'token' && !payload.localPort) return alert('Insira a porta local.');
 
     try {
         const res = await fetch(`${API_BASE}/tunnel/create`, {
@@ -2489,6 +2507,16 @@ async function cfFetchTunnels() {
         const data = await res.json();
         if (data.success) {
             cfTunnels = data.tunnels;
+            
+            // Calculate and update top metrics
+            let total = cfTunnels.length;
+            let online = cfTunnels.filter(t => t.running).length;
+            let activeConns = cfTunnels.reduce((acc, t) => acc + (t.connections || 0), 0);
+            
+            document.getElementById('cfMetricTotal').textContent = total;
+            document.getElementById('cfMetricOnline').textContent = online;
+            document.getElementById('cfMetricConnections').textContent = activeConns;
+            
             cfRenderTunnels();
         }
     } catch (e) {
@@ -2497,45 +2525,104 @@ async function cfFetchTunnels() {
 }
 
 function cfRenderTunnels() {
+    cfFilterTunnels();
+}
+
+function cfFilterTunnels() {
     const grid = document.getElementById('cfTunnelsGrid');
     if (!grid) return;
 
-    if (cfTunnels.length === 0) {
-        grid.innerHTML = '<div style="color:var(--text-muted); padding:20px;">Nenhum túnel configurado ainda.</div>';
+    const query = document.getElementById('cfSearchInput').value.toLowerCase().trim();
+    const typeFilter = document.getElementById('cfFilterType').value;
+    const statusFilter = document.getElementById('cfFilterStatus').value;
+
+    const filtered = cfTunnels.filter(t => {
+        const matchQuery = t.name.toLowerCase().includes(query) || (t.domain && t.domain.toLowerCase().includes(query));
+        const matchType = typeFilter === 'all' || t.type === typeFilter;
+        const matchStatus = statusFilter === 'all' || (statusFilter === 'online' && t.running) || (statusFilter === 'offline' && !t.running);
+        return matchQuery && matchType && matchStatus;
+    });
+
+    if (filtered.length === 0) {
+        grid.innerHTML = '<div style="color:var(--text-muted); padding:20px;">Nenhum túnel corresponde aos filtros aplicados.</div>';
         return;
     }
 
-    grid.innerHTML = cfTunnels.map(t => {
+    grid.innerHTML = filtered.map(t => {
         const isRunning = t.running;
         const color = isRunning ? 'var(--success)' : 'var(--danger)';
+        
+        let typeBadge = '';
+        if (t.type === 'token') typeBadge = '<span class="badge badge-info">Token</span>';
+        else if (t.type === 'classic_custom') typeBadge = '<span class="badge badge-primary">YAML Ingress</span>';
+        else typeBadge = '<span class="badge badge-secondary">Quick</span>';
+
         const btnAction = isRunning 
             ? `<button class="btn btn-sm btn-danger" onclick="cfStopTunnel('${t.id}')"><i data-lucide="square"></i> Parar</button>`
             : `<button class="btn btn-sm btn-success" onclick="cfStartTunnel('${t.id}')"><i data-lucide="play"></i> Iniciar</button>`;
 
+        const restartBtn = isRunning
+            ? `<button class="btn btn-sm btn-warning" onclick="cfRestartTunnel('${t.id}')" title="Reiniciar Túnel"><i data-lucide="rotate-cw"></i></button>`
+            : '';
+
+        const yamlBtn = t.type === 'classic_custom'
+            ? `<button class="btn btn-sm btn-secondary" onclick="cfShowYamlModal('${t.id}')" title="Configurar YAML"><i data-lucide="file-code"></i> YAML</button>`
+            : '';
+
+        const qrBtn = (t.domain && isRunning)
+            ? `<button class="btn btn-sm btn-secondary" onclick="cfShowQrModal('${cfEscape(t.domain)}')" title="Visualizar QR Code"><i data-lucide="qr-code"></i></button>`
+            : '';
+
+        // Native Uptime, CPU, RAM metrics card
+        const metricsHtml = isRunning
+            ? `
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px 12px; margin-top:12px; font-size:0.8rem; background:var(--bg-lighter); padding:8px; border-radius:6px; color:var(--text-color);">
+                <div><strong>CPU:</strong> ${t.cpu || 0}%</div>
+                <div><strong>RAM:</strong> ${t.ram || 0} MB</div>
+                <div><strong>Conexões:</strong> ${t.connections || 0}</div>
+                <div><strong>Uptime:</strong> ${cfFormatUptime(t.uptime)}</div>
+            </div>
+            `
+            : `<div style="margin-top:12px; font-size:0.8rem; color:var(--text-muted);">Processo inativo.</div>`;
+
         return `
             <div class="card" style="border-left: 4px solid ${color}">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start;">
                     <div>
                         <h3 style="margin-bottom:4px">${cfEscape(t.name)}</h3>
-                        <span class="badge ${isRunning ? 'badge-success' : 'badge-danger'}">
-                            ${isRunning ? 'Rodando (PID: ' + t.pid + ')' : 'Parado'}
-                        </span>
-                        <span class="badge badge-info">${t.type === 'token' ? 'Token' : 'Clássico'}</span>
+                        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                            <span class="badge ${isRunning ? 'badge-success' : 'badge-danger'}">
+                                ${isRunning ? 'Online (PID: ' + t.pid + ')' : 'Offline'}
+                            </span>
+                            ${typeBadge}
+                            ${t.autoStart ? '<span class="badge badge-info" title="Auto-start ativo">⚙️ Auto</span>' : ''}
+                            ${t.crashCount > 0 ? `<span class="badge badge-warning" title="Histórico de falhas auto-recuperadas">⚠️ Quedas: ${t.crashCount}</span>` : ''}
+                        </div>
                     </div>
                 </div>
                 <div style="margin-top:12px; font-size:0.85rem; color:var(--text-muted)">
                     ${t.type === 'token' 
-                        ? '<i>Zero Trust Dashboard (Roteamento externo)</i>' 
-                        : `<div><strong>🌐</strong> ${cfEscape(t.domain)}</div><div><strong>🎯</strong> ${cfEscape(t.localPort)}</div>`
+                        ? '<div style="font-style:italic;">Gerenciado pelo Zero Trust Cloudflare</div>' 
+                        : `<div><strong>🌐</strong> ${cfEscape(t.domain || 'Quick Tunnel')}</div>
+                           <div><strong>🎯 Local:</strong> ${cfEscape(t.proto)}://${cfEscape(t.localHost)}:${cfEscape(t.localPort)}</div>`
                     }
                 </div>
-                <div class="toolbar-group" style="margin-top:16px;">
+                
+                ${metricsHtml}
+
+                <div class="toolbar-group" style="margin-top:16px; flex-wrap:wrap; gap:6px;">
                     ${btnAction}
+                    ${restartBtn}
+                    ${yamlBtn}
+                    ${qrBtn}
+                    <button class="btn btn-sm btn-secondary" onclick="cfShowEditModal('${t.id}')" title="Editar Túnel">
+                        <i data-lucide="edit-3"></i>
+                    </button>
                     <button class="btn btn-sm btn-secondary" onclick="cfShowLogsModal('${t.id}', '${cfEscape(t.name)}')">
                         <i data-lucide="scroll-text"></i> Logs
                     </button>
                     <button class="btn btn-sm btn-danger" onclick="cfDeleteTunnel('${t.id}')">
-                        <i data-lucide="trash-2"></i> Excluir
+                        <i data-lucide="trash-2"></i>
                     </button>
                 </div>
             </div>
@@ -2546,38 +2633,294 @@ function cfRenderTunnels() {
 }
 
 async function cfStartTunnel(id) {
-    await fetch(`${API_BASE}/tunnel/start`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id })
-    });
-    cfFetchTunnels();
+    try {
+        const res = await fetch(`${API_BASE}/tunnel/start`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id })
+        });
+        const data = await res.json();
+        if (!data.success) alert('Falha ao iniciar: ' + data.error);
+        cfFetchTunnels();
+    } catch (e) {
+        alert('Erro ao iniciar túnel: ' + e.message);
+    }
 }
 
 async function cfStopTunnel(id) {
-    await fetch(`${API_BASE}/tunnel/stop`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id })
-    });
-    cfFetchTunnels();
+    try {
+        const res = await fetch(`${API_BASE}/tunnel/stop`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id })
+        });
+        const data = await res.json();
+        if (!data.success) alert('Falha ao parar: ' + data.error);
+        cfFetchTunnels();
+    } catch (e) {
+        alert('Erro ao parar túnel: ' + e.message);
+    }
+}
+
+async function cfRestartTunnel(id) {
+    try {
+        const res = await fetch(`${API_BASE}/tunnel/restart`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id })
+        });
+        const data = await res.json();
+        if (!data.success) alert('Falha ao reiniciar: ' + data.error);
+        cfFetchTunnels();
+    } catch (e) {
+        alert('Erro ao reiniciar túnel: ' + e.message);
+    }
 }
 
 async function cfDeleteTunnel(id) {
     if (!confirm('Excluir este túnel permanentemente?')) return;
-    await fetch(`${API_BASE}/tunnel/delete`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id })
-    });
-    cfFetchTunnels();
+    try {
+        await fetch(`${API_BASE}/tunnel/delete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id })
+        });
+        cfFetchTunnels();
+    } catch (e) {
+        alert('Erro ao excluir: ' + e.message);
+    }
 }
 
 async function cfKillZombies() {
     if (!confirm('Deseja enviar um sinal SIGKILL para todos os processos Cloudflared do celular? Isso força a parada de processos zumbis invisíveis.')) return;
-    await fetch(`${API_BASE}/system/kill-zombies`, { method: 'POST' });
-    alert('Sinal enviado. Os processos zumbis foram aniquilados.');
-    cfFetchTunnels();
+    try {
+        await fetch(`${API_BASE}/system/kill-zombies`, { method: 'POST' });
+        alert('Sinal enviado. Os processos zumbis foram aniquilados.');
+        cfFetchTunnels();
+    } catch (e) {
+        alert('Erro: ' + e.message);
+    }
+}
+
+// EDIT MODAL
+function cfShowEditModal(id) {
+    const t = cfTunnels.find(x => x.id === id);
+    if (!t) return;
+    
+    document.getElementById('cfEditId').value = t.id;
+    document.getElementById('cfEditName').value = t.name;
+    document.getElementById('cfEditToken').value = t.token || '';
+    document.getElementById('cfEditProto').value = t.proto || 'http';
+    document.getElementById('cfEditLocalHost').value = t.localHost || 'localhost';
+    document.getElementById('cfEditLocalPort').value = t.localPort || '';
+    document.getElementById('cfEditDomain').value = t.domain || '';
+    document.getElementById('cfEditAutoStart').checked = !!t.autoStart;
+
+    if (t.type === 'token') {
+        document.getElementById('cfEditTokenGroup').classList.remove('hidden');
+        document.getElementById('cfEditClassicGroup').classList.add('hidden');
+    } else {
+        document.getElementById('cfEditTokenGroup').classList.add('hidden');
+        document.getElementById('cfEditClassicGroup').classList.remove('hidden');
+    }
+    
+    document.getElementById('cfEditModal').classList.remove('hidden');
+}
+
+function cfCloseEditModal() {
+    document.getElementById('cfEditModal').classList.add('hidden');
+}
+
+async function cfUpdateTunnelSubmit(e) {
+    e.preventDefault();
+    const id = document.getElementById('cfEditId').value;
+    const payload = {
+        id,
+        name: document.getElementById('cfEditName').value.trim(),
+        token: document.getElementById('cfEditToken').value.trim(),
+        proto: document.getElementById('cfEditProto').value,
+        localHost: document.getElementById('cfEditLocalHost').value.trim() || 'localhost',
+        localPort: document.getElementById('cfEditLocalPort').value.trim(),
+        domain: document.getElementById('cfEditDomain').value.trim(),
+        autoStart: document.getElementById('cfEditAutoStart').checked
+    };
+
+    try {
+        const res = await fetch(`${API_BASE}/tunnel/update`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+        cfCloseEditModal();
+        cfFetchTunnels();
+    } catch (e) {
+        alert('Erro ao atualizar: ' + e.message);
+    }
+}
+
+// YAML MODAL
+async function cfShowYamlModal(id) {
+    const t = cfTunnels.find(x => x.id === id);
+    if (!t) return;
+
+    cfSelectedYamlTunnelId = id;
+    
+    // Fill YAML config, generate default if empty
+    let yamlContent = t.yamlConfig;
+    if (!yamlContent) {
+        const res = await fetch(`${API_BASE}/config/generate-yaml`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(t)
+        });
+        const data = await res.json();
+        yamlContent = data.yamlConfig || '';
+    }
+
+    document.getElementById('cfYamlTextarea').value = yamlContent;
+    document.getElementById('cfYamlError').classList.add('hidden');
+    document.getElementById('cfYamlModal').classList.remove('hidden');
+    cfLiveValidateYaml();
+}
+
+function cfCloseYamlModal() {
+    document.getElementById('cfYamlModal').classList.add('hidden');
+    cfSelectedYamlTunnelId = null;
+}
+
+async function cfLiveValidateYaml() {
+    const yamlContent = document.getElementById('cfYamlTextarea').value;
+    const errorBox = document.getElementById('cfYamlError');
+
+    try {
+        const res = await fetch(`${API_BASE}/config/validate-yaml`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ yamlConfig: yamlContent })
+        });
+        const data = await res.json();
+
+        if (data.valid) {
+            errorBox.classList.add('hidden');
+        } else {
+            errorBox.textContent = 'Erro YAML: ' + data.error;
+            errorBox.classList.remove('hidden');
+        }
+    } catch (e) {
+        errorBox.textContent = 'Erro de rede ao validar: ' + e.message;
+        errorBox.classList.remove('hidden');
+    }
+}
+
+async function cfSaveYaml() {
+    const yamlContent = document.getElementById('cfYamlTextarea').value;
+    
+    try {
+        const res = await fetch(`${API_BASE}/tunnel/update`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: cfSelectedYamlTunnelId, yamlConfig: yamlContent })
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+        cfCloseYamlModal();
+        cfFetchTunnels();
+    } catch (e) {
+        alert('Erro ao salvar configuração YAML: ' + e.message);
+    }
+}
+
+async function cfGenerateYamlTemplate() {
+    if (!cfSelectedYamlTunnelId) return;
+    const t = cfTunnels.find(x => x.id === cfSelectedYamlTunnelId);
+    if (!t) return;
+    
+    if (!confirm('Deseja sobrescrever as alterações atuais com o modelo YAML padrão gerado a partir do formulário?')) return;
+
+    try {
+        const res = await fetch(`${API_BASE}/config/generate-yaml`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(t)
+        });
+        const data = await res.json();
+        document.getElementById('cfYamlTextarea').value = data.yamlConfig || '';
+        cfLiveValidateYaml();
+    } catch (e) {
+        alert('Erro ao gerar modelo padrão: ' + e.message);
+    }
+}
+
+// QR CODE
+function cfShowQrModal(domain) {
+    const cleanDomain = domain.replace(/^https?:\/\//, '');
+    const url = `https://${cleanDomain}`;
+    
+    const qrContainer = document.getElementById('cfQrImageContainer');
+    // Using standard secure public chart API to render beautiful crisp QR codes locally
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(url)}`;
+    
+    qrContainer.innerHTML = `<img src="${qrUrl}" alt="Acesso rápido" style="width:200px; height:200px;" />`;
+    document.getElementById('cfQrUrlText').textContent = url;
+    document.getElementById('cfQrModal').classList.remove('hidden');
+}
+
+function cfCloseQrModal() {
+    document.getElementById('cfQrModal').classList.add('hidden');
+}
+
+// BACKUP IMPORT/EXPORT
+function cfExportConfigs() {
+    window.location.href = `${API_BASE}/config/export`;
+}
+
+function cfTriggerImport() {
+    document.getElementById('cfImportFile').click();
+}
+
+async function cfImportConfigs(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async function(evt) {
+        try {
+            const tunnels = JSON.parse(evt.target.result);
+            const res = await fetch(`${API_BASE}/config/import`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tunnels })
+            });
+            const data = await res.json();
+            if (data.success) {
+                alert(`Importado com sucesso! ${data.count} túneis carregados.`);
+                cfFetchTunnels();
+            } else {
+                alert('Erro ao importar: ' + data.error);
+            }
+        } catch(err) {
+            alert('Arquivo JSON inválido.');
+        }
+    };
+    reader.readAsText(file);
+    e.target.value = ''; // reset input
+}
+
+// UTILITIES
+function cfFormatUptime(secs) {
+    if (!secs) return '0s';
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = secs % 60;
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+}
+
+function cfEscape(str) {
+    return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 // LOGS
@@ -2601,9 +2944,9 @@ async function cfLoadLogs() {
     if (!cfSelectedTunnelId) return;
     try {
         const res = await fetch(`${API_BASE}/tunnel/logs?id=${cfSelectedTunnelId}&lines=100`);
-        const text = await res.text();
+        const data = await res.json();
         const box = document.getElementById('cfLogsBody');
-        box.textContent = text;
+        box.textContent = data.logs || 'Nenhum log disponível.';
         box.scrollTop = box.scrollHeight;
     } catch {}
 }
@@ -2686,13 +3029,6 @@ async function cfClearCert() {
         alert('Erro: ' + e.message);
     }
 }
-
-// Call on startup
-document.addEventListener('DOMContentLoaded', () => {
-    if(window.location.hash === '#tab-cloudflared' || true) {
-        setTimeout(cfFetchTunnels, 1000);
-    }
-});
 
 // ============================================================
 //  START
