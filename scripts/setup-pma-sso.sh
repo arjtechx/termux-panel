@@ -83,15 +83,7 @@ configure_phpmyadmin_sso() {
     echo "Configurando phpMyAdmin em: $pma_dir"
     chown -R "$CURRENT_USER" "$pma_dir" 2>/dev/null || true
 
-    # Garante a cópia do autologin.php atualizado para o diretório do phpMyAdmin
-    if [ -f "$SCRIPT_DIR/autologin.php" ]; then
-        cp "$SCRIPT_DIR/autologin.php" "$pma_dir/autologin.php"
-        chmod 644 "$pma_dir/autologin.php"
-        chown "$CURRENT_USER" "$pma_dir/autologin.php" 2>/dev/null || true
-        echo "  [+] autologin.php copiado e atualizado com sucesso."
-    else
-        echo "  [-] SCRIPT_DIR/autologin.php nao encontrado para copia!"
-    fi
+
 
     if [ ! -f "$pma_config" ] && [ -f "$sample_config" ]; then
         cp "$sample_config" "$pma_config"

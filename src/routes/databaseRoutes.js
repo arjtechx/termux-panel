@@ -750,117 +750,6 @@ router.post('/api/db/repair', async (req, res) => {
 });
 
 
-// --- phpMyAdmin SSO Logic ---
-const phpMyAdminTokens = new Map();
-
-router.post('/api/phpmyadmin/create-token', (req, res) => {
-    const { database, user } = req.body;
-    try {
-        const config = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-        const token = crypto.randomUUID();
-        
-        phpMyAdminTokens.set(token, {
-            user: config.user,
-            password: config.password,
-            database: database || '',
-            expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes
-            used: false
-        });
-
-        // Cleanup expired tokens
-        for (const [k, v] of phpMyAdminTokens.entries()) {
-            if (Date.now() > v.expiresAt) phpMyAdminTokens.delete(k);
-        }
-
-        // Determina o host que fez a requisição para montar a URL corretamente
-        const host = req.hostname || '127.0.0.1';
-        const url = `http://${host}:8080/phpmyadmin/autologin.php?token=${token}`;
-
-        res.json({ ok: true, url });
-    } catch (err) {
-        res.status(500).json({ ok: false, error: err.message });
-    }
-});
-
-router.post('/api/phpmyadmin/validate-token', (req, res) => {
-    const { token } = req.body;
-    if (!token) return res.status(400).json({ ok: false, error: 'TOKEN_MISSING' });
-
-    const data = phpMyAdminTokens.get(token);
-    
-    if (!data) return res.status(401).json({ ok: false, error: 'TOKEN_INVALID_OR_NOT_FOUND' });
-    if (data.firstUsedAt && Date.now() - data.firstUsedAt > 15000) {
-        return res.status(401).json({ ok: false, error: 'TOKEN_ALREADY_USED' });
-    }
-    if (Date.now() > data.expiresAt) return res.status(401).json({ ok: false, error: 'TOKEN_EXPIRED' });
-    
-    if (!data.firstUsedAt) {
-        data.firstUsedAt = Date.now();
-    }
-
-    res.json({
-        ok: true,
-        user: data.user,
-        password: data.password,
-        database: data.database,
-        host: '127.0.0.1',
-        port: 3306
-    });
-});
-
-router.get('/api/pma/sso/validate', (req, res) => {
-    const { token } = req.query;
-    if (!token) return res.status(400).json({ success: false, error: 'TOKEN_MISSING' });
-
-    const data = phpMyAdminTokens.get(token);
-    
-    if (!data) return res.status(401).json({ success: false, error: 'TOKEN_INVALID_OR_NOT_FOUND' });
-    if (data.firstUsedAt && Date.now() - data.firstUsedAt > 15000) {
-        return res.status(401).json({ success: false, error: 'TOKEN_ALREADY_USED' });
-    }
-    if (Date.now() > data.expiresAt) return res.status(401).json({ success: false, error: 'TOKEN_EXPIRED' });
-    
-    if (!data.firstUsedAt) {
-        data.firstUsedAt = Date.now();
-    }
-
-    res.json({
-        success: true,
-        user: data.user,
-        password: data.password,
-        database: data.database,
-        host: '127.0.0.1',
-        port: 3306
-    });
-});
-
-// Fallback robusto e retrocompatível para instâncias antigas de autologin.php em cache
-router.get('/api/database/verify-token', (req, res) => {
-    const { token } = req.query;
-    if (!token) return res.status(400).json({ success: false, error: 'TOKEN_MISSING' });
-
-    const data = phpMyAdminTokens.get(token);
-    
-    if (!data) return res.status(401).json({ success: false, error: 'TOKEN_INVALID_OR_NOT_FOUND' });
-    if (data.firstUsedAt && Date.now() - data.firstUsedAt > 15000) {
-        return res.status(401).json({ success: false, error: 'TOKEN_ALREADY_USED' });
-    }
-    if (Date.now() > data.expiresAt) return res.status(401).json({ success: false, error: 'TOKEN_EXPIRED' });
-    
-    if (!data.firstUsedAt) {
-        data.firstUsedAt = Date.now();
-    }
-
-    res.json({
-        success: true,
-        user: data.user,
-        password: data.password,
-        database: data.database,
-        host: '127.0.0.1'
-    });
-});
-
-
 
 
 // ─── MariaDB Smart Install & Recovery API ───────────────────────
@@ -1143,7 +1032,7 @@ router.post('/api/mariadb/repair-tables', async (req, res) => {
 
 // ─── NOVO SISTEMA ROBUSTO MARIADB CONTROLES & DIAGNÓSTICO ─────────
 
-const ssoTokens = new Map();
+
 
 // Helper para verificar se MariaDB está rodando com validação real
 async function isMariaDBRunning() {
@@ -1331,178 +1220,8 @@ router.post('/api/database/service', async (req, res) => {
     }
 });
 
-// Novo endpoint para gerar token phpMyAdmin SSO
-router.post('/api/phpmyadmin/token', async (req, res) => {
-    const { database } = req.body;
-    try {
-        // Se a base de dados foi informada, vamos verificar se ela realmente existe
-        if (database) {
-            const sanitizedDb = database.replace(/[^a-zA-Z0-9_]/g, '');
-            let exists = false;
-            try {
-                const conn = await getDbConn();
-                const [rows] = await conn.query('SHOW DATABASES');
-                await conn.end();
-                exists = rows.some(r => r.Database.toLowerCase() === sanitizedDb.toLowerCase());
-            } catch (e) {
-                console.error('Erro ao verificar existência do banco:', e.message);
-                // Se houver falha de rede/conexão momentânea com o mysql, permite continuar
-                exists = true;
-            }
-            
-            if (!exists) {
-                return res.status(404).json({ success: false, error: `Banco de dados '${sanitizedDb}' não encontrado.` });
-            }
-        }
 
-        const token = crypto.randomUUID();
-        
-        // Armazena com expiração estrita de 60 segundos
-        ssoTokens.set(token, {
-            database: database || '',
-            expiresAt: Date.now() + 60 * 1000,
-            used: false
-        });
 
-        // Limpa tokens velhos expirados
-        for (const [k, v] of ssoTokens.entries()) {
-            if (Date.now() > v.expiresAt) ssoTokens.delete(k);
-        }
-
-        const host = req.hostname || '127.0.0.1';
-        // phpMyAdmin vhost configurado no nginx na porta 8080
-        const url = `http://${host}:8080/phpmyadmin/autologin.php?token=${token}${database ? '&db=' + encodeURIComponent(database) : ''}`;
-
-        res.json({ success: true, token, url });
-    } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
-    }
-});
-
-// Novo endpoint para gerar token FileBrowser SSO (idêntico ao phpMyAdmin)
-router.post('/api/filebrowser/token', (req, res) => {
-    try {
-        const token = crypto.randomUUID();
-        
-        // Armazena com expiração estrita de 60 segundos
-        ssoTokens.set(token, {
-            database: '',
-            expiresAt: Date.now() + 60 * 1000,
-            used: false
-        });
-
-        // Limpa tokens velhos expirados
-        for (const [k, v] of ssoTokens.entries()) {
-            if (Date.now() > v.expiresAt) ssoTokens.delete(k);
-        }
-
-        const host = req.hostname || '127.0.0.1';
-        const activePort = req.socket.localPort || 8088;
-        const url = `http://${host}:${activePort}/__filebrowser?token=${token}`;
-
-        res.json({ success: true, token, url });
-    } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
-    }
-});
-
-// Novo endpoint para validar token phpMyAdmin SSO (usado pelo gateway php)
-router.get('/api/phpmyadmin/validate', (req, res) => {
-    const { token } = req.query;
-    if (!token) return res.status(400).json({ success: false, error: 'TOKEN_MISSING' });
-
-    const data = ssoTokens.get(token);
-    if (!data) return res.status(401).json({ success: false, error: 'TOKEN_INVALID_OR_NOT_FOUND' });
-    
-    if (Date.now() > data.expiresAt) {
-        ssoTokens.delete(token);
-        return res.status(401).json({ success: false, error: 'TOKEN_EXPIRED' });
-    }
-    
-    if (data.used) {
-        return res.status(401).json({ success: false, error: 'TOKEN_ALREADY_USED' });
-    }
-
-    // Marca como usado
-    data.used = true;
-
-    // Recupera dados salvos da conexão do banco
-    const dbConfig = getFullDbConfig();
-
-    res.json({
-        success: true,
-        user: dbConfig.user,
-        username: dbConfig.user,
-        password: dbConfig.password,
-        database: data.database || dbConfig.database || '',
-        host: '127.0.0.1',
-        port: dbConfig.port || 3306
-    });
-});
-
-// Mantém suporte para chamadas antigas roteando para o novo mapa ssoTokens
-router.post('/api/phpmyadmin/create-token', (req, res) => {
-    const { database } = req.body;
-    try {
-        const token = crypto.randomUUID();
-        ssoTokens.set(token, {
-            database: database || '',
-            expiresAt: Date.now() + 5 * 60 * 1000, // 5 min para legados
-            used: false
-        });
-        const host = req.hostname || '127.0.0.1';
-        const url = `http://${host}:8080/phpmyadmin/autologin.php?token=${token}`;
-        res.json({ ok: true, url });
-    } catch(e) {
-        res.status(500).json({ ok: false, error: e.message });
-    }
-});
-
-router.post('/api/phpmyadmin/validate-token', (req, res) => {
-    const { token } = req.body;
-    const data = ssoTokens.get(token);
-    if (!data) return res.status(401).json({ ok: false, error: 'TOKEN_INVALID' });
-    const dbConfig = getFullDbConfig();
-    res.json({
-        ok: true,
-        user: dbConfig.user,
-        password: dbConfig.password,
-        database: data.database || '',
-        host: '127.0.0.1',
-        port: 3306
-    });
-});
-
-router.get('/api/pma/sso/validate', (req, res) => {
-    const { token } = req.query;
-    const data = ssoTokens.get(token);
-    if (!data) return res.status(401).json({ success: false, error: 'TOKEN_INVALID' });
-    const dbConfig = getFullDbConfig();
-    res.json({
-        success: true,
-        user: dbConfig.user,
-        password: dbConfig.password,
-        database: data.database || '',
-        host: '127.0.0.1',
-        port: 3306
-    });
-});
-
-router.get('/api/database/verify-token', (req, res) => {
-    const { token } = req.query;
-    const data = ssoTokens.get(token);
-    if (!data) return res.status(401).json({ success: false, error: 'TOKEN_INVALID' });
-    const dbConfig = getFullDbConfig();
-    res.json({
-        success: true,
-        user: dbConfig.user,
-        password: dbConfig.password,
-        database: data.database || '',
-        host: '127.0.0.1'
-    });
-});
-
-// Helper para extrair portas configuradas nos virtual hosts do Nginx
 function getConfiguredNginxPorts(prefix) {
     const isTermux = systemConfig.is_termux;
     const confDirs = isTermux 
@@ -1661,16 +1380,8 @@ router.get('/api/mariadb/diagnose', async (req, res) => {
             : '/etc/nginx/conf.d/phpmyadmin.conf';
         const pmaVhostExists = isTermux ? fs.existsSync(pmaVhostFile) : true;
         
-        // 6. Teste de SSO local
-        const testToken = crypto.randomUUID();
-        ssoTokens.set(testToken, { database: '', expiresAt: Date.now() + 10000, used: false });
-        let tokenValidationOk = false;
-        try {
-            const activePort = req.socket.localPort || 8088;
-            const resp = await axios.get(`http://127.0.0.1:${activePort}/api/phpmyadmin/validate?token=${testToken}`, { timeout: 1500 });
-            tokenValidationOk = resp.data && resp.data.success === true;
-        } catch(e) {}
-        ssoTokens.delete(testToken);
+                // 6. Teste de SSO local (Desativado - Transicionado para Cookie Auth)
+        let tokenValidationOk = true;
  
         // 7. Diagnóstico do FileBrowser (Removido, agora nativo)
         const fbBinExists = false;

@@ -786,34 +786,15 @@ async function handleCreateDatabase(e) {
 }
 
 async function actionPhpMyAdmin() {
-    logToDbConsole('open_phpmyadmin --db=' + currentDbManager, `Iniciando redirecionamento seguro phpMyAdmin via token SSO temporário...`);
-    try {
-        const data = await safeFetch(`${API_BASE}/phpmyadmin/token`, 'POST', { database: currentDbManager });
-        if (data && data.success && data.url) {
-            logToDbConsole('open_phpmyadmin --db=' + currentDbManager, `✓ Token gerado com sucesso!\n✓ URL do phpMyAdmin: ${data.url}\nAbrindo em nova aba do navegador...`);
-            window.open(data.url, '_blank');
-        } else {
-            logToDbConsole('open_phpmyadmin --db=' + currentDbManager, `❌ Erro: ${data?.error || 'Falha ao gerar o token SSO.'}`, true);
-        }
-    } catch (e) {
-        logToDbConsole('open_phpmyadmin --db=' + currentDbManager, `❌ Erro de rede: ${e.message}`, true);
-    }
+    logToDbConsole('open_phpmyadmin --db=' + currentDbManager, `Redirecionando para o phpMyAdmin (Cookie Auth)...`);
+    const url = `/phpmyadmin/index.php${currentDbManager ? '?db=' + encodeURIComponent(currentDbManager) : ''}`;
+    window.open(url, '_blank');
 }
 
 async function actionShowTables() {
     logToDbConsole('open_phpmyadmin_tables --db=' + currentDbManager, `Redirecionando para estrutura de tabelas no phpMyAdmin...`);
-    try {
-        const data = await safeFetch(`${API_BASE}/phpmyadmin/token`, 'POST', { database: currentDbManager });
-        if (data && data.success && data.url) {
-            const tablesUrl = data.url + `&target=${encodeURIComponent('tbl_structure.php')}`;
-            logToDbConsole('open_phpmyadmin_tables --db=' + currentDbManager, `✓ Token gerado com sucesso!\n✓ Abrindo painel de tabelas...\nURL: ${tablesUrl}`);
-            window.open(tablesUrl, '_blank');
-        } else {
-            logToDbConsole('open_phpmyadmin_tables --db=' + currentDbManager, `❌ Erro: ${data?.error || 'Falha ao redirecionar para tabelas.'}`, true);
-        }
-    } catch (e) {
-        logToDbConsole('open_phpmyadmin_tables --db=' + currentDbManager, `❌ Erro de rede: ${e.message}`, true);
-    }
+    const tablesUrl = `/phpmyadmin/index.php?db=${encodeURIComponent(currentDbManager)}&target=${encodeURIComponent('tbl_structure.php')}`;
+    window.open(tablesUrl, '_blank');
 }
 
 async function actionBackup() {
@@ -1197,20 +1178,18 @@ async function saveDbSetup() {
 //  PHPMYADMIN SSO
 // ============================================================
 async function openPhpMyAdmin(dbName = null, targetPage = null) {
-    try {
-        const data = await safeFetch(`${API_BASE}/phpmyadmin/token`, 'POST', { database: dbName });
-        if (data && data.success && data.url) {
-            let finalUrl = data.url;
-            if (targetPage) {
-                finalUrl += `&target=${encodeURIComponent(targetPage)}`;
-            }
-            window.open(finalUrl, '_blank');
-        } else {
-            alert(`Falha ao gerar o token de acesso SSO: ${data?.error || 'Erro desconhecido.'}`);
-        }
-    } catch (e) {
-        alert(`Erro de rede ao conectar com o painel: ${e.message}`);
+    let url = '/phpmyadmin/index.php';
+    const params = [];
+    if (dbName) {
+        params.push(`db=${encodeURIComponent(dbName)}`);
     }
+    if (targetPage) {
+        params.push(`target=${encodeURIComponent(targetPage)}`);
+    }
+    if (params.length > 0) {
+        url += '?' + params.join('&');
+    }
+    window.open(url, '_blank');
 }
 
 // ============================================================
@@ -1352,11 +1331,11 @@ async function checkMariaDBDiagnostics() {
 
                     <div style="background:rgba(255,255,255,0.02); padding:14px; border-radius:6px; border:1px solid rgba(255,255,255,0.05);">
                         <h4 style="margin-top:0; margin-bottom:10px; font-size:0.875rem; display:flex; align-items:center; gap:6px; color:var(--primary);">
-                            <i data-lucide="shield-check" style="width:14px;height:14px;"></i> Conectividade HTTP & SSO
+                            <i data-lucide="shield-check" style="width:14px;height:14px;"></i> Conectividade HTTP & Auth
                         </h4>
                         <div style="font-size:0.82rem; display:flex; flex-direction:column; gap:6px;">
                             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                                <span>Loop Validador SSO:</span> ${badge(d.sso.tokenValidationOk)}
+                                <span>Método de Login:</span> <span class="badge badge-ok" style="background:#10b981; color:#fff; font-size:0.75rem; font-weight:600; padding:2px 6px; border-radius:4px;">Cookie Auth (Direto)</span>
                             </div>
                             <div style="display:flex; flex-direction:column; gap:4px; margin-top:2px;">
                                 <span style="font-weight:600;">Sites Respondendo (HTTP):</span>
