@@ -91,6 +91,8 @@ ensure_dir() {
         mkdir -p "$dir"
         log_ok "Criado: $dir"
     fi
+    chmod 777 "$dir" 2>/dev/null || true
+    chown $(whoami) "$dir" 2>/dev/null || true
 }
 
 ensure_dir "$NGINX_CONF_DIR"       "nginx conf"
@@ -201,6 +203,31 @@ if command -v php > /dev/null 2>&1; then
     done
 else
     log_err "PHP não encontrado no PATH"
+fi
+
+# Garante que PHP-FPM escute via TCP 127.0.0.1:9000 para estabilidade
+local fpm_conf=""
+for f in "$PREFIX/etc/php-fpm.d/www.conf" "$PREFIX/etc/php-fpm.conf"; do
+    if [ -f "$f" ]; then
+        fpm_conf="$f"
+        break
+    fi
+done
+if [ -n "$fpm_conf" ]; then
+    if grep -q "listen =.*\.sock" "$fpm_conf" 2>/dev/null || ! grep -q "listen = 127.0.0.1:9000" "$fpm_conf" 2>/dev/null; then
+        log_fix "Corrigindo PHP-FPM para escutar na porta TCP 127.0.0.1:9000..."
+        sed -i 's|^listen =.*|listen = 127.0.0.1:9000|' "$fpm_conf" 2>/dev/null || true
+    fi
+fi
+
+# Garante session.save_path no php.ini
+mkdir -p "$PREFIX/tmp"
+chmod 777 "$PREFIX/tmp" 2>/dev/null || true
+if [ -f "$PREFIX/etc/php.ini" ]; then
+    if ! grep -q "^session.save_path =.*$PREFIX/tmp" "$PREFIX/etc/php.ini" 2>/dev/null; then
+        log_fix "Configurando session.save_path no php.ini para diretório interno do Termux..."
+        sed -i 's|^;*session.save_path =.*|session.save_path = "'"$PREFIX/tmp"'"|' "$PREFIX/etc/php.ini" 2>/dev/null || true
+    fi
 fi
 
 # Verifica PHP-FPM
@@ -348,19 +375,9 @@ fi
 log_sep
 log_info "Verificando configuração phpMyAdmin no NGINX..."
 
-# Detecta o socket PHP-FPM correto
-DETECTED_SOCK=""
-for try_sock in \
-    "$PREFIX/var/run/php-fpm.sock" \
-    "$PREFIX/tmp/php-fpm.sock" \
-    "/tmp/php-fpm.sock"; do
-    if [ -S "$try_sock" ]; then
-        DETECTED_SOCK="$try_sock"
-        break
-    fi
-done
-[ -z "$DETECTED_SOCK" ] && DETECTED_SOCK="$PREFIX/var/run/php-fpm.sock"
-log_info "Socket PHP-FPM a usar: $DETECTED_SOCK"
+# Termux/Android: Força comunicação TCP 127.0.0.1:9000 para evitar instabilidade/falhas de Sockets Unix
+DETECTED_SOCK="127.0.0.1:9000"
+log_info "Comunicação PHP-FPM forçada via TCP: $DETECTED_SOCK"
 
 # Verifica se o diretório do phpMyAdmin existe
 if [ -d "$PMA_DIR" ]; then
@@ -395,10 +412,7 @@ else
 fi
 
 if [ "$REWRITE_PMA" = true ]; then
-    FASTCGI_PASS="unix:${DETECTED_SOCK}"
-    if [ ! -S "$DETECTED_SOCK" ]; then
-        FASTCGI_PASS="127.0.0.1:9000"
-    fi
+    FASTCGI_PASS="127.0.0.1:9000"
     FASTCGI_INCLUDE=""
     for try_include in \
         "$PREFIX/etc/nginx/fastcgi_params" \
@@ -483,21 +497,38 @@ PMA_CONFIG_SAMPLE="$PMA_DIR/config.sample.inc.php"
 
 if [ -f "$PMA_CONFIG" ]; then
     log_ok "config.inc.php existe"
-    # Verifica se tem blowfish_secret definido
-    if grep -q "blowfish_secret" "$PMA_CONFIG" 2>/dev/null; then
-        SECRET=$(grep "blowfish_secret" "$PMA_CONFIG" | sed "s/.*'\(.*\)'.*/\1/" | head -1)
-        if [ ${#SECRET} -ge 32 ]; then
-            log_ok "blowfish_secret configurado (${#SECRET} chars)"
-        else
-            log_warn "blowfish_secret muito curto (${#SECRET} chars, mínimo 32)"
-            log_fix "Atualizando blowfish_secret..."
-            NEW_SECRET=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 48)
-            sed -i "s/\(blowfish_secret.*'\).*\('.*\)/\1${NEW_SECRET}\2/" "$PMA_CONFIG"
-            log_ok "blowfish_secret atualizado"
-        fi
+    # Garante que criamos o test.php para diagnóstico mínimo obrigatório
+    echo "<?php phpinfo(); ?>" > "$PMA_DIR/test.php"
+    chmod 644 "$PMA_DIR/test.php" 2>/dev/null || true
+    chown $(whoami) "$PMA_DIR/test.php" 2>/dev/null || true
+
+    # Remove SSO e força Cookie Auth com 127.0.0.1 TCP/IP para evitar loops
+    sed -i "/\['auth_type'\]/d" "$PMA_CONFIG" 2>/dev/null || true
+    sed -i "/\['SignonSession'\]/d" "$PMA_CONFIG" 2>/dev/null || true
+    sed -i "/\['SignonURL'\]/d" "$PMA_CONFIG" 2>/dev/null || true
+    sed -i "/\['LogoutURL'\]/d" "$PMA_CONFIG" 2>/dev/null || true
+    sed -i "/\['host'\]/d" "$PMA_CONFIG" 2>/dev/null || true
+    sed -i "/\['port'\]/d" "$PMA_CONFIG" 2>/dev/null || true
+
+    # Adiciona as regras de host TCP 127.0.0.1 e Cookie Auth
+    if grep -q "\['Servers'\]" "$PMA_CONFIG"; then
+        sed -i "/\['Servers'\]/a \
+\$cfg['Servers'][\$i]['host'] = '127.0.0.1';\n\
+\$cfg['Servers'][\$i]['port'] = '3306';\n\
+\$cfg['Servers'][\$i]['auth_type'] = 'cookie';\n\
+\$cfg['Servers'][\$i]['AllowNoPassword'] = true;\n\
+" "$PMA_CONFIG"
     else
-        log_warn "blowfish_secret não encontrado no config"
+        cat >> "$PMA_CONFIG" <<'PHP_CONFIG'
+
+$i = $i ?? 1;
+$cfg['Servers'][$i]['host'] = '127.0.0.1';
+$cfg['Servers'][$i]['port'] = '3306';
+$cfg['Servers'][$i]['auth_type'] = 'cookie';
+$cfg['Servers'][$i]['AllowNoPassword'] = true;
+PHP_CONFIG
     fi
+    log_ok "config.inc.php configurado com Cookie Auth e host=127.0.0.1 (TCP/IP)"
 else
     log_err "config.inc.php não encontrado"
     if [ -f "$PMA_CONFIG_SAMPLE" ]; then
@@ -508,9 +539,10 @@ else
         NEW_SECRET=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 48)
         sed -i "s/\(blowfish_secret.*'\).*\('\)/\1${NEW_SECRET}\2/" "$PMA_CONFIG"
 
-        # Configura host do MariaDB
-        sed -i "s/\['host'\] = .*/['host'] = 'localhost';/" "$PMA_CONFIG" 2>/dev/null
-        log_ok "config.inc.php criado com blowfish_secret seguro"
+        # Configura host e Cookie Auth TCP do MariaDB
+        sed -i "s/\['host'\] = .*/['host'] = '127.0.0.1';/" "$PMA_CONFIG" 2>/dev/null
+        sed -i "/\['host'\]/a \$cfg['Servers'][\$i]['auth_type'] = 'cookie';" "$PMA_CONFIG" 2>/dev/null
+        log_ok "config.inc.php criado com Cookie Auth (TCP/IP 127.0.0.1)"
     else
         log_err "config.sample.inc.php também não encontrado — reinstale o phpMyAdmin"
     fi

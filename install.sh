@@ -570,9 +570,9 @@ function install_panel() {
     if [ "$IS_TERMUX" = true ]; then
         local current_user
         current_user=$(whoami)
-        mkdir -p "$ENV_PREFIX/var/run" "$ENV_PREFIX/var/log/nginx" "$ENV_PREFIX/var/lib/mysql" "$ENV_PREFIX/tmp"
-        chmod -R 777 "$ENV_PREFIX/var/run" "$ENV_PREFIX/var/log/nginx" "$ENV_PREFIX/var/lib/mysql" "$ENV_PREFIX/tmp" 2>/dev/null || true
-        chown -R "$current_user" "$ENV_PREFIX/var/run" "$ENV_PREFIX/var/log/nginx" "$ENV_PREFIX/var/lib/mysql" "$ENV_PREFIX/tmp" 2>/dev/null || true
+        mkdir -p "$ENV_PREFIX/var/run" "$ENV_PREFIX/var/log/nginx" "$ENV_PREFIX/var/lib/mysql" "$ENV_PREFIX/tmp" "$ENV_PREFIX/etc/nginx" "$ENV_PREFIX/etc/nginx/conf.d"
+        chmod -R 777 "$ENV_PREFIX/var/run" "$ENV_PREFIX/var/log/nginx" "$ENV_PREFIX/var/lib/mysql" "$ENV_PREFIX/tmp" "$ENV_PREFIX/etc/nginx" "$ENV_PREFIX/etc/nginx/conf.d" 2>/dev/null || true
+        chown -R "$current_user" "$ENV_PREFIX/var/run" "$ENV_PREFIX/var/log/nginx" "$ENV_PREFIX/var/lib/mysql" "$ENV_PREFIX/tmp" "$ENV_PREFIX/etc/nginx" "$ENV_PREFIX/etc/nginx/conf.d" 2>/dev/null || true
     fi
 
     # ─── Node.js deps ────────────────────────────────────────────
@@ -599,9 +599,9 @@ function update_panel() {
     if [ "$IS_TERMUX" = true ]; then
         local current_user
         current_user=$(whoami)
-        mkdir -p "$ENV_PREFIX/var/run" "$ENV_PREFIX/var/log/nginx" "$ENV_PREFIX/var/lib/mysql" "$ENV_PREFIX/tmp"
-        chmod -R 777 "$ENV_PREFIX/var/run" "$ENV_PREFIX/var/log/nginx" "$ENV_PREFIX/var/lib/mysql" "$ENV_PREFIX/tmp" 2>/dev/null || true
-        chown -R "$current_user" "$ENV_PREFIX/var/run" "$ENV_PREFIX/var/log/nginx" "$ENV_PREFIX/var/lib/mysql" "$ENV_PREFIX/tmp" 2>/dev/null || true
+        mkdir -p "$ENV_PREFIX/var/run" "$ENV_PREFIX/var/log/nginx" "$ENV_PREFIX/var/lib/mysql" "$ENV_PREFIX/tmp" "$ENV_PREFIX/etc/nginx" "$ENV_PREFIX/etc/nginx/conf.d"
+        chmod -R 777 "$ENV_PREFIX/var/run" "$ENV_PREFIX/var/log/nginx" "$ENV_PREFIX/var/lib/mysql" "$ENV_PREFIX/tmp" "$ENV_PREFIX/etc/nginx" "$ENV_PREFIX/etc/nginx/conf.d" 2>/dev/null || true
+        chown -R "$current_user" "$ENV_PREFIX/var/run" "$ENV_PREFIX/var/log/nginx" "$ENV_PREFIX/var/lib/mysql" "$ENV_PREFIX/tmp" "$ENV_PREFIX/etc/nginx" "$ENV_PREFIX/etc/nginx/conf.d" 2>/dev/null || true
     fi
 
     log "Atualizando dependências Node..."

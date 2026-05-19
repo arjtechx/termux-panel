@@ -169,9 +169,9 @@ fi
 
 # Garante permissões corretas para o usuário local no Termux
 current_user=$(whoami)
-mkdir -p "$PREFIX/var/run" "$PREFIX/var/log/nginx" "$PREFIX/var/lib/mysql" "$PREFIX/tmp"
-chmod -R 777 "$PREFIX/var/run" "$PREFIX/var/log/nginx" "$PREFIX/var/lib/mysql" "$PREFIX/tmp" 2>/dev/null || true
-chown -R "$current_user" "$PREFIX/var/run" "$PREFIX/var/log/nginx" "$PREFIX/var/lib/mysql" "$PREFIX/tmp" 2>/dev/null || true
+mkdir -p "$PREFIX/var/run" "$PREFIX/var/log/nginx" "$PREFIX/var/lib/mysql" "$PREFIX/tmp" "$PREFIX/etc/nginx" "$PREFIX/etc/nginx/conf.d"
+chmod -R 777 "$PREFIX/var/run" "$PREFIX/var/log/nginx" "$PREFIX/var/lib/mysql" "$PREFIX/tmp" "$PREFIX/etc/nginx" "$PREFIX/etc/nginx/conf.d" 2>/dev/null || true
+chown -R "$current_user" "$PREFIX/var/run" "$PREFIX/var/log/nginx" "$PREFIX/var/lib/mysql" "$PREFIX/tmp" "$PREFIX/etc/nginx" "$PREFIX/etc/nginx/conf.d" 2>/dev/null || true
 # Remove arquivo PID órfão/travado que pode ter sido criado por root/su
 rm -f "$PREFIX/var/run/nginx.pid" 2>/dev/null || true
 

@@ -32,17 +32,7 @@ find_phpmyadmin_dir() {
 }
 
 detect_fastcgi_pass() {
-    local sock
-    for sock in \
-        "$PREFIX/var/run/php-fpm.sock" \
-        "$PREFIX/tmp/php-fpm.sock" \
-        "/tmp/php-fpm.sock"; do
-        if [ -S "$sock" ]; then
-            printf 'unix:%s\n' "$sock"
-            return 0
-        fi
-    done
-
+    # Termux/Android: Força comunicação TCP 127.0.0.1:9000 para evitar instabilidade/falhas de Sockets Unix
     printf '127.0.0.1:9000\n'
 }
 
@@ -93,16 +83,6 @@ configure_phpmyadmin_sso() {
     echo "Configurando phpMyAdmin em: $pma_dir"
     chown -R "$CURRENT_USER" "$pma_dir" 2>/dev/null || true
 
-    if [ ! -f "$SCRIPT_DIR/autologin.php" ]; then
-        echo "  [-] autologin.php nao encontrado em $SCRIPT_DIR"
-        return 1
-    fi
-
-    cp "$SCRIPT_DIR/autologin.php" "$pma_dir/autologin.php"
-    chmod 644 "$pma_dir/autologin.php"
-    chown "$CURRENT_USER" "$pma_dir/autologin.php" 2>/dev/null || true
-    echo "  [+] autologin.php copiado"
-
     if [ ! -f "$pma_config" ] && [ -f "$sample_config" ]; then
         cp "$sample_config" "$pma_config"
     fi
@@ -115,32 +95,41 @@ configure_phpmyadmin_sso() {
     chmod 644 "$pma_config"
     chown "$CURRENT_USER" "$pma_config" 2>/dev/null || true
 
-    sed -i "/\['auth_type'\] = 'signon'/d" "$pma_config"
-    sed -i "/\['SignonSession'\]/d" "$pma_config"
-    sed -i "/\['SignonURL'\]/d" "$pma_config"
-    sed -i "/\['LogoutURL'\]/d" "$pma_config"
-    sed -i "s/\['auth_type'\] = 'cookie'/\['auth_type'\] = 'signon'/g" "$pma_config"
+    # Garante que criamos o test.php para diagnóstico mínimo obrigatório
+    echo "<?php phpinfo(); ?>" > "$pma_dir/test.php"
+    chmod 644 "$pma_dir/test.php"
+    chown "$CURRENT_USER" "$pma_dir/test.php" 2>/dev/null || true
+    echo "  [+] test.php de diagnóstico criado"
 
-    if grep -q "\['host'\]" "$pma_config"; then
-        sed -i "/\['host'\]/a \
-\$cfg['Servers'][\$i]['auth_type'] = 'signon';\n\
-\$cfg['Servers'][\$i]['SignonSession'] = 'PMA_single_signon';\n\
-\$cfg['Servers'][\$i]['SignonURL'] = '/phpmyadmin/autologin.php';\n\
-\$cfg['Servers'][\$i]['LogoutURL'] = '/phpmyadmin/';\n\
+    # Remove configurações SSO antigas ou conflitantes
+    sed -i "/\['auth_type'\]/d" "$pma_config" 2>/dev/null || true
+    sed -i "/\['SignonSession'\]/d" "$pma_config" 2>/dev/null || true
+    sed -i "/\['SignonURL'\]/d" "$pma_config" 2>/dev/null || true
+    sed -i "/\['LogoutURL'\]/d" "$pma_config" 2>/dev/null || true
+    sed -i "/\['host'\]/d" "$pma_config" 2>/dev/null || true
+    sed -i "/\['port'\]/d" "$pma_config" 2>/dev/null || true
+
+    # Insere configurações 100% estáveis usando TCP/IP 127.0.0.1 e Cookie Auth (evita loops)
+    if grep -q "\['Servers'\]" "$pma_config"; then
+        # Adiciona na primeira Server config
+        sed -i "/\['Servers'\]/a \
+\$cfg['Servers'][\$i]['host'] = '127.0.0.1';\n\
+\$cfg['Servers'][\$i]['port'] = '3306';\n\
+\$cfg['Servers'][\$i]['auth_type'] = 'cookie';\n\
+\$cfg['Servers'][\$i]['AllowNoPassword'] = true;\n\
 " "$pma_config"
     else
         cat >> "$pma_config" <<'PHP_CONFIG'
 
 $i = $i ?? 1;
 $cfg['Servers'][$i]['host'] = '127.0.0.1';
-$cfg['Servers'][$i]['auth_type'] = 'signon';
-$cfg['Servers'][$i]['SignonSession'] = 'PMA_single_signon';
-$cfg['Servers'][$i]['SignonURL'] = '/phpmyadmin/autologin.php';
-$cfg['Servers'][$i]['LogoutURL'] = '/phpmyadmin/';
+$cfg['Servers'][$i]['port'] = '3306';
+$cfg['Servers'][$i]['auth_type'] = 'cookie';
+$cfg['Servers'][$i]['AllowNoPassword'] = true;
 PHP_CONFIG
     fi
 
-    echo "  [+] config.inc.php ajustado para SSO"
+    echo "  [+] config.inc.php ajustado para Cookie Auth (TCP/IP 127.0.0.1)"
 }
 
 configure_nginx_vhost() {
