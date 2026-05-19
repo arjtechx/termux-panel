@@ -12,11 +12,14 @@ echo "  TUNNELS_DIR=$TUNNELS_DIR"
 echo "[cloudflared] Parando processos antigos..."
 pkill -f 'cloudflared.*tunnel' 2>/dev/null || true
 
-echo "[cloudflared] Removendo cert.pem..."
-rm -fv "$CLOUDFLARED_HOME/cert.pem" 2>/dev/null || true
-
-echo "[cloudflared] Removendo credenciais .json antigas..."
-find "$CLOUDFLARED_HOME" -maxdepth 1 -type f -name '*.json' -print -delete 2>/dev/null || true
+echo "[cloudflared] Removendo TODA a pasta ~/.cloudflared..."
+if [ -n "$CLOUDFLARED_HOME" ] && [ "$CLOUDFLARED_HOME" != "/" ]; then
+    rm -rfv "$CLOUDFLARED_HOME" 2>/dev/null || true
+    mkdir -p "$CLOUDFLARED_HOME" 2>/dev/null || true
+else
+    echo "[cloudflared] Caminho invalido para CLOUDFLARED_HOME. Abortando limpeza da pasta."
+    exit 1
+fi
 
 if [ -n "$TUNNELS_DIR" ]; then
     echo "[cloudflared] Removendo tuneis cadastrados no painel..."
@@ -26,6 +29,7 @@ fi
 echo "[cloudflared] Estado final:"
 if [ -f "$CLOUDFLARED_HOME/cert.pem" ]; then
     echo "  cert.pem ainda existe"
+    exit 1
 else
     echo "  cert.pem removido"
 fi

@@ -113,6 +113,20 @@ function isTermux() {
     return !!(systemConfig.is_termux || (process.env.PREFIX || '').includes('com.termux'));
 }
 
+async function validateExistingLogin() {
+    if (!fs.existsSync(certPath())) {
+        return { valid: false, message: 'cert.pem ausente' };
+    }
+
+    const result = await runCommand('cloudflared', ['tunnel', 'list']);
+    const output = `${result.stdout}\n${result.stderr}`.trim();
+    return {
+        valid: result.code === 0,
+        code: result.code,
+        message: output || (result.code === 0 ? 'Login valido' : 'Login invalido')
+    };
+}
+
 function openLoginUrl(url) {
     if (!url) return;
     let command = 'xdg-open';
@@ -427,15 +441,21 @@ async function startLogin(io, options = {}) {
     }
 
     if (fs.existsSync(certPath())) {
-        const message = 'Login Cloudflare ja esta autenticado: cert.pem encontrado.';
-        emitLoginText(io, `${message}\n`);
-        return emitLoginStatus(io, {
-            state: 'success',
-            message,
-            authUrl: '',
-            running: false,
-            pid: null
-        });
+        const existingLogin = await validateExistingLogin();
+        if (!existingLogin.valid) {
+            emitLoginText(io, `cert.pem existente, mas invalido para cloudflared tunnel list. Removendo e iniciando novo login.\n${existingLogin.message}\n`);
+            try { fs.unlinkSync(certPath()); } catch (_) {}
+        } else {
+            const message = 'Login Cloudflare ja esta autenticado: cert.pem encontrado e validado.';
+            emitLoginText(io, `${message}\n`);
+            return emitLoginStatus(io, {
+                state: 'success',
+                message,
+                authUrl: '',
+                running: false,
+                pid: null
+            });
+        }
     }
 
     emitLoginStatus(io, {
@@ -615,5 +635,6 @@ module.exports = {
     runCommand,
     buildConfig,
     resetManagerViaTerminal,
-    resetAndStartLogin
+    resetAndStartLogin,
+    validateExistingLogin
 };

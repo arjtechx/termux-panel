@@ -121,6 +121,10 @@ async function runDiagnostics() {
     const homeCloudflaredDir = cloudflaredHome();
     const cert = certPath();
     const certExists = fs.existsSync(cert);
+    const loginCheck = certExists
+        ? await runCommand('cloudflared', ['tunnel', 'list'], 8000)
+        : { code: -1, stdout: '', stderr: 'cert.pem ausente' };
+    const loginValid = certExists && loginCheck.code === 0;
     const moduleWritable = checkWritableDir(TUNNELS_DIR);
     const homeWritable = checkWritableDir(homeCloudflaredDir);
     const loginLog = fs.existsSync(LOGIN_LOG) ? logs.getLoginLogs(80) : '';
@@ -143,6 +147,7 @@ async function runDiagnostics() {
     const issues = [];
     if (!installed) issues.push(`cloudflared não está instalado ou não está no PATH. ${installHint()}`);
     if (!certExists) issues.push('Login Cloudflare não encontrado: cert.pem ausente. Clique em Login Cloudflare.');
+    if (certExists && !loginValid) issues.push('cert.pem existe, mas nao foi validado pelo cloudflared. Use Limpar e novo login.');
     if (!moduleWritable) issues.push('Pasta de túneis do painel sem permissão de escrita.');
     if (!homeWritable) issues.push('Pasta ~/.cloudflared sem permissão de escrita.');
     if (IS_TERMUX && !termuxOpenUrl) issues.push('termux-open-url não encontrado. Instale/ative o Termux:API para abrir a URL de login automaticamente.');
@@ -170,7 +175,9 @@ async function runDiagnostics() {
         },
         checks: {
             installed,
-            loggedIn: certExists,
+            loggedIn: loginValid,
+            certExists,
+            loginValid,
             moduleWritable,
             cloudflaredHomeWritable: homeWritable,
             termuxOpenUrl,
