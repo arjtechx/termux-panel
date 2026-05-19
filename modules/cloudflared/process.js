@@ -1,157 +1,157 @@
+const { spawn, execSync } = require('child_process');
+const path = require('path');
 const fs = require('fs');
-const { spawn } = require('child_process');
-const {
-    configPath,
-    logPath,
-    metaPath,
-    pidPath,
-    readJson,
-    writeJson,
-    appendLog
-} = require('./utils');
 
-function readPid(id) {
+const PANEL_DIR = path.resolve(__dirname, '..', '..');
+const LOGS_DIR = path.join(PANEL_DIR, 'logs', 'cloudflared');
+const PIDS_FILE = path.join(LOGS_DIR, 'pids.json');
+
+// Ensure directories exist
+if (!fs.existsSync(LOGS_DIR)) fs.mkdirSync(LOGS_DIR, { recursive: true });
+if (!fs.existsSync(PIDS_FILE)) fs.writeFileSync(PIDS_FILE, JSON.stringify({}));
+
+function getPids() {
     try {
-        const file = pidPath(id);
-        if (!fs.existsSync(file)) return null;
-        const pid = Number.parseInt(fs.readFileSync(file, 'utf8').trim(), 10);
-        return Number.isInteger(pid) && pid > 0 ? pid : null;
-    } catch (_) {
-        return null;
+        return JSON.parse(fs.readFileSync(PIDS_FILE, 'utf8'));
+    } catch {
+        return {};
     }
 }
 
-function removePid(id) {
-    try {
-        const file = pidPath(id);
-        if (fs.existsSync(file)) fs.unlinkSync(file);
-    } catch (_) {}
+function savePids(pids) {
+    fs.writeFileSync(PIDS_FILE, JSON.stringify(pids, null, 2));
 }
 
-function isPidAlive(pid) {
+/**
+ * Kill process gracefully or forcefully.
+ */
+function killProcess(pid) {
+    if (!pid) return false;
+    try {
+        process.kill(pid, 'SIGINT');
+        return true;
+    } catch (e) {
+        if (e.code === 'ESRCH') return true; // Already dead
+        try {
+            process.kill(pid, 'SIGKILL');
+            return true;
+        } catch (e2) {
+            return false;
+        }
+    }
+}
+
+/**
+ * Checks if a PID is actively running
+ */
+function isRunning(pid) {
     if (!pid) return false;
     try {
         process.kill(pid, 0);
         return true;
-    } catch (_) {
+    } catch {
         return false;
     }
 }
 
-function updateMeta(id, patch) {
-    const meta = readJson(metaPath(id), {});
-    const next = { ...meta, ...patch, updatedAt: new Date().toISOString() };
-    writeJson(metaPath(id), next);
-    return next;
+/**
+ * Kill any lingering process for a specific tunnel ID
+ */
+function stopTunnelProcess(id) {
+    const pids = getPids();
+    if (pids[id] && isRunning(pids[id])) {
+        killProcess(pids[id]);
+    }
+    delete pids[id];
+    savePids(pids);
+    
+    // Safety check: force kill via shell if zombie in Termux
+    try {
+        execSync(`pkill -f "cloudflared tunnel run ${id}"`);
+    } catch {}
+    
+    return { success: true };
 }
 
-function getStatus(id) {
-    const meta = readJson(metaPath(id), null);
-    if (!meta) return { status: 'missing', pid: null, online: false };
-
-    const pid = readPid(id);
-    const online = isPidAlive(pid);
-    if (!online && pid) {
-        removePid(id);
+/**
+ * Kills all cloudflared processes on the device (Panic Button)
+ */
+function killAllZombies() {
+    try {
+        execSync('pkill -9 cloudflared');
+        fs.writeFileSync(PIDS_FILE, JSON.stringify({}));
+        return { success: true };
+    } catch {
+        return { success: false };
     }
-
-    let uptimeSeconds = 0;
-    if (online && meta.startedAt) {
-        uptimeSeconds = Math.max(0, Math.floor((Date.now() - new Date(meta.startedAt).getTime()) / 1000));
-    }
-
-    return {
-        status: online ? 'online' : 'offline',
-        online,
-        pid: online ? pid : null,
-        uptimeSeconds,
-        startedAt: online ? meta.startedAt : null,
-        lastError: meta.lastError || ''
-    };
 }
 
-function startTunnel(id) {
-    const meta = readJson(metaPath(id), null);
-    if (!meta) throw new Error('Túnel não encontrado.');
-
-    const current = getStatus(id);
-    if (current.online) {
-        return { success: true, alreadyRunning: true, ...current };
+/**
+ * Spawns a tunnel (either by token or by local config/UUID)
+ */
+function startTunnelProcess(id, options = {}) {
+    stopTunnelProcess(id); // Ensure no old process is running
+    
+    const { token, commandOpts = [] } = options;
+    const logFile = path.join(LOGS_DIR, `tunnel_${id}.log`);
+    
+    const outStream = fs.openSync(logFile, 'a');
+    
+    let args = [];
+    if (token) {
+        args = ['tunnel', '--no-autoupdate', 'run', '--token', token];
+    } else {
+        args = ['tunnel', '--no-autoupdate', 'run', ...commandOpts, id];
     }
 
-    const cfg = configPath(id);
-    if (!fs.existsSync(cfg)) {
-        throw new Error('config.yml não encontrado para este túnel.');
-    }
-
-    const logFile = logPath(id);
-    fs.closeSync(fs.openSync(logFile, 'a'));
-    appendLog(logFile, 'Iniciando cloudflared...');
-
-    const out = fs.createWriteStream(logFile, { flags: 'a' });
-    const child = spawn('cloudflared', ['tunnel', '--config', cfg, 'run', meta.uuid], {
+    const child = spawn('cloudflared', args, {
         detached: true,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        env: { ...process.env }
+        stdio: ['ignore', outStream, outStream],
+        env: { ...process.env, TUNNEL_ORIGIN_CERT: path.join(process.env.HOME || '/data/data/com.termux/files/home', '.cloudflared', 'cert.pem') }
     });
 
-    child.stdout.pipe(out);
-    child.stderr.pipe(out);
-    child.on('error', (err) => {
-        appendLog(logFile, `Falha ao iniciar: ${err.message}`);
-        updateMeta(id, { status: 'error', lastError: err.message });
-    });
-    child.unref();
+    child.unref(); // Allow Node to exit independently of this process
 
-    fs.writeFileSync(pidPath(id), String(child.pid));
-    updateMeta(id, {
-        status: 'online',
-        pid: child.pid,
-        startedAt: new Date().toISOString(),
-        lastError: ''
-    });
-
-    return { success: true, status: 'online', pid: child.pid };
-}
-
-function stopTunnel(id) {
-    const pid = readPid(id);
-    const logFile = logPath(id);
-
-    if (pid && isPidAlive(pid)) {
-        appendLog(logFile, `Parando PID ${pid}...`);
-        try {
-            process.kill(pid, 'SIGTERM');
-        } catch (_) {}
-
-        const deadline = Date.now() + 2500;
-        while (Date.now() < deadline && isPidAlive(pid)) {}
-
-        if (isPidAlive(pid)) {
-            try {
-                process.kill(pid, 'SIGKILL');
-                appendLog(logFile, `PID ${pid} finalizado com SIGKILL.`);
-            } catch (_) {}
-        }
+    if (child.pid) {
+        const pids = getPids();
+        pids[id] = child.pid;
+        savePids(pids);
+        return { success: true, pid: child.pid, logFile };
+    } else {
+        return { success: false, error: 'Failed to spawn process' };
     }
-
-    removePid(id);
-    updateMeta(id, { status: 'offline', pid: null, stoppedAt: new Date().toISOString() });
-    return { success: true, status: 'offline' };
 }
 
-function restartTunnel(id) {
-    stopTunnel(id);
-    return startTunnel(id);
+/**
+ * Get active tunnel status
+ */
+function getTunnelStatus(id) {
+    const pids = getPids();
+    const pid = pids[id];
+    if (pid && isRunning(pid)) {
+        return { running: true, pid };
+    }
+    return { running: false };
+}
+
+/**
+ * Read tunnel logs
+ */
+function readLogs(id, lines = 100) {
+    const logFile = path.join(LOGS_DIR, `tunnel_${id}.log`);
+    if (!fs.existsSync(logFile)) return 'Nenhum log encontrado para este túnel.';
+    try {
+        const content = execSync(`tail -n ${lines} "${logFile}"`).toString();
+        return content || 'Logs vazios.';
+    } catch {
+        return 'Falha ao ler os logs.';
+    }
 }
 
 module.exports = {
-    readPid,
-    removePid,
-    isPidAlive,
-    getStatus,
-    startTunnel,
-    stopTunnel,
-    restartTunnel,
-    updateMeta
+    startTunnelProcess,
+    stopTunnelProcess,
+    killAllZombies,
+    getTunnelStatus,
+    readLogs
 };

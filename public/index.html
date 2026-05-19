@@ -1007,106 +1007,119 @@
                 <div class="page-header">
                     <div>
                         <h1>Cloudflared Manager</h1>
-                        <p style="color:var(--text-muted); font-size:0.875rem; margin-top:2px;">Controle de Cloudflare Tunnel integrado ao painel.</p>
+                        <p style="color:var(--text-muted); font-size:0.875rem; margin-top:2px;">Controle de Cloudflare Tunnel otimizado para Termux.</p>
                     </div>
                     <div class="toolbar-group">
-                        <button class="btn btn-warning btn-sm" onclick="checkCloudflaredSystem()">
-                            <i data-lucide="shield-alert"></i> Verificar erros
+                        <button class="btn btn-warning btn-sm" onclick="cfKillZombies()">
+                            <i data-lucide="skull"></i> Matar Zumbis
                         </button>
-                        <button class="btn btn-secondary btn-sm" id="cloudflaredLoginBtn" onclick="cloudflaredLogin()">
-                            <i data-lucide="key-round"></i> Login Cloudflare
+                        <button class="btn btn-secondary btn-sm" onclick="cfShowLoginModal()">
+                            <i data-lucide="key-round"></i> Login Clássico
                         </button>
-                        <button class="btn btn-warning btn-sm" id="cloudflaredFreshLoginBtn" onclick="resetCloudflaredAndLogin()" title="Executar limpeza no terminal, excluir cert.pem e iniciar nova autorização">
-                            <i data-lucide="rotate-ccw"></i> Limpar e novo login
-                        </button>
-                        <button class="btn btn-danger btn-sm" id="cloudflaredResetBtn" onclick="resetCloudflaredOnly()" title="Excluir cert.pem, apagar credenciais e remover túneis locais do painel">
-                            <i data-lucide="trash-2"></i> Remover Dados & Cert
-                        </button>
-                        <span id="cloudflaredAuthStatus" class="badge badge-danger">Nao autenticado</span>
-                        <button class="btn btn-primary btn-sm" onclick="newCloudflaredTunnel()">
+                        <button class="btn btn-primary btn-sm" onclick="cfShowCreateModal()">
                             <i data-lucide="plus"></i> Novo Tunel
                         </button>
-                        <button class="btn btn-secondary btn-sm" onclick="fetchCloudflaredTunnels()">
+                        <button class="btn btn-secondary btn-sm" onclick="cfFetchTunnels()">
                             <i data-lucide="refresh-cw"></i> Atualizar
                         </button>
                     </div>
                 </div>
 
-                <div class="stats-grid" style="margin-bottom:20px;">
-                    <div class="stat-card"><span class="card-label">Online</span><strong id="cf-stat-online">0</strong></div>
-                    <div class="stat-card"><span class="card-label">Offline</span><strong id="cf-stat-offline">0</strong></div>
-                    <div class="stat-card"><span class="card-label">Total</span><strong id="cf-stat-total">0</strong></div>
+                <!-- Tunnels Grid -->
+                <div class="hosting-grid" id="cfTunnelsGrid">
+                    <!-- Dynamic Tunnel Cards Rendered by JS -->
+                    <div style="color:var(--text-muted); padding:20px;">Carregando túneis...</div>
                 </div>
+            </div>
 
-                <div id="cloudflaredDiagnosticsCard" class="card hidden" style="margin-bottom:20px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:10px;">
-                        <h3 class="card-title" style="margin:0;">Diagnostico Cloudflared</h3>
-                        <span id="cloudflaredDiagnosticsStatus" class="badge badge-warning">Aguardando</span>
+            <!-- === MODAL: CRIAR TÚNEL CLOUDFLARED === -->
+            <div id="cfCreateModal" class="modal-overlay hidden">
+                <div class="modal-card">
+                    <div class="modal-header">
+                        <h2>🚀 Criar Novo Túnel</h2>
+                        <button class="btn-icon-ghost" type="button" onclick="cfCloseCreateModal()"><i data-lucide="x"></i></button>
                     </div>
-                    <div id="cloudflaredDiagnosticsBox" class="terminal-box" style="height:240px;">Clique em "Verificar erros".</div>
+                    <form onsubmit="cfCreateTunnel(event)">
+                        <div class="form-stack">
+                            <div>
+                                <label class="form-label">Tipo de Autenticação</label>
+                                <select id="cfAuthType" onchange="cfToggleAuthType()" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-lighter); color:var(--text-color);">
+                                    <option value="token">Zero Trust Token (Recomendado)</option>
+                                    <option value="classic">Modo Clássico (Exige Login Prévio)</option>
+                                </select>
+                                <p style="font-size:0.75rem; color:var(--text-muted); margin-top:4px;">
+                                    O modo Token é 100% nativo no Termux e ignora problemas com arquivos cert.pem.
+                                </p>
+                            </div>
+
+                            <div>
+                                <label class="form-label">Nome de Identificação (Visível só no Painel)</label>
+                                <input type="text" id="cfName" placeholder="ex: meutunel-app" required>
+                            </div>
+
+                            <!-- MODO TOKEN -->
+                            <div id="cfTokenGroup">
+                                <label class="form-label">Cloudflare Tunnel Token</label>
+                                <input type="text" id="cfToken" placeholder="eyJhIjoiY2I...">
+                            </div>
+
+                            <!-- MODO CLÁSSICO -->
+                            <div id="cfClassicGroup" class="hidden">
+                                <div style="display:flex; gap:10px;">
+                                    <div style="flex:1;">
+                                        <label class="form-label">Subdomínio Público</label>
+                                        <input type="text" id="cfDomain" placeholder="app.meusite.com">
+                                    </div>
+                                    <div style="flex:1;">
+                                        <label class="form-label">Porta Local Alvo</label>
+                                        <input type="text" id="cfLocalPort" placeholder="ex: 8080 ou http://localhost:8080">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="modal-actions" style="margin-top:20px; display:flex; justify-content:flex-end; gap:10px;">
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="cfCloseCreateModal()">Cancelar</button>
+                            <button type="submit" class="btn btn-success btn-sm">Criar Túnel</button>
+                        </div>
+                    </form>
                 </div>
+            </div>
 
-                <form id="cloudflaredCreateForm" class="card hidden" onsubmit="createCloudflaredTunnel(event)" style="margin-bottom:20px;">
-                    <h3 class="card-title" id="cloudflaredFormTitle">Criar Tunel</h3>
-                    <input type="hidden" id="cfEditId">
-                    <div class="form-row">
-                        <input type="text" id="cfName" placeholder="Nome" required>
-                        <input type="text" id="cfDomain" placeholder="dominio.com.br" required>
-                        <select id="cfType" required>
-                            <option value="HTTP">HTTP</option>
-                            <option value="HTTPS">HTTPS</option>
-                            <option value="TCP">TCP</option>
-                            <option value="SSH">SSH</option>
-                            <option value="RDP">RDP</option>
-                            <option value="FTP">FTP</option>
-                            <option value="SFTP">SFTP</option>
-                            <option value="MYSQL">MYSQL</option>
-                            <option value="POSTGRES">POSTGRES</option>
-                            <option value="CUSTOM">CUSTOM</option>
-                        </select>
-                        <input type="text" id="cfLocalHost" placeholder="Host local" value="127.0.0.1" required>
-                        <input type="number" id="cfLocalPort" placeholder="Porta local" min="1" max="65535" required>
-                        <input type="text" id="cfPath" placeholder="/path opcional">
+            <!-- === MODAL: LOGS DO CLOUDFLARED === -->
+            <div id="cfLogsModal" class="modal-overlay hidden">
+                <div class="modal-card modal-lg">
+                    <div class="modal-header">
+                        <h2 id="cfLogModalTitle">📜 Logs do Túnel</h2>
+                        <button class="btn-icon-ghost" type="button" onclick="cfCloseLogsModal()"><i data-lucide="x"></i></button>
                     </div>
-                    <label style="display:flex; align-items:center; gap:8px; margin-top:12px; font-size:0.85rem;">
-                        <input type="checkbox" id="cfAutoRestart" checked> Reiniciar automaticamente
-                    </label>
-                    <div class="form-actions">
-                        <button type="submit" class="btn btn-success btn-sm" id="cloudflaredSubmitBtn">
-                            <i data-lucide="save"></i> Criar
-                        </button>
-                        <button type="button" class="btn btn-secondary btn-sm" onclick="resetCloudflaredForm()">Cancelar</button>
+                    <div id="cfLogsBody" class="terminal-box" style="height:400px; font-family:var(--font-mono); margin-top:12px; white-space:pre-wrap; overflow-y:auto;">Carregando logs...</div>
+                    <div class="modal-actions" style="margin-top:20px; display:flex; justify-content:flex-end; gap:10px;">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="cfCloseLogsModal()">Fechar</button>
                     </div>
-                </form>
-
-                <div class="table-card" style="margin-bottom:20px;">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Nome</th>
-                                <th>Status</th>
-                                <th>URL Publica</th>
-                                <th>Servico Local</th>
-                                <th>Uptime</th>
-                                <th>PID</th>
-                                <th>Acoes</th>
-                            </tr>
-                        </thead>
-                        <tbody id="cloudflaredTunnelsBody">
-                            <tr><td colspan="7">Carregando...</td></tr>
-                        </tbody>
-                    </table>
                 </div>
+            </div>
 
-                <div class="two-col">
-                    <div class="card">
-                        <h3 class="card-title">Logs do Tunel</h3>
-                        <div id="cloudflaredSelectedTunnel" class="text-muted" style="font-size:0.8rem; margin-bottom:10px;">Selecione um tunel para acompanhar.</div>
-                        <div id="cloudflaredLogBox" class="terminal-box" style="height:320px;">Aguardando...</div>
+            <!-- === MODAL: LOGIN CLÁSSICO === -->
+            <div id="cfLoginModal" class="modal-overlay hidden">
+                <div class="modal-card">
+                    <div class="modal-header">
+                        <h2>🔑 Autenticação Clássica</h2>
+                        <button class="btn-icon-ghost" type="button" onclick="cfCloseLoginModal()"><i data-lucide="x"></i></button>
                     </div>
-                    <div class="card">
-                        <h3 class="card-title">Login Cloudflare <span id="cloudflaredAuthStatusInline" class="badge badge-danger">Nao autenticado</span></h3>
-                        <div id="cloudflaredLoginBox" class="terminal-box" style="height:320px;">Use "Login Cloudflare" para iniciar.</div>
+                    <div style="padding:10px 0;">
+                        <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px;">
+                            No Termux, o processo de login gera uma URL de autorização. Copie-a e abra no seu navegador para gerar o arquivo <code style="color:var(--warning)">cert.pem</code>.
+                        </p>
+                        <div id="cfLoginStatus" style="padding:10px; border-radius:6px; font-weight:600; text-align:center; margin-bottom:12px; background:var(--bg-secondary);">Aguardando...</div>
+                        
+                        <div style="display:flex; flex-direction:column; gap:8px;">
+                            <button class="btn btn-primary" onclick="cfGenerateLoginUrl()">Gerar URL de Autorização</button>
+                            <a id="cfLoginLink" href="#" target="_blank" class="btn btn-success hidden">👉 Abrir URL no Navegador</a>
+                        </div>
+                    </div>
+                    <div class="modal-actions" style="margin-top:20px; display:flex; justify-content:flex-end;">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="cfCloseLoginModal()">Fechar</button>
                     </div>
                 </div>
             </div>
@@ -1371,7 +1384,7 @@
 </div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.50"></script>
+<script src="filemanager.js?v=0.2.51"></script>
 <script src="app.js?v=4.0"></script>
 </body>
 </html>

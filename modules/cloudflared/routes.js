@@ -1,14 +1,11 @@
 const express = require('express');
 const manager = require('./manager');
 const processManager = require('./process');
-const logs = require('./logs');
-const diagnostics = require('./diagnostics');
-const { startWatchdog, runWatchdogOnce } = require('./monitor');
 
-module.exports = function createCloudflaredRoutes(io) {
+module.exports = function createCloudflaredRoutes() {
     const router = express.Router();
-    startWatchdog();
 
+    // Tunnel CRUD
     router.get('/tunnels', (req, res) => {
         try {
             res.json({ success: true, tunnels: manager.listTunnels() });
@@ -17,20 +14,9 @@ module.exports = function createCloudflaredRoutes(io) {
         }
     });
 
-    router.get('/tunnel/:id', (req, res, next) => {
-        if (['logs', 'diagnostics'].includes(req.params.id)) return next();
+    router.post('/tunnel/create', (req, res) => {
         try {
-            const tunnel = manager.getTunnel(req.params.id);
-            if (!tunnel) return res.status(404).json({ success: false, error: 'Túnel não encontrado.' });
-            res.json({ success: true, tunnel });
-        } catch (err) {
-            res.status(500).json({ success: false, error: err.message });
-        }
-    });
-
-    router.post('/tunnel/create', async (req, res) => {
-        try {
-            const tunnel = await manager.createTunnel(req.body || {});
+            const tunnel = manager.createTunnel(req.body);
             res.json({ success: true, tunnel });
         } catch (err) {
             res.status(400).json({ success: false, error: err.message });
@@ -39,40 +25,8 @@ module.exports = function createCloudflaredRoutes(io) {
 
     router.post('/tunnel/update', (req, res) => {
         try {
-            const tunnel = manager.updateTunnel(req.body.id, req.body || {});
+            const tunnel = manager.updateTunnel(req.body.id, req.body);
             res.json({ success: true, tunnel });
-        } catch (err) {
-            res.status(400).json({ success: false, error: err.message });
-        }
-    });
-
-    router.post('/tunnel/start', (req, res) => {
-        try {
-            res.json(processManager.startTunnel(req.body.id));
-        } catch (err) {
-            res.status(400).json({ success: false, error: err.message });
-        }
-    });
-
-    router.post('/tunnel/stop', (req, res) => {
-        try {
-            res.json(processManager.stopTunnel(req.body.id));
-        } catch (err) {
-            res.status(400).json({ success: false, error: err.message });
-        }
-    });
-
-    router.post('/tunnel/restart', (req, res) => {
-        try {
-            res.json(processManager.restartTunnel(req.body.id));
-        } catch (err) {
-            res.status(400).json({ success: false, error: err.message });
-        }
-    });
-
-    router.delete('/tunnel/delete/:id', (req, res) => {
-        try {
-            res.json(manager.deleteTunnel(req.params.id));
         } catch (err) {
             res.status(400).json({ success: false, error: err.message });
         }
@@ -86,67 +40,52 @@ module.exports = function createCloudflaredRoutes(io) {
         }
     });
 
-    router.get('/tunnel/logs', (req, res) => {
+    // Process Controls
+    router.post('/tunnel/start', (req, res) => {
         try {
-            res.type('text/plain').send(logs.getTunnelLogs(req.query.id, req.query.lines || 200));
-        } catch (err) {
-            res.status(400).type('text/plain').send(err.message);
-        }
-    });
-
-    router.post('/tunnel/login', async (req, res) => {
-        try {
-            const result = await manager.startLogin(io);
-            res.status(result.success ? 200 : 400).json(result);
+            res.json(manager.startTunnel(req.body.id));
         } catch (err) {
             res.status(400).json({ success: false, error: err.message });
         }
     });
 
-    router.get('/tunnel/login/logs', (req, res) => {
-        const text = logs.getLoginLogs(req.query.lines || 200);
-        res.type('text/plain')
-            .set('X-Cloudflared-Auth-Url', manager.getLastLoginUrl() || '')
-            .send(text);
-    });
-
-    router.get('/tunnel/login/status', (req, res) => {
-        res.json({ success: true, ...manager.getLoginStatusSnapshot() });
-    });
-
-    router.get('/tunnel/diagnostics', async (req, res) => {
+    router.post('/tunnel/stop', (req, res) => {
         try {
-            res.json(await diagnostics.runDiagnostics());
+            res.json(manager.stopTunnel(req.body.id));
+        } catch (err) {
+            res.status(400).json({ success: false, error: err.message });
+        }
+    });
+
+    router.get('/tunnel/logs', (req, res) => {
+        try {
+            res.type('text/plain').send(processManager.readLogs(req.query.id, req.query.lines || 200));
+        } catch (err) {
+            res.status(400).type('text/plain').send(err.message);
+        }
+    });
+
+    // Classic Login & Auth Status
+    router.get('/auth/status', (req, res) => {
+        res.json({ success: true, authenticated: manager.isClassicAuthenticated() });
+    });
+
+    router.post('/auth/login', (req, res) => {
+        try {
+            const url = manager.getLoginUrl();
+            if (url) {
+                res.json({ success: true, url });
+            } else {
+                res.status(400).json({ success: false, error: 'Falha ao extrair URL de login. Verifique se o Cloudflared está instalado.' });
+            }
         } catch (err) {
             res.status(500).json({ success: false, error: err.message });
         }
     });
 
-    router.post('/tunnel/watchdog', (req, res) => {
-        try {
-            runWatchdogOnce();
-            res.json({ success: true });
-        } catch (err) {
-            res.status(500).json({ success: false, error: err.message });
-        }
-    });
-
-    router.post('/tunnel/reset', async (req, res) => {
-        try {
-            const result = await manager.resetManagerViaTerminal(io);
-            res.status(result.success ? 200 : 500).json(result);
-        } catch (err) {
-            res.status(500).json({ success: false, error: err.message });
-        }
-    });
-
-    router.post('/tunnel/fresh-login', async (req, res) => {
-        try {
-            const result = await manager.resetAndStartLogin(io);
-            res.status(result.success ? 200 : 500).json(result);
-        } catch (err) {
-            res.status(500).json({ success: false, error: err.message });
-        }
+    // Panic Button
+    router.post('/system/kill-zombies', (req, res) => {
+        res.json(processManager.killAllZombies());
     });
 
     return router;

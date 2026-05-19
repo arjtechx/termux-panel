@@ -2426,619 +2426,227 @@ function closeHostingLogsModal() {
 }
 
 // ============================================================
-//  CLOUDFLARED MANAGER
 // ============================================================
-let cloudflaredTunnels = [];
-let cloudflaredSelectedId = null;
-let cloudflaredLogInterval = null;
-let cloudflaredLoginInterval = null;
-let cloudflaredAuthWindow = null;
-let cloudflaredLastAuthUrl = null;
-let cloudflaredLoginState = 'idle';
+//  NOVO CLOUDFLARED MANAGER (TERMUX NATIVE API)
+// ============================================================
+let cfTunnels = [];
+let cfLogInterval = null;
+let cfSelectedTunnelId = null;
 
-function cfEscape(value) {
-    return String(value ?? '').replace(/[&<>"']/g, ch => ({
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#039;'
-    }[ch]));
+function cfShowCreateModal() {
+    document.getElementById('cfCreateModal').classList.remove('hidden');
+    document.getElementById('cfName').value = '';
+    document.getElementById('cfToken').value = '';
+    document.getElementById('cfDomain').value = '';
+    document.getElementById('cfLocalPort').value = '';
 }
 
-function updateCloudflaredLoginUi(status = {}) {
-    const state = status.loggedIn
-        ? 'success'
-        : (status.state || (status.success === false ? 'error' : cloudflaredLoginState) || 'idle');
-    cloudflaredLoginState = state;
+function cfCloseCreateModal() {
+    document.getElementById('cfCreateModal').classList.add('hidden');
+}
 
-    const statusMap = {
-        idle: ['badge-danger', 'Nao autenticado'],
-        starting: ['badge-warning', 'Conectando ao Cloudflare...'],
-        waiting_url: ['badge-warning', 'Aguardando autenticacao...'],
-        url_detected: ['badge-warning', 'Aguardando autorizacao Cloudflare'],
-        waiting_cert: ['badge-warning', 'Aguardando cert.pem...'],
-        success: ['badge-success', 'Cloudflare autenticado'],
-        error: ['badge-danger', status.message || status.error || 'Falha no login Cloudflare']
+function cfToggleAuthType() {
+    const type = document.getElementById('cfAuthType').value;
+    if (type === 'token') {
+        document.getElementById('cfTokenGroup').classList.remove('hidden');
+        document.getElementById('cfClassicGroup').classList.add('hidden');
+    } else {
+        document.getElementById('cfTokenGroup').classList.add('hidden');
+        document.getElementById('cfClassicGroup').classList.remove('hidden');
+    }
+}
+
+async function cfCreateTunnel(e) {
+    e.preventDefault();
+    const payload = {
+        name: document.getElementById('cfName').value.trim(),
+        type: document.getElementById('cfAuthType').value,
+        token: document.getElementById('cfToken').value.trim(),
+        domain: document.getElementById('cfDomain').value.trim(),
+        localPort: document.getElementById('cfLocalPort').value.trim()
     };
-    const [badgeClass, label] = statusMap[state] || statusMap.idle;
-    const busy = Boolean(status.running) || ['starting', 'waiting_url', 'url_detected', 'waiting_cert'].includes(state);
 
-    ['cloudflaredAuthStatus', 'cloudflaredAuthStatusInline'].forEach(id => {
-        const el = document.getElementById(id);
-        if (!el) return;
-        el.className = `badge ${badgeClass}`;
-        el.textContent = label;
-    });
+    if (payload.type === 'token' && !payload.token) return alert('Insira o Token.');
+    if (payload.type === 'classic' && (!payload.domain || !payload.localPort)) return alert('Preencha Domínio e Porta Local.');
 
-    const btn = document.getElementById('cloudflaredLoginBtn');
-    if (btn) {
-        btn.disabled = busy;
-        if (busy) {
-            btn.innerHTML = '<i data-lucide="loader" class="spin" style="width:14px;height:14px;"></i> Aguardando autenticacao...';
-        } else if (state === 'success') {
-            btn.innerHTML = '<i data-lucide="check-circle"></i> Autenticado';
-        } else {
-            btn.innerHTML = '<i data-lucide="key-round"></i> Login Cloudflare';
-        }
-        if (window.lucide) lucide.createIcons();
-    }
-
-    const freshBtn = document.getElementById('cloudflaredFreshLoginBtn');
-    if (freshBtn) {
-        freshBtn.disabled = busy;
-        if (!busy) {
-            freshBtn.innerHTML = '<i data-lucide="rotate-ccw"></i> Limpar e novo login';
-        }
-        if (window.lucide) lucide.createIcons();
-    }
-
-    const resetBtn = document.getElementById('cloudflaredResetBtn');
-    if (resetBtn) {
-        resetBtn.disabled = busy;
-        if (!busy) {
-            resetBtn.innerHTML = '<i data-lucide="trash-2"></i> Remover Dados & Cert';
-        }
-        if (window.lucide) lucide.createIcons();
-    }
-
-    if (state === 'success' || state === 'error') {
-        if (cloudflaredLoginInterval) {
-            clearInterval(cloudflaredLoginInterval);
-            cloudflaredLoginInterval = null;
-        }
-    }
-}
-
-function formatCfUptime(seconds) {
-    const total = Number.parseInt(seconds || 0, 10);
-    if (!total) return '--';
-    const h = Math.floor(total / 3600);
-    const m = Math.floor((total % 3600) / 60);
-    const s = total % 60;
-    if (h > 0) return `${h}h ${m}m`;
-    if (m > 0) return `${m}m ${s}s`;
-    return `${s}s`;
-}
-
-function showCloudflaredCreate(force) {
-    const form = document.getElementById('cloudflaredCreateForm');
-    if (!form) return;
-    if (typeof force === 'boolean') {
-        form.classList.toggle('hidden', !force);
-    } else {
-        form.classList.toggle('hidden');
-    }
-}
-
-function resetCloudflaredForm() {
-    const form = document.getElementById('cloudflaredCreateForm');
-    if (form) form.reset();
-    const editId = document.getElementById('cfEditId');
-    const title = document.getElementById('cloudflaredFormTitle');
-    const submit = document.getElementById('cloudflaredSubmitBtn');
-    const host = document.getElementById('cfLocalHost');
-    const autoRestart = document.getElementById('cfAutoRestart');
-
-    if (editId) editId.value = '';
-    if (title) title.textContent = 'Criar Tunel';
-    if (submit) submit.innerHTML = '<i data-lucide="save"></i> Criar';
-    if (host) host.value = '127.0.0.1';
-    if (autoRestart) autoRestart.checked = true;
-    showCloudflaredCreate(false);
-    if (window.lucide) lucide.createIcons();
-}
-
-function newCloudflaredTunnel() {
-    resetCloudflaredForm();
-    showCloudflaredCreate(true);
-}
-
-function editCloudflaredTunnel(id) {
-    const tunnel = cloudflaredTunnels.find(item => item.id === id);
-    if (!tunnel) return;
-
-    document.getElementById('cfEditId').value = tunnel.id;
-    document.getElementById('cfName').value = tunnel.name || '';
-    document.getElementById('cfDomain').value = tunnel.domain || '';
-    document.getElementById('cfType').value = tunnel.type || 'HTTP';
-    document.getElementById('cfLocalHost').value = tunnel.localHost || '127.0.0.1';
-    document.getElementById('cfLocalPort').value = tunnel.localPort || '';
-    document.getElementById('cfPath').value = tunnel.path || '';
-    document.getElementById('cfAutoRestart').checked = tunnel.autoRestart !== false;
-
-    const title = document.getElementById('cloudflaredFormTitle');
-    const submit = document.getElementById('cloudflaredSubmitBtn');
-    if (title) title.textContent = `Editar Tunel: ${tunnel.name}`;
-    if (submit) submit.innerHTML = '<i data-lucide="save"></i> Salvar';
-
-    showCloudflaredCreate(true);
-    if (window.lucide) lucide.createIcons();
-}
-
-async function cloudflaredJsonFetch(url, method = 'GET', body = null, timeoutMs = 30000) {
     try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), timeoutMs);
-        const opts = {
-            method,
+        const res = await fetch(`${API_BASE}/tunnel/create`, {
+            method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            signal: controller.signal
-        };
-        if (body) opts.body = JSON.stringify(body);
-        const res = await fetch(url, opts);
-        clearTimeout(timer);
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) return { success: false, error: data.error || `HTTP ${res.status}` };
-        return data;
-    } catch (err) {
-        return { success: false, error: err.message };
-    }
-}
-
-async function runCloudflaredAction(action, timeoutMs = 45000) {
-    return cloudflaredJsonFetch(`${API_BASE}/tunnel/${action}`, 'POST', {}, timeoutMs);
-}
-
-async function fetchCloudflaredTunnels() {
-    const data = await safeFetch(`${API_BASE}/tunnels`);
-    if (!data?.success) return;
-    cloudflaredTunnels = data.tunnels || [];
-    renderCloudflaredTunnels();
-}
-
-function formatCloudflaredDiagnostics(data) {
-    if (!data?.success) return data?.error || 'Falha ao executar diagnostico.';
-
-    const checks = data.checks || {};
-    const env = data.environment || {};
-    const lines = [
-        `ambiente: ${env.type || '--'}${env.isTermux ? ' / Android Termux' : ''}`,
-        `PREFIX: ${env.prefix || '--'}`,
-        `HOME: ${env.home || '--'}`,
-        `gerenciador: ${env.packageManager || '--'}`,
-        '',
-        `cloudflared instalado: ${checks.installed ? 'OK' : 'ERRO'}`,
-        `cert.pem encontrado: ${checks.certExists ? 'SIM' : 'NAO'}`,
-        `login Cloudflare validado: ${checks.loginValid || checks.loggedIn ? 'OK' : 'PENDENTE'}`,
-        `pasta do painel gravavel: ${checks.moduleWritable ? 'OK' : 'ERRO'}`,
-        `pasta ~/.cloudflared gravavel: ${checks.cloudflaredHomeWritable ? 'OK' : 'ERRO'}`,
-        env.isTermux ? `python/PTY: ${checks.python ? 'OK' : 'AUSENTE'}` : '',
-        env.isTermux ? `termux-open-url: ${checks.termuxOpenUrl ? 'OK' : 'AUSENTE'}` : '',
-        env.isTermux ? `termux-api: ${checks.termuxApi ? 'OK' : 'AUSENTE'}` : '',
-        data.version ? `versao: ${data.version}` : '',
-        data.installHint ? `instalacao: ${data.installHint}` : '',
-        '',
-        `cert.pem: ${data.paths?.cert || '--'}`,
-        `tuneis do painel: ${data.paths?.tunnelsDir || '--'}`,
-        ''
-    ].filter(Boolean);
-
-    if (data.issues?.length) {
-        lines.push('ERROS / AVISOS:');
-        data.issues.forEach(issue => lines.push(`- ${issue}`));
-        lines.push('');
-    } else {
-        lines.push('Nenhum erro encontrado no diagnostico principal.', '');
-    }
-
-    if (data.tunnels?.length) {
-        lines.push('TUNEIS:');
-        data.tunnels.forEach(tunnel => {
-            lines.push(`- ${tunnel.name}: ${tunnel.status} | ${tunnel.publicUrl} -> ${tunnel.localService}`);
-            if (tunnel.issues?.length) tunnel.issues.forEach(issue => lines.push(`  * ${issue}`));
+            body: JSON.stringify(payload)
         });
-    }
-
-    return lines.join('\n');
-}
-
-async function checkCloudflaredSystem() {
-    const card = document.getElementById('cloudflaredDiagnosticsCard');
-    const box = document.getElementById('cloudflaredDiagnosticsBox');
-    const status = document.getElementById('cloudflaredDiagnosticsStatus');
-
-    if (card) card.classList.remove('hidden');
-    if (status) {
-        status.className = 'badge badge-warning';
-        status.textContent = 'Verificando';
-    }
-    if (box) box.textContent = 'Verificando instalacao, login, permissoes, configs e portas locais...\n';
-
-    const data = await cloudflaredJsonFetch(`${API_BASE}/tunnel/diagnostics`, 'GET', null, 20000);
-    if (box) {
-        box.textContent = formatCloudflaredDiagnostics(data);
-        box.scrollTop = 0;
-    }
-    if (status) {
-        status.className = `badge ${data?.ok ? 'badge-success' : 'badge-warning'}`;
-        status.textContent = data?.ok ? 'OK' : 'Ajustar';
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+        cfCloseCreateModal();
+        cfFetchTunnels();
+    } catch (e) {
+        alert('Erro ao criar túnel: ' + e.message);
     }
 }
 
-function renderCloudflaredTunnels() {
-    const body = document.getElementById('cloudflaredTunnelsBody');
-    if (!body) return;
+async function cfFetchTunnels() {
+    try {
+        const res = await fetch(`${API_BASE}/tunnels`);
+        const data = await res.json();
+        if (data.success) {
+            cfTunnels = data.tunnels;
+            cfRenderTunnels();
+        }
+    } catch (e) {
+        console.error('Erro ao buscar túneis:', e);
+    }
+}
 
-    const online = cloudflaredTunnels.filter(t => t.status === 'online').length;
-    const offline = cloudflaredTunnels.length - online;
-    const onlineEl = document.getElementById('cf-stat-online');
-    const offlineEl = document.getElementById('cf-stat-offline');
-    const totalEl = document.getElementById('cf-stat-total');
-    if (onlineEl) onlineEl.textContent = online;
-    if (offlineEl) offlineEl.textContent = offline;
-    if (totalEl) totalEl.textContent = cloudflaredTunnels.length;
+function cfRenderTunnels() {
+    const grid = document.getElementById('cfTunnelsGrid');
+    if (!grid) return;
 
-    if (cloudflaredTunnels.length === 0) {
-        body.innerHTML = '<tr><td colspan="7">Nenhum tunel criado ainda.</td></tr>';
+    if (cfTunnels.length === 0) {
+        grid.innerHTML = '<div style="color:var(--text-muted); padding:20px;">Nenhum túnel configurado ainda.</div>';
         return;
     }
 
-    body.innerHTML = cloudflaredTunnels.map(tunnel => {
-        const isOnline = tunnel.status === 'online';
-        const badge = isOnline ? 'badge-success' : (tunnel.status === 'error' ? 'badge-warning' : 'badge-danger');
+    grid.innerHTML = cfTunnels.map(t => {
+        const isRunning = t.running;
+        const color = isRunning ? 'var(--success)' : 'var(--danger)';
+        const btnAction = isRunning 
+            ? `<button class="btn btn-sm btn-danger" onclick="cfStopTunnel('${t.id}')"><i data-lucide="square"></i> Parar</button>`
+            : `<button class="btn btn-sm btn-success" onclick="cfStartTunnel('${t.id}')"><i data-lucide="play"></i> Iniciar</button>`;
+
         return `
-            <tr>
-                <td>
-                    <strong>${cfEscape(tunnel.name)}</strong><br>
-                    <small class="text-muted">${cfEscape(tunnel.uuid)}</small>
-                </td>
-                <td><span class="badge ${badge}">${cfEscape(tunnel.status || 'offline')}</span></td>
-                <td><a href="${cfEscape(tunnel.publicUrl)}" target="_blank" style="color:var(--primary);">${cfEscape(tunnel.publicUrl)}</a></td>
-                <td><code>${cfEscape(tunnel.localService)}</code></td>
-                <td>${formatCfUptime(tunnel.uptimeSeconds)}</td>
-                <td>${tunnel.pid ? `<code>${cfEscape(tunnel.pid)}</code>` : '--'}</td>
-                <td>
-                    <div class="toolbar-group">
-                        <button class="btn btn-sm ${isOnline ? 'btn-danger' : 'btn-success'}" onclick="${isOnline ? 'stopCloudflaredTunnel' : 'startCloudflaredTunnel'}('${cfEscape(tunnel.id)}')" title="${isOnline ? 'Pausar' : 'Iniciar'}">
-                            <i data-lucide="${isOnline ? 'square' : 'play'}"></i>
-                        </button>
-                        <button class="btn btn-secondary btn-sm" onclick="restartCloudflaredTunnel('${cfEscape(tunnel.id)}')" title="Reiniciar">
-                            <i data-lucide="refresh-cw"></i>
-                        </button>
-                        <button class="btn btn-secondary btn-sm" onclick="selectCloudflaredTunnel('${cfEscape(tunnel.id)}')" title="Logs">
-                            <i data-lucide="scroll-text"></i>
-                        </button>
-                        <button class="btn btn-secondary btn-sm" onclick="editCloudflaredTunnel('${cfEscape(tunnel.id)}')" title="Editar">
-                            <i data-lucide="pencil"></i>
-                        </button>
-                        <button class="btn btn-danger btn-sm" onclick="deleteCloudflaredTunnel('${cfEscape(tunnel.id)}')" title="Excluir">
-                            <i data-lucide="trash-2"></i>
-                        </button>
+            <div class="card" style="border-left: 4px solid ${color}">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <h3 style="margin-bottom:4px">${cfEscape(t.name)}</h3>
+                        <span class="badge ${isRunning ? 'badge-success' : 'badge-danger'}">
+                            ${isRunning ? 'Rodando (PID: ' + t.pid + ')' : 'Parado'}
+                        </span>
+                        <span class="badge badge-info">${t.type === 'token' ? 'Token' : 'Clássico'}</span>
                     </div>
-                </td>
-            </tr>
+                </div>
+                <div style="margin-top:12px; font-size:0.85rem; color:var(--text-muted)">
+                    ${t.type === 'token' 
+                        ? '<i>Zero Trust Dashboard (Roteamento externo)</i>' 
+                        : `<div><strong>🌐</strong> ${cfEscape(t.domain)}</div><div><strong>🎯</strong> ${cfEscape(t.localPort)}</div>`
+                    }
+                </div>
+                <div class="toolbar-group" style="margin-top:16px;">
+                    ${btnAction}
+                    <button class="btn btn-sm btn-secondary" onclick="cfShowLogsModal('${t.id}', '${cfEscape(t.name)}')">
+                        <i data-lucide="scroll-text"></i> Logs
+                    </button>
+                    <button class="btn btn-sm btn-danger" onclick="cfDeleteTunnel('${t.id}')">
+                        <i data-lucide="trash-2"></i> Excluir
+                    </button>
+                </div>
+            </div>
         `;
     }).join('');
-
-    if (window.lucide) lucide.createIcons();
-}
-
-async function createCloudflaredTunnel(event) {
-    event.preventDefault();
-    const editId = document.getElementById('cfEditId')?.value.trim();
-    const payload = {
-        id: editId,
-        name: document.getElementById('cfName')?.value.trim(),
-        domain: document.getElementById('cfDomain')?.value.trim(),
-        type: document.getElementById('cfType')?.value,
-        localHost: document.getElementById('cfLocalHost')?.value.trim() || '127.0.0.1',
-        localPort: document.getElementById('cfLocalPort')?.value,
-        path: document.getElementById('cfPath')?.value.trim(),
-        autoRestart: document.getElementById('cfAutoRestart')?.checked !== false
-    };
-
-    const endpoint = editId ? `${API_BASE}/tunnel/update` : `${API_BASE}/tunnel/create`;
-    const data = await cloudflaredJsonFetch(endpoint, 'POST', payload, 60000);
-    if (!data?.success) {
-        alert(data?.error || `Falha ao ${editId ? 'editar' : 'criar'} tunel. Verifique se o cloudflared esta instalado e logado.`);
-        return;
-    }
-
-    resetCloudflaredForm();
-    await fetchCloudflaredTunnels();
-    selectCloudflaredTunnel(data.tunnel.id);
-}
-
-async function startCloudflaredTunnel(id) {
-    const data = await cloudflaredJsonFetch(`${API_BASE}/tunnel/start`, 'POST', { id }, 30000);
-    if (!data?.success) alert(data?.error || 'Falha ao iniciar tunel.');
-    await fetchCloudflaredTunnels();
-    if (cloudflaredSelectedId === id) loadCloudflaredLogs();
-}
-
-async function stopCloudflaredTunnel(id) {
-    const data = await cloudflaredJsonFetch(`${API_BASE}/tunnel/stop`, 'POST', { id }, 30000);
-    if (!data?.success) alert(data?.error || 'Falha ao parar tunel.');
-    await fetchCloudflaredTunnels();
-    if (cloudflaredSelectedId === id) loadCloudflaredLogs();
-}
-
-async function restartCloudflaredTunnel(id) {
-    const data = await cloudflaredJsonFetch(`${API_BASE}/tunnel/restart`, 'POST', { id }, 30000);
-    if (!data?.success) alert(data?.error || 'Falha ao reiniciar tunel.');
-    await fetchCloudflaredTunnels();
-    if (cloudflaredSelectedId === id) loadCloudflaredLogs();
-}
-
-async function deleteCloudflaredTunnel(id) {
-    const name = cloudflaredTunnels.find(item => item.id === id)?.name || id;
-    if (!confirm(`Excluir o tunel "${name}"?`)) return;
-    const data = await cloudflaredJsonFetch(`${API_BASE}/tunnel/delete`, 'POST', { id }, 30000);
-    if (!data?.success) alert(data?.error || 'Falha ao excluir tunel.');
-    if (cloudflaredSelectedId === id) selectCloudflaredTunnel(null);
-    await fetchCloudflaredTunnels();
-}
-
-function selectCloudflaredTunnel(id) {
-    cloudflaredSelectedId = id;
-    const label = document.getElementById('cloudflaredSelectedTunnel');
-    const tunnel = cloudflaredTunnels.find(item => item.id === id);
-    if (label) label.textContent = tunnel ? `${tunnel.name} - ${tunnel.publicUrl}` : 'Selecione um tunel para acompanhar.';
-
-    if (cloudflaredLogInterval) clearInterval(cloudflaredLogInterval);
-    loadCloudflaredLogs();
-    if (id) {
-        cloudflaredLogInterval = setInterval(loadCloudflaredLogs, 2500);
-    }
-}
-
-async function loadCloudflaredLogs() {
-    const box = document.getElementById('cloudflaredLogBox');
-    if (!box) return;
-    if (!cloudflaredSelectedId) {
-        box.textContent = 'Aguardando...';
-        return;
-    }
-    try {
-        const res = await fetch(`${API_BASE}/tunnel/logs?id=${encodeURIComponent(cloudflaredSelectedId)}&lines=240`);
-        box.textContent = await res.text();
-        box.scrollTop = box.scrollHeight;
-    } catch (err) {
-        box.textContent = err.message;
-    }
-}
-
-async function cloudflaredLogin(options = {}) {
-    const box = document.getElementById('cloudflaredLoginBox');
-    updateCloudflaredLoginUi({
-        state: 'starting',
-        message: 'Conectando ao Cloudflare...',
-        running: true,
-        loggedIn: false
-    });
-    if (box) {
-        if (options.preserveLog) {
-            box.textContent += '\nConectando ao Cloudflare...\nAguardando URL de autorizacao da Cloudflare...\n';
-        } else {
-            box.innerHTML = 'Conectando ao Cloudflare...\nAguardando URL de autorizacao da Cloudflare...\n';
-        }
-    }
-    cloudflaredLastAuthUrl = null;
-
-    try {
-        if (!cloudflaredAuthWindow || cloudflaredAuthWindow.closed) {
-            cloudflaredAuthWindow = window.open('', '_blank');
-        }
-        if (cloudflaredAuthWindow && !cloudflaredAuthWindow.closed) {
-            cloudflaredAuthWindow.document.write('<!doctype html><title>Cloudflare Login</title><body style="font-family:sans-serif;padding:24px">Aguardando URL de autorizacao da Cloudflare...</body>');
-            cloudflaredAuthWindow.document.close();
-        }
-    } catch (_) {
-        cloudflaredAuthWindow = null;
-    }
-
-    const data = await cloudflaredJsonFetch(`${API_BASE}/tunnel/login`, 'POST', {}, 30000);
-    updateCloudflaredLoginUi(data);
     
-    if (!data?.success && box) {
-        box.innerHTML += `Falha ao iniciar login: ${cfEscape(data?.error || 'erro desconhecido')}\n`;
-    }
-
-    // FECHA o popup se já estiver logado (evita que a tela fique travada aguardando)
-    if (data?.loggedIn) {
-        if (cloudflaredAuthWindow) {
-            cloudflaredAuthWindow.close();
-            cloudflaredAuthWindow = null;
-        }
-    }
-
-    if (cloudflaredLoginInterval) clearInterval(cloudflaredLoginInterval);
-    if (data?.success && !data.loggedIn) {
-        cloudflaredLoginInterval = setInterval(loadCloudflaredLoginLogs, 2000);
-    }
-    setTimeout(loadCloudflaredLoginStatus, 800);
-}
-
-async function resetCloudflaredAndLogin() {
-    if (!confirm('ATENCAO: Isso vai limpar os dados locais do Cloudflared, excluir o cert.pem, apagar os tuneis criados no painel e iniciar um novo login Cloudflare. Deseja continuar?')) return;
-
-    const freshBtn = document.getElementById('cloudflaredFreshLoginBtn');
-    const loginBtn = document.getElementById('cloudflaredLoginBtn');
-    if (freshBtn) {
-        freshBtn.disabled = true;
-        freshBtn.innerHTML = '<i data-lucide="loader" class="spin"></i> Limpando...';
-    }
-    if (loginBtn) loginBtn.disabled = true;
-    if (window.lucide) lucide.createIcons();
-
-    try {
-        cloudflaredAuthWindow = window.open('', '_blank');
-        if (cloudflaredAuthWindow) {
-            cloudflaredAuthWindow.document.write('<!doctype html><title>Cloudflare Login</title><body style="font-family:sans-serif;padding:24px">Limpando dados locais antes do novo login...</body>');
-            cloudflaredAuthWindow.document.close();
-        }
-    } catch (_) {
-        cloudflaredAuthWindow = null;
-    }
-
-    const box = document.getElementById('cloudflaredLoginBox');
-    if (box) box.textContent = 'Executando limpeza do Cloudflared no terminal...\n';
-
-    const data = await runCloudflaredAction('fresh-login', 60000);
-    if (!data?.success) {
-        if (freshBtn) {
-            freshBtn.disabled = false;
-            freshBtn.innerHTML = '<i data-lucide="rotate-ccw"></i> Limpar e novo login';
-        }
-        if (loginBtn) loginBtn.disabled = false;
-        if (window.lucide) lucide.createIcons();
-        alert('Falha ao limpar dados e iniciar login: ' + (data?.error || 'erro desconhecido'));
-        return;
-    }
-
-    await fetchCloudflaredTunnels();
-    updateCloudflaredLoginUi(data);
-
-    if (cloudflaredLoginInterval) clearInterval(cloudflaredLoginInterval);
-    if (!data.loggedIn) {
-        cloudflaredLoginInterval = setInterval(loadCloudflaredLoginLogs, 2000);
-    }
-    setTimeout(loadCloudflaredLoginStatus, 800);
-
-    if (freshBtn) {
-        freshBtn.innerHTML = data.running
-            ? '<i data-lucide="loader" class="spin"></i> Aguardando autorização...'
-            : '<i data-lucide="rotate-ccw"></i> Limpar e novo login';
-    }
     if (window.lucide) lucide.createIcons();
 }
 
-async function resetCloudflaredOnly() {
-    if (!confirm('ATENÇÃO: Isso vai parar todos os túneis ativos do Cloudflared, excluir o arquivo cert.pem, apagar as credenciais locais e limpar todas as configurações de túneis no painel. Esta ação NÃO pode ser desfeita. Deseja continuar?')) return;
-
-    const resetBtn = document.getElementById('cloudflaredResetBtn');
-    const freshBtn = document.getElementById('cloudflaredFreshLoginBtn');
-    const loginBtn = document.getElementById('cloudflaredLoginBtn');
-    
-    if (resetBtn) {
-        resetBtn.disabled = true;
-        resetBtn.innerHTML = '<i data-lucide="loader" class="spin"></i> Removendo...';
-    }
-    if (freshBtn) freshBtn.disabled = true;
-    if (loginBtn) loginBtn.disabled = true;
-    if (window.lucide) lucide.createIcons();
-
-    const box = document.getElementById('cloudflaredLoginBox');
-    if (box) box.textContent = 'Executando remoção completa dos dados e cert.pem no terminal...\n';
-
-    try {
-        const data = await runCloudflaredAction('reset', 60000);
-        if (!data?.success) {
-            alert('Falha ao remover dados: ' + (data?.error || 'erro desconhecido'));
-            return;
-        }
-
-        alert('✅ Dados locais, cert.pem e configurações do Cloudflared removidos com sucesso!');
-        await fetchCloudflaredTunnels();
-        updateCloudflaredLoginUi(data);
-        if (box) box.textContent = 'Use "Login Cloudflare" para iniciar uma nova autenticação.\n';
-    } catch (err) {
-        alert('Erro na requisição: ' + err.message);
-    } finally {
-        if (resetBtn) {
-            resetBtn.disabled = false;
-            resetBtn.innerHTML = '<i data-lucide="trash-2"></i> Remover Dados & Cert';
-        }
-        if (freshBtn) freshBtn.disabled = false;
-        if (loginBtn) loginBtn.disabled = false;
-        if (window.lucide) lucide.createIcons();
-    }
-}
-
-function openCloudflaredAuthUrl(url) {
-    url = String(url || '').trim().replace(/[),.;\]]+$/g, '');
-    if (!/^https:\/\/[^\s"'<>]+$/i.test(url || '')) return;
-    if (cloudflaredLoginState === 'success') return;
-    const isNewUrl = url !== cloudflaredLastAuthUrl;
-    cloudflaredLastAuthUrl = url;
-    updateCloudflaredLoginUi({
-        state: 'url_detected',
-        message: 'Aguardando autorizacao Cloudflare',
-        authUrl: url,
-        running: true,
-        loggedIn: false
+async function cfStartTunnel(id) {
+    await fetch(`${API_BASE}/tunnel/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
     });
+    cfFetchTunnels();
+}
 
-    const box = document.getElementById('cloudflaredLoginBox');
-    if (box && !box.innerHTML.includes(url)) {
-        box.innerHTML += `\nURL de autorizacao detectada:\n<a href="${cfEscape(url)}" target="_blank" style="color:#58a6ff">${cfEscape(url)}</a>\n\nDepois de autorizar na Cloudflare, o cloudflared gera o cert.pem automaticamente.\n`;
-        box.scrollTop = box.scrollHeight;
-    }
+async function cfStopTunnel(id) {
+    await fetch(`${API_BASE}/tunnel/stop`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+    });
+    cfFetchTunnels();
+}
 
-    if (!isNewUrl) return;
+async function cfDeleteTunnel(id) {
+    if (!confirm('Excluir este túnel permanentemente?')) return;
+    await fetch(`${API_BASE}/tunnel/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+    });
+    cfFetchTunnels();
+}
 
-    try {
-        if (cloudflaredAuthWindow && !cloudflaredAuthWindow.closed) {
-            cloudflaredAuthWindow.location.href = url;
-        } else {
-            cloudflaredAuthWindow = window.open(url, '_blank');
-        }
-    } catch (_) {
-        cloudflaredAuthWindow = null;
+async function cfKillZombies() {
+    if (!confirm('Deseja enviar um sinal SIGKILL para todos os processos Cloudflared do celular? Isso força a parada de processos zumbis invisíveis.')) return;
+    await fetch(`${API_BASE}/system/kill-zombies`, { method: 'POST' });
+    alert('Sinal enviado. Os processos zumbis foram aniquilados.');
+    cfFetchTunnels();
+}
+
+// LOGS
+function cfShowLogsModal(id, name) {
+    cfSelectedTunnelId = id;
+    document.getElementById('cfLogModalTitle').textContent = `📜 Logs: ${name}`;
+    document.getElementById('cfLogsModal').classList.remove('hidden');
+    cfLoadLogs();
+    cfLogInterval = setInterval(cfLoadLogs, 2000);
+}
+
+function cfCloseLogsModal() {
+    document.getElementById('cfLogsModal').classList.add('hidden');
+    if (cfLogInterval) {
+        clearInterval(cfLogInterval);
+        cfLogInterval = null;
     }
 }
 
-async function loadCloudflaredLoginLogs() {
-    const box = document.getElementById('cloudflaredLoginBox');
-    if (!box) return;
+async function cfLoadLogs() {
+    if (!cfSelectedTunnelId) return;
     try {
-        const res = await fetch(`${API_BASE}/tunnel/login/logs?lines=240`);
+        const res = await fetch(`${API_BASE}/tunnel/logs?id=${cfSelectedTunnelId}&lines=100`);
         const text = await res.text();
-        const headerUrl = res.headers.get('X-Cloudflared-Auth-Url');
+        const box = document.getElementById('cfLogsBody');
         box.textContent = text;
-        const found = headerUrl || (text.match(/https:\/\/[^\s"'<>]+/i) || [])[0];
-        if (found) openCloudflaredAuthUrl(found);
-        loadCloudflaredLoginStatus();
         box.scrollTop = box.scrollHeight;
-    } catch (err) {
-        box.textContent = err.message;
-        updateCloudflaredLoginUi({ success: false, error: err.message });
+    } catch {}
+}
+
+// LOGIN CLÁSSICO
+function cfShowLoginModal() {
+    document.getElementById('cfLoginModal').classList.remove('hidden');
+    document.getElementById('cfLoginStatus').textContent = 'Aguardando...';
+    document.getElementById('cfLoginLink').classList.add('hidden');
+}
+
+function cfCloseLoginModal() {
+    document.getElementById('cfLoginModal').classList.add('hidden');
+}
+
+async function cfGenerateLoginUrl() {
+    const statusBox = document.getElementById('cfLoginStatus');
+    const linkBtn = document.getElementById('cfLoginLink');
+    statusBox.textContent = 'Iniciando binário e aguardando URL...';
+    
+    try {
+        const res = await fetch(`${API_BASE}/auth/login`, { method: 'POST' });
+        const data = await res.json();
+        
+        if (data.success && data.url) {
+            statusBox.textContent = 'Sucesso! Clique no botão abaixo e autorize o painel.';
+            linkBtn.href = data.url;
+            linkBtn.classList.remove('hidden');
+        } else {
+            statusBox.textContent = data.error || 'Nenhuma URL encontrada. Verifique os logs.';
+        }
+    } catch (e) {
+        statusBox.textContent = 'Erro ao se comunicar com o backend: ' + e.message;
     }
 }
 
-async function loadCloudflaredLoginStatus() {
-    const data = await cloudflaredJsonFetch(`${API_BASE}/tunnel/login/status`, 'GET', null, 8000);
-    updateCloudflaredLoginUi(data);
-    if (data?.authUrl && !data.loggedIn) openCloudflaredAuthUrl(data.authUrl);
-    
-    if (data?.loggedIn && cloudflaredAuthWindow) {
-        cloudflaredAuthWindow.close();
-        cloudflaredAuthWindow = null;
+// Call on startup
+document.addEventListener('DOMContentLoaded', () => {
+    if(window.location.hash === '#tab-cloudflared' || true) {
+        setTimeout(cfFetchTunnels, 1000);
     }
-    
-    return data;
-}
-
-function appendCloudflaredLoginLog(data) {
-    const box = document.getElementById('cloudflaredLoginBox');
-    if (!box) return;
-    if (box.textContent.includes('Use "Login Cloudflare"')) box.textContent = '';
-    box.textContent += data;
-    const found = (String(data).match(/https:\/\/[^\s"'<>]+/i) || [])[0];
-    if (found) openCloudflaredAuthUrl(found);
-    box.scrollTop = box.scrollHeight;
-}
+});
 
 // ============================================================
 //  START

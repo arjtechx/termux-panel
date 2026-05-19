@@ -131,7 +131,7 @@ const noipRoutes = require('./src/routes/noipRoutes')(io);
 app.use('/api/noip', noipRoutes);
 
 try {
-    const cloudflaredRoutes = require('./modules/cloudflared/routes')(io);
+    const cloudflaredRoutes = require('./modules/cloudflared/routes')();
     app.use('/api', cloudflaredRoutes);
 } catch (e) {
     console.error('\n[ERR] ==========================================');
