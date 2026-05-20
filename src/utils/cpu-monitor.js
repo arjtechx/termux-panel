@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { execSync } = require('child_process');
 
 const PROC_STAT = '/proc/stat';
 const PROC_CPUINFO = '/proc/cpuinfo';
@@ -37,38 +38,86 @@ function safeReadText(filePath) {
     }
 }
 
-function readProcStatSafe() {
+function readTextFileSafe(filePath) {
     try {
-        if (!fs.existsSync(PROC_STAT)) {
-            return [];
-        }
-
-        const content = readText(PROC_STAT);
-
-        return content
-            .split('\n')
-            .filter(line => /^cpu[0-9]*\s/.test(line))
-            .map(line => {
-                const parts = line.trim().split(/\s+/);
-                const id = parts[0];
-                const values = parts.slice(1).map(value => Number(value));
-
-                return {
-                    id,
-                    user: values[0] || 0,
-                    nice: values[1] || 0,
-                    system: values[2] || 0,
-                    idle: values[3] || 0,
-                    iowait: values[4] || 0,
-                    irq: values[5] || 0,
-                    softirq: values[6] || 0,
-                    steal: values[7] || 0
-                };
-            });
+        if (!fs.existsSync(filePath)) return null;
+        const content = fs.readFileSync(filePath, 'utf8');
+        if (!content || !content.trim()) return null;
+        return content;
     } catch (error) {
-        console.error('[CPU] Erro ao ler /proc/stat:', error.message);
-        return [];
+        console.error(`[CPU] Falha lendo ${filePath}:`, error.message);
+        return null;
     }
+}
+
+function execSafe(command) {
+    try {
+        const output = execSync(command, {
+            encoding: 'utf8',
+            timeout: 2000,
+            stdio: ['ignore', 'pipe', 'pipe']
+        });
+        if (!output || !output.trim()) return null;
+        return output;
+    } catch (error) {
+        console.error(`[CPU] Falha comando ${command}:`, error.message);
+        return null;
+    }
+}
+
+function parseProcStat(content) {
+    if (!content) return [];
+    return content
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => /^cpu[0-9]*\s+/.test(line))
+        .map(line => {
+            const parts = line.split(/\s+/);
+            const id = parts[0];
+            const values = parts.slice(1).map(Number);
+            return {
+                id,
+                user: values[0] || 0,
+                nice: values[1] || 0,
+                system: values[2] || 0,
+                idle: values[3] || 0,
+                iowait: values[4] || 0,
+                irq: values[5] || 0,
+                softirq: values[6] || 0,
+                steal: values[7] || 0
+            };
+        });
+}
+
+function readProcStatSafe() {
+    let content = readTextFileSafe(PROC_STAT);
+    let parsed = parseProcStat(content);
+
+    if (parsed.length > 0) {
+        return {
+            success: true,
+            method: 'fs:/proc/stat',
+            cpus: parsed
+        };
+    }
+
+    content = execSafe('cat /proc/stat');
+    parsed = parseProcStat(content);
+
+    if (parsed.length > 0) {
+        return {
+            success: true,
+            method: 'cat:/proc/stat',
+            cpus: parsed
+        };
+    }
+
+    return {
+        success: false,
+        method: null,
+        cpus: [],
+        error: 'PROC_STAT_EMPTY_OR_UNREADABLE'
+    };
 }
 
 function calculateCpuUsage(current, previous) {
@@ -227,24 +276,61 @@ function readCpuName() {
     return cachedCpuName;
 }
 
-function getCpuStatus() {
-    const current = readProcStatSafe();
-    const cpuName = readCpuName();
-    const coreIds = getCoreIds();
+function getLoadAverageSafe() {
+    try {
+        const content = readTextFileSafe('/proc/loadavg');
+        if (content) {
+            const parts = content.trim().split(/\s+/);
+            return {
+                source: "/proc/loadavg",
+                load1: Number(parts[0]) || 0,
+                load5: Number(parts[1]) || 0,
+                load15: Number(parts[2]) || 0,
+                formatted: `${parts[0]} / ${parts[1]} / ${parts[2]}`
+            };
+        }
+    } catch {}
 
-    if (!current || current.length === 0) {
+    try {
+        const avg = os.loadavg();
         return {
-            success: false,
+            source: "os.loadavg",
+            load1: avg[0] || 0,
+            load5: avg[1] || 0,
+            load15: avg[2] || 0,
+            formatted: `${avg[0].toFixed(2)} / ${avg[1].toFixed(2)} / ${avg[2].toFixed(2)}`
+        };
+    } catch {}
+
+    return null;
+}
+
+function getCpuStatus() {
+    const cpuName = readCpuName();
+    const coresCount = getCoreIds().length;
+    const loadAverage = getLoadAverageSafe();
+
+    const statResult = readProcStatSafe();
+
+    if (!statResult.success || !statResult.cpus.length) {
+        return {
+            success: true,
+            partial: true,
+            mode: "loadavg_fallback",
             cpuName,
-            cpuTotal: '--%',
+            cpuTotal: "--%",
             cpuTotalPercent: 0,
-            coresCount: coreIds.length || 0,
+            coresCount,
             cores: [],
-            status: 'Nao foi possivel ler /proc/stat',
-            error: 'PROC_STAT_EMPTY'
+            loadAverage,
+            status: loadAverage
+                ? "Uso percentual indisponível. Mostrando carga média."
+                : "Não foi possível ler /proc/stat",
+            error: "PROC_STAT_UNAVAILABLE"
         };
     }
 
+    const current = statResult.cpus;
     const onlineSet = readOnlineSet();
 
     if (!lastCpuTimes) {
@@ -253,21 +339,24 @@ function getCpuStatus() {
         return {
             success: true,
             partial: true,
+            mode: "calculating",
+            method: statResult.method,
             cpuName,
-            cpuTotal: 'Calculando...',
+            cpuTotal: "Calculando...",
             cpuTotalPercent: 0,
-            coresCount: coreIds.length || current.filter(cpu => cpu.id !== 'cpu').length,
+            coresCount,
             cores: current
                 .filter(cpu => cpu.id !== 'cpu')
                 .map(cpu => ({
                     id: cpu.id,
                     label: cpu.id.toUpperCase().replace('CPU', 'CPU '),
                     usagePercent: 0,
-                    usage: 'Calculando...',
+                    usage: "Calculando...",
                     online: isCoreOnline(cpu.id, onlineSet),
                     frequency: readFrequency(cpu.id)
                 })),
-            status: 'Coletando primeira leitura'
+            loadAverage,
+            status: "Coletando primeira leitura"
         };
     }
 
@@ -300,8 +389,9 @@ function getCpuStatus() {
         cpuName,
         cpuTotalPercent: Number(cpuTotalPercent.toFixed(1)),
         cpuTotal: `${cpuTotalPercent.toFixed(1)}%`,
-        coresCount: coreIds.length || cores.length,
+        coresCount,
         cores,
+        loadAverage,
         status: 'Monitorando CPU'
     };
 }

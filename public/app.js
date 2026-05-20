@@ -124,6 +124,8 @@ function initElements() {
         cpuName: document.getElementById('cpu-name'),
         cpuTotal: document.getElementById('cpu-total'),
         cpuTotalPercent: document.getElementById('cpu-total-percent'),
+        cpuLoadAvgContainer: document.getElementById('cpu-loadavg-container'),
+        cpuLoadAvg: document.getElementById('cpu-loadavg'),
         cpuCoresCount: document.getElementById('cpu-cores-count'),
         cpuCoresList: document.getElementById('cpu-cores-list'),
         cpuStatus: document.getElementById('cpu-status'),
@@ -550,38 +552,60 @@ async function updateCpuStatus() {
     }
 
     const total = data.cpuTotal || '--%';
-    if (data.success === true) {
-        if (el.cpu) el.cpu.textContent = total;
-        if (el.cpuTotal) el.cpuTotal.textContent = total;
-        if (el.cpuTotalPercent) el.cpuTotalPercent.textContent = total;
-        if (el.cpuName) el.cpuName.textContent = data.cpuName || 'CPU Android';
-        if (el.cpuNameCompact) el.cpuNameCompact.textContent = data.cpuName || 'CPU Android';
-        if (el.cpuCoresCount) el.cpuCoresCount.textContent = data.coresCount ?? '--';
-        if (el.cpuCoresCompact) el.cpuCoresCompact.textContent = `${data.coresCount ?? '--'} núcleos`;
-        if (el.cpuStatus) el.cpuStatus.textContent = data.status || 'Monitorando CPU';
-        if (el.cpuDetails) el.cpuDetails.textContent = `${data.coresCount || '--'} Nucleos | ${total}`;
 
-        renderCpuCoreList(data.cores || []);
-        renderCpuVisual({ cpu: total, cpuCores: data.coresCount || 1 });
+    // CPU Name
+    if (el.cpuName) el.cpuName.textContent = data.cpuName || 'CPU Android';
+    if (el.cpuNameCompact) el.cpuNameCompact.textContent = data.cpuName || 'CPU Android';
+
+    // Cores Count
+    if (el.cpuCoresCount) el.cpuCoresCount.textContent = data.coresCount ?? '--';
+
+    // Status text
+    if (el.cpuStatus) el.cpuStatus.textContent = data.status || 'Monitorando CPU';
+
+    // Handle load average fallback mode
+    if (data.mode === 'loadavg_fallback') {
+        if (el.cpu) el.cpu.textContent = '--%';
+        if (el.cpuTotal) el.cpuTotal.textContent = '--%';
+        if (el.cpuTotalPercent) el.cpuTotalPercent.textContent = '--%';
+
+        if (el.cpuLoadAvgContainer) el.cpuLoadAvgContainer.classList.remove('hidden');
+        if (el.cpuLoadAvg) el.cpuLoadAvg.textContent = data.loadAverage ? data.loadAverage.formatted : '--';
+
+        if (el.cpuCoresCompact) {
+            el.cpuCoresCompact.textContent = data.loadAverage ? `Carga: ${data.loadAverage.formatted}` : 'Uso indisponível';
+        }
+        if (el.cpuDetails) {
+            el.cpuDetails.textContent = data.loadAverage ? `Carga: ${data.loadAverage.formatted}` : 'Uso indisponível';
+        }
+        if (el.cpuCoresList) {
+            el.cpuCoresList.innerHTML = `<div class="cpu-core-row muted">Uso por núcleo indisponível no modo fallback de carga média.</div>`;
+        }
+        renderCpuVisual({ cpu: '0%', cpuCores: data.coresCount || 1 });
         return;
     }
+
+    if (el.cpuLoadAvgContainer) el.cpuLoadAvgContainer.classList.add('hidden');
+
+    if (data.mode === 'calculating') {
+        if (el.cpu) el.cpu.textContent = 'Calculando...';
+        if (el.cpuTotal) el.cpuTotal.textContent = 'Calculando...';
+        if (el.cpuTotalPercent) el.cpuTotalPercent.textContent = 'Calculando...';
+        if (el.cpuCoresCompact) el.cpuCoresCompact.textContent = `${data.coresCount ?? '--'} núcleos`;
+        if (el.cpuDetails) el.cpuDetails.textContent = `Calculando...`;
+        if (el.cpuCoresList) {
+            el.cpuCoresList.innerHTML = '<div class="cpu-core-row muted">Calculando...</div>';
+        }
+        renderCpuVisual({ cpu: '0%', cpuCores: data.coresCount || 1 });
+        return;
+    }
+
+    // Normal operation
     if (el.cpu) el.cpu.textContent = total;
     if (el.cpuTotal) el.cpuTotal.textContent = total;
     if (el.cpuTotalPercent) el.cpuTotalPercent.textContent = total;
-    if (el.cpuName) el.cpuName.textContent = data.cpuName || 'CPU Android nao identificado';
-    if (el.cpuNameCompact) el.cpuNameCompact.textContent = data.cpuName || 'CPU Android nao identificado';
-    if (el.cpuCoresCount) el.cpuCoresCount.textContent = data.coresCount ?? '--';
     if (el.cpuCoresCompact) el.cpuCoresCompact.textContent = `${data.coresCount ?? '--'} núcleos`;
-    if (el.cpuStatus) el.cpuStatus.textContent = data.status || 'Monitorando CPU';
-    if (el.cpuDetails) el.cpuDetails.textContent = `${data.coresCount || '--'} Nucleos | ${total}`;
-
-    if (data.success === false) {
-        if (el.cpuCoresList) {
-            el.cpuCoresList.innerHTML = `<div class="cpu-core-row muted">${escapeHtml(data.status || 'Erro ao ler CPU')}</div>`;
-        }
-        renderCpuVisual({ cpu: '0%', cpuCores: 1 });
-        return;
-    }
+    if (el.cpuDetails) el.cpuDetails.textContent = `${data.coresCount || '--'} Núcleos | ${total}`;
 
     renderCpuCoreList(data.cores || []);
     renderCpuVisual({ cpu: total, cpuCores: data.coresCount || 1 });

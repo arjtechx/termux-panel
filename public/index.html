@@ -139,9 +139,9 @@
                 </div>
 
                 
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; margin-top: 10px;">
-                    <h2 style="margin: 0; font-size: 1.1rem; color: var(--text-color);">Visão Geral</h2>
-                    <button id="toggle-all-cards" onclick="toggleAllMonitorCards()" style="background: var(--bg-lighter); border: 1px solid var(--border); color: var(--text-color); font-size: 0.75rem; padding: 4px 10px; border-radius: 6px; cursor: pointer; transition: all 0.2s;">Alternar Todos</button>
+                <div class="overview-toolbar">
+                    <h2>Visão Geral</h2>
+                    <button id="toggle-all-cards" class="overview-toggle-btn" onclick="toggleAllMonitorCards()">Alternar Todos</button>
                 </div>
 
                 <!-- Storage Card -->
@@ -156,7 +156,7 @@
                     </div>
                     
                     <div class="monitor-card-compact">
-                        <strong id="stat-storage-compact" style="display:block; margin:8px 0; font-size: 0.9rem;">-- livre de --</strong>
+                        <strong id="stat-storage-compact" class="storage-compact-value">-- livre de --</strong>
                         <div class="progress-track"><div class="progress-fill" id="stat-storage-progress-compact"></div></div>
                     </div>
 
@@ -170,10 +170,10 @@
                             <div class="monitor-detail-row"><span>Sites/www:</span> <strong id="storage-www">--</strong></div>
                             <div class="monitor-detail-row"><span>Backups:</span> <strong id="storage-backups">--</strong></div>
                         </div>
-                        <div class="progress-track" style="margin-top:12px;"><div class="progress-fill" id="stat-storage-progress"></div></div>
+                        <div class="progress-track storage-progress-expanded"><div class="progress-fill" id="stat-storage-progress"></div></div>
                     </div>
                     
-                    <div class="monitor-card-footer" style="margin-top: 12px;">
+                    <div class="monitor-card-footer">
                         <small id="stat-storage" style="display:none;"></small>
                         <small id="stat-storage-status">Status: Normal</small>
                     </div>
@@ -206,6 +206,10 @@
                                 <div>
                                     <span>Uso total</span>
                                     <strong id="cpu-total-percent">--%</strong>
+                                </div>
+                                <div id="cpu-loadavg-container" class="hidden">
+                                    <span>Carga média</span>
+                                    <strong id="cpu-loadavg">-- / -- / --</strong>
                                 </div>
                                 <div>
                                     <span>Nucleos</span>
@@ -1794,7 +1798,7 @@
 <div class="fm-toast-container" id="fm-toast-container"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.85"></script>
+<script src="filemanager.js?v=0.2.86"></script>
 <script src="app.js?v=4.5"></script>
 </body>
 </html>
