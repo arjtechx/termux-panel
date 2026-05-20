@@ -388,7 +388,11 @@ app.get('/api/status', async (req, res) => {
                 const netOut = await runCmd('cat /proc/net/dev 2>/dev/null || echo ""');
                 // Tenta vários nomes de interface em ordem de prioridade
                 let forceRoot = false; // Flag to force root usage for network stats
+                const interfaces = systemConfig.is_termux
+                    ? ['wlan0', 'rmnet_data0', 'ccmni0', 'eth0']
+                    : ['eth0', 'en0', 'wlan0', 'wifi0'];
 
+                for (const iface of interfaces) {
                     const m = netOut.match(new RegExp(`\\s*${iface}[^:]*:\\s*(\\d+)(?:\\s+\\d+){7}\\s+(\\d+)`));
                     if (m) {
                         totalDown = parseInt(m[1]) || 0;
@@ -438,7 +442,6 @@ app.get('/api/status', async (req, res) => {
         }
 
         res.json(status);
-        res.json(enhancedApps);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
