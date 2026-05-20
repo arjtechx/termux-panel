@@ -822,7 +822,8 @@ while true; do
                 kill -9 "$PID" 2>/dev/null || true
             done
             sleep 1
-            node --max-old-space-size=128 server.js
+            NODE_MAX_OLD_SPACE_SIZE="${NODE_MAX_OLD_SPACE_SIZE:-256}"
+            node --max-old-space-size="$NODE_MAX_OLD_SPACE_SIZE" server.js
             break
             ;;
         6) exec bash scripts/start.sh ;;

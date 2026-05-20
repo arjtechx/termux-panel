@@ -322,11 +322,22 @@ if command -v su >/dev/null 2>&1 && su -c 'echo ok' >/dev/null 2>&1; then
     bash "$PANEL_DIR/scripts/prioritize.sh" >/dev/null 2>&1 &
 fi
 
+# Configuracao de memoria do Node (ajustavel por variavel de ambiente)
+NODE_MAX_OLD_SPACE_SIZE="${NODE_MAX_OLD_SPACE_SIZE:-256}"
+log "Node heap max-old-space-size: ${NODE_MAX_OLD_SPACE_SIZE}MB"
 # Loop de auto-restart
 while true; do
     cleanup_termux_api_duplicates
     cleanup_panel_duplicates
-    node --max-old-space-size=128 "$PANEL_DIR/server.js"
-    warn "Servidor encerrado. Reiniciando em 3s..."
+    node --max-old-space-size="$NODE_MAX_OLD_SPACE_SIZE" "$PANEL_DIR/server.js"
+    EXIT_CODE=$?
+    if [ "$EXIT_CODE" -eq 137 ]; then
+        warn "Servidor encerrado (codigo 137: possivel falta de memoria/OOM)."
+    elif [ "$EXIT_CODE" -eq 143 ]; then
+        warn "Servidor encerrado por sinal TERM (codigo 143)."
+    else
+        warn "Servidor encerrado (codigo $EXIT_CODE)."
+    fi
+    warn "Reiniciando em 3s..."
     sleep 3
 done
