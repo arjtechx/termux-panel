@@ -14,13 +14,14 @@ let cachedCpuName = null;
 let cachedCoreIds = null;
 
 // Silenciamento de logs repetitivos
-let lastCpuErrorLog = 0;
+const lastErrorLogByKey = new Map();
 
-function logCpuErrorOnce(message) {
+function logCpuErrorOnce(message, key = 'global') {
     const now = Date.now();
-    if (now - lastCpuErrorLog > 60000) {
+    const last = lastErrorLogByKey.get(key) || 0;
+    if (now - last > 60000) {
         console.warn(message);
-        lastCpuErrorLog = now;
+        lastErrorLogByKey.set(key, now);
     }
 }
 
@@ -71,9 +72,9 @@ function readTextFileSafe(filePath) {
         return content;
     } catch (error) {
         if (error.code === 'EACCES') {
-            logCpuErrorOnce(`[CPU] Sem permissão (EACCES) para ler ${filePath}. Usando fallback silencioso.`);
+            logCpuErrorOnce(`[CPU] Acesso bloqueado pelo Android ao ler ${filePath}. Fallback ativado.`, `EACCES_${filePath}`);
         } else {
-            logCpuErrorOnce(`[CPU] Falha lendo ${filePath}: ${error.message}`);
+            logCpuErrorOnce(`[CPU] Falha lendo ${filePath}: ${error.message}`, `ERR_${filePath}`);
         }
         return null;
     }
@@ -90,7 +91,7 @@ function execSafe(command, timeout = 3000) {
         return output;
     } catch (error) {
         // Não loga erros normais de comando indisponível se estivermos silenciosos
-        logCpuErrorOnce(`[CPU] Comando '${command}' indisponível ou falhou.`);
+        logCpuErrorOnce(`[CPU] Comando '${command}' indisponível ou falhou.`, `CMD_${command}`);
         return null;
     }
 }
@@ -459,11 +460,62 @@ function readPidStat(pid) {
     }
 }
 
-function getClkTck() {
+let cachedClkTck = null;
+let lastClkTckWarn = 0;
+
+function warnClkTckOnce(message) {
+    const now = Date.now();
+    if (now - lastClkTckWarn > 60000) {
+        console.warn(message);
+        lastClkTckWarn = now;
+    }
+}
+
+function commandExists(cmd) {
     try {
-        return Number(execSync('getconf CLK_TCK', { encoding: 'utf8' }).trim()) || 100;
-    } catch (_) {
-        return 100;
+        require("child_process").execSync(`command -v ${cmd}`, {
+            encoding: "utf8",
+            stdio: ["ignore", "pipe", "ignore"],
+            timeout: 1000
+        });
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function getClkTckSafe() {
+    if (cachedClkTck) return cachedClkTck;
+
+    const fallback = 100;
+
+    try {
+        if (!commandExists("getconf")) {
+            cachedClkTck = fallback;
+            warnClkTckOnce("[CPU] getconf não encontrado. Usando CLK_TCK=100 como fallback.");
+            return cachedClkTck;
+        }
+
+        const output = require("child_process").execSync("getconf CLK_TCK", {
+            encoding: "utf8",
+            stdio: ["ignore", "pipe", "ignore"],
+            timeout: 1000
+        }).trim();
+
+        const value = Number(output);
+
+        if (Number.isFinite(value) && value > 0) {
+            cachedClkTck = value;
+            return cachedClkTck;
+        }
+
+        cachedClkTck = fallback;
+        warnClkTckOnce("[CPU] getconf retornou valor inválido. Usando CLK_TCK=100.");
+        return cachedClkTck;
+    } catch {
+        cachedClkTck = fallback;
+        warnClkTckOnce("[CPU] Falha ao executar getconf. Usando CLK_TCK=100.");
+        return cachedClkTck;
     }
 }
 
@@ -486,7 +538,7 @@ function getCmdline(pid) {
 }
 
 async function updateTermuxNativeCpuEstimate() {
-    const clkTck = getClkTck();
+    const clkTck = getClkTckSafe();
     const cores = os.cpus()?.length || 1;
     const pids = listAccessiblePids();
 

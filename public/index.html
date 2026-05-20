@@ -1329,15 +1329,41 @@
                             </h2>
                             <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 4px;">Gerencie rotas baseadas em caminhos públicos (ingress rules) direcionadas a serviços locais.</p>
                         </div>
+                    </div>
+
+                    <!-- Status do Processo Cloudflared -->
+                    <div style="margin-bottom: 24px; padding: 16px; background: var(--bg-secondary); border-radius: 8px; border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
+                        <div>
+                            <h3 style="margin: 0; font-size: 1.1rem; color: var(--text-color); display: flex; align-items: center; gap: 8px;">
+                                <i data-lucide="activity"></i> Status do Processo Cloudflared
+                            </h3>
+                            <p id="cfrProcessStatusText" style="margin: 4px 0 0 0; color: var(--text-muted); font-size: 0.9rem;">
+                                Verificando status...
+                            </p>
+                        </div>
+                        <div style="display: flex; gap: 8px;">
+                            <button class="btn btn-success btn-sm" onclick="cfrStartProcess()">
+                                <i data-lucide="play"></i> Iniciar Túnel
+                            </button>
+                            <button class="btn btn-danger btn-sm" onclick="cfrStopProcess()">
+                                <i data-lucide="square"></i> Parar Túnel
+                            </button>
+                            <button class="btn btn-secondary btn-sm" onclick="cfrRestartProcess()">
+                                <i data-lucide="refresh-cw"></i> Reiniciar Túnel
+                            </button>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                        <div>
+                            <h3 style="font-size: 1.1rem; margin: 0; color: var(--text-color);">Regras e Configurações</h3>
+                        </div>
                         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
                             <button class="btn btn-secondary btn-sm" onclick="cfrLoadConfigYml()">
                                 <i data-lucide="file-text"></i> Editar config.yml
                             </button>
                             <button class="btn btn-secondary btn-sm" onclick="cfrValidateConfig()">
                                 <i data-lucide="check-square"></i> Validar Ingress
-                            </button>
-                            <button class="btn btn-secondary btn-sm" onclick="cfrRestartCloudflared()">
-                                <i data-lucide="refresh-cw"></i> Reiniciar Cloudflared
                             </button>
                             <button class="btn btn-secondary btn-sm" onclick="cfrShowLogs()">
                                 <i data-lucide="scroll-text"></i> Visualizar Logs
@@ -2028,7 +2054,7 @@
 <div class="fm-toast-container" id="fm-toast-container"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.94"></script>
+<script src="filemanager.js?v=0.2.95"></script>
 <script src="app.js?v=4.5"></script>
 </body>
 </html>

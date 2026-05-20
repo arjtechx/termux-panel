@@ -392,12 +392,22 @@ module.exports = function createCloudflaredRoutes() {
     router.post('/cloudflared/routes', (req, res) => {
         try {
             const routes = readRoutesJson();
+            const newPath = req.body.path || '/';
+            const newHostname = req.body.hostname || 'panel.arjtechbr.site';
+
+            if (newPath === '/') {
+                const dup = routes.find(r => r.hostname === newHostname && r.path === '/');
+                if (dup) {
+                    return res.status(400).json({ success: false, error: `Já existe uma regra catch-all (/) para o domínio ${newHostname}. Remova ou desative a existente primeiro.` });
+                }
+            }
+
             const newRoute = {
                 id: Date.now().toString(),
                 name: req.body.name || 'Novo Serviço',
                 enabled: req.body.enabled !== false,
-                hostname: req.body.hostname || 'panel.arjtechbr.site',
-                path: req.body.path || '/',
+                hostname: newHostname,
+                path: newPath,
                 targetProtocol: req.body.targetProtocol || 'http',
                 targetHost: req.body.targetHost || '127.0.0.1',
                 targetPort: parseInt(req.body.targetPort) || 80,
@@ -417,12 +427,22 @@ module.exports = function createCloudflaredRoutes() {
             const idx = routes.findIndex(r => r.id === req.params.id);
             if (idx === -1) return res.status(404).json({ success: false, error: 'Rota não encontrada' });
             
+            const newHostname = req.body.hostname !== undefined ? req.body.hostname : routes[idx].hostname;
+            const newPath = req.body.path !== undefined ? req.body.path : routes[idx].path;
+
+            if (newPath === '/') {
+                const dup = routes.find(r => r.id !== req.params.id && r.hostname === newHostname && r.path === '/');
+                if (dup) {
+                    return res.status(400).json({ success: false, error: `Já existe uma regra catch-all (/) para o domínio ${newHostname}.` });
+                }
+            }
+
             routes[idx] = {
                 ...routes[idx],
                 name: req.body.name !== undefined ? req.body.name : routes[idx].name,
                 enabled: req.body.enabled !== undefined ? !!req.body.enabled : routes[idx].enabled,
-                hostname: req.body.hostname !== undefined ? req.body.hostname : routes[idx].hostname,
-                path: req.body.path !== undefined ? req.body.path : routes[idx].path,
+                hostname: newHostname,
+                path: newPath,
                 targetProtocol: req.body.targetProtocol !== undefined ? req.body.targetProtocol : routes[idx].targetProtocol,
                 targetHost: req.body.targetHost !== undefined ? req.body.targetHost : routes[idx].targetHost,
                 targetPort: req.body.targetPort !== undefined ? parseInt(req.body.targetPort) : routes[idx].targetPort,
@@ -470,6 +490,48 @@ module.exports = function createCloudflaredRoutes() {
             
             writeRoutesJson(reordered);
             res.json({ success: true, routes: reordered });
+        } catch (err) {
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
+    router.get('/cloudflared/process/status', (req, res) => {
+        try {
+            const { execSync } = require('child_process');
+            let isRunning = false;
+            try {
+                const pids = execSync('pgrep -f cloudflared', { encoding: 'utf8' }).trim();
+                isRunning = pids.length > 0;
+            } catch (e) {
+                isRunning = false;
+            }
+            res.json({ success: true, isRunning });
+        } catch (err) {
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
+    router.post('/cloudflared/process/start', (req, res) => {
+        try {
+            const { tunnelId } = getTunnelMetadata();
+            if (!tunnelId || tunnelId === 'SEU_TUNNEL_ID_OU_NOME') {
+                return res.status(400).json({ success: false, error: 'Tunnel ID não encontrado. Crie um túnel ou edite o config.yml.' });
+            }
+            const { exec } = require('child_process');
+            exec(`cloudflared tunnel run ${tunnelId} > /dev/null 2>&1 &`);
+            res.json({ success: true, message: 'Comando de iniciar túnel enviado.' });
+        } catch (err) {
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
+    router.post('/cloudflared/process/stop', (req, res) => {
+        try {
+            const { execSync } = require('child_process');
+            try {
+                execSync('pkill -f cloudflared');
+            } catch (e) {}
+            res.json({ success: true, message: 'Processo parado.' });
         } catch (err) {
             res.status(500).json({ success: false, error: err.message });
         }

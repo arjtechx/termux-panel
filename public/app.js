@@ -4646,7 +4646,11 @@ async function cfrTestPublicUrl(id, publicUrl) {
             if (data.success) {
                 resultDiv.innerHTML = `<span style="color: var(--success); font-weight: bold;">🌐 Pública: Online</span> (${data.time || 'N/A'}) - HTTP ${data.code || '200'}`;
             } else {
-                resultDiv.innerHTML = `<span style="color: var(--danger); font-weight: bold;">🌐 Pública: Offline</span> - ${data.error || 'Sem resposta'}`;
+                if (data.code === 1033 || data.code === 530 || data.code === 521 || data.code === 523) {
+                    resultDiv.innerHTML = `<span style="color: var(--danger); font-weight: bold;">🌐 Pública: Erro de Túnel (1033 / ${data.code})</span> - O túnel Cloudflared está offline ou a Cloudflare não encontrou uma conexão saudável. Verifique se o processo está "Rodando".`;
+                } else {
+                    resultDiv.innerHTML = `<span style="color: var(--danger); font-weight: bold;">🌐 Pública: Offline</span> - ${data.error || 'Sem resposta'} (HTTP ${data.code || 0})`;
+                }
             }
         }
     } catch (err) {
@@ -4664,29 +4668,58 @@ async function cfrTestPublicUrl(id, publicUrl) {
 }
 
 async function cfrApplyConfigYml() {
+    const btn = document.querySelector('button[onclick="cfrApplyConfigYml()"]');
+    let originalHtml = '';
+    if (btn) {
+        originalHtml = btn.innerHTML;
+        btn.innerHTML = '<i data-lucide="loader" class="spin"></i> Aplicando e Validando...';
+        btn.disabled = true;
+    }
+
     try {
-        const res = await fetch(`${API_BASE}/cloudflared/generate-config`, {
-            method: 'POST'
-        });
+        // 1. Fazer backup da config antiga (opcional, só para ter histórico antes da geração)
+        await fetch(`${API_BASE}/cloudflared/backup`, { method: 'POST' }).catch(() => {});
 
-        if (!res.ok) {
-            const data = await res.json().catch(() => ({}));
-            throw new Error(data.error || `HTTP ${res.status}`);
+        // 2. Gerar nova config
+        const resGen = await fetch(`${API_BASE}/cloudflared/generate-config`, { method: 'POST' });
+        if (!resGen.ok) throw new Error(`HTTP ${resGen.status} na geração da config`);
+        const genData = await resGen.json();
+        if (!genData.success) throw new Error(genData.error || 'Falha ao gerar config.yml');
+
+        // 3. Validar Ingress
+        const resVal = await fetch(`${API_BASE}/cloudflared/validate`, { method: 'POST' });
+        const valData = await resVal.json();
+        if (!valData.success || (valData.output && valData.output.toLowerCase().includes('error'))) {
+            throw new Error(`Validação falhou:\n${valData.error || valData.output}`);
         }
 
-        const data = await res.json();
-        if (data.success) {
-            showToast('Ingress gerado e salvo em config.yml com sucesso!', 'success');
-            if (confirm('Configuração de Ingress aplicada com sucesso! Deseja validar o arquivo e reiniciar os túneis do Cloudflared para aplicar as novas regras agora?')) {
-                await cfrValidateConfig();
-                await cfrRestartCloudflared();
+        // 4. Reiniciar processo cloudflared
+        await fetch(`${API_BASE}/cloudflared/process/stop`, { method: 'POST' }).catch(() => {});
+        await new Promise(r => setTimeout(r, 1000));
+        await fetch(`${API_BASE}/cloudflared/process/start`, { method: 'POST' }).catch(() => {});
+
+        showToast('Ingress configurado, validado e túnel reiniciado com sucesso!', 'success');
+        
+        // Atualiza UI de status
+        cfrCheckStatus();
+
+        // Faz um pequeno teste público se tiver rota
+        setTimeout(() => {
+            const hasPma = cfrRoutesListCached.find(r => r.path === '/phpmyadmin/');
+            if (hasPma) {
+                cfrTestPublicUrl(null, `https://${hasPma.hostname}${hasPma.path}`, null);
             }
-        } else {
-            throw new Error(data.error || 'Erro ao gerar configuração.');
-        }
+        }, 3000);
+
     } catch (err) {
         console.error('[cfrApplyConfigYml] Erro:', err);
         showToast('Erro ao aplicar regras Ingress: ' + err.message, 'error');
+    } finally {
+        if (btn) {
+            btn.innerHTML = originalHtml || '<i data-lucide="check"></i> Salvar e Aplicar Ingress no Cloudflared';
+            btn.disabled = false;
+            if (window.lucide) lucide.createIcons();
+        }
     }
 }
 
@@ -4986,6 +5019,78 @@ async function cfrLoadLogs() {
     }
 }
 
+// --- Controle do Processo Cloudflared ---
+async function cfrCheckStatus() {
+    const statusText = document.getElementById('cfrProcessStatusText');
+    if (!statusText) return;
+    try {
+        const res = await fetch(`${API_BASE}/cloudflared/process/status`);
+        const data = await res.json();
+        if (data.success) {
+            if (data.isRunning) {
+                statusText.innerHTML = `<span style="color: var(--success); font-weight: bold;">Rodando</span> - O processo do Cloudflared está ativo no sistema.`;
+            } else {
+                statusText.innerHTML = `<span style="color: var(--danger); font-weight: bold;">Parado</span> - Nenhum processo Cloudflared detectado.`;
+            }
+        }
+    } catch (e) {
+        statusText.innerHTML = `<span style="color: var(--warning); font-weight: bold;">Desconhecido</span> - Erro ao verificar status.`;
+    }
+}
+
+async function cfrStartProcess() {
+    try {
+        showToast('Iniciando processo do Cloudflared...', 'info');
+        const res = await fetch(`${API_BASE}/cloudflared/process/start`, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+            showToast('Túnel iniciado!', 'success');
+            setTimeout(cfrCheckStatus, 1000);
+        } else {
+            throw new Error(data.error || 'Erro ao iniciar túnel');
+        }
+    } catch (err) {
+        showToast('Erro: ' + err.message, 'error');
+    }
+}
+
+async function cfrStopProcess() {
+    try {
+        showToast('Parando Cloudflared...', 'info');
+        const res = await fetch(`${API_BASE}/cloudflared/process/stop`, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+            showToast('Túnel parado!', 'success');
+            setTimeout(cfrCheckStatus, 1000);
+        } else {
+            throw new Error(data.error || 'Erro ao parar túnel');
+        }
+    } catch (err) {
+        showToast('Erro: ' + err.message, 'error');
+    }
+}
+
+async function cfrRestartProcess() {
+    try {
+        showToast('Reiniciando Cloudflared...', 'info');
+        await fetch(`${API_BASE}/cloudflared/process/stop`, { method: 'POST' }).catch(() => {});
+        await new Promise(r => setTimeout(r, 1000));
+        await fetch(`${API_BASE}/cloudflared/process/start`, { method: 'POST' });
+        showToast('Túnel reiniciado!', 'success');
+        setTimeout(cfrCheckStatus, 1000);
+    } catch (err) {
+        showToast('Erro: ' + err.message, 'error');
+    }
+}
+
+// Inicia polling de status a cada 5s se estiver na aba
+setInterval(() => {
+    const el = document.getElementById('cfrProcessStatusText');
+    if (el && el.offsetParent !== null) { // Verifica se está visível
+        cfrCheckStatus();
+    }
+}, 5000);
+
 // Expor no escopo global
 window.cfrFetchRoutes = cfrFetchRoutes;
 window.cfrRenderRoutes = cfrRenderRoutes;
@@ -5012,6 +5117,12 @@ window.cfrTestRoute = cfrTestRoute;
 window.cfrTestPublicUrl = cfrTestPublicUrl;
 window.cfrShowLogs = cfrShowLogs;
 window.cfrLoadLogs = cfrLoadLogs;
+
+// Controle de Processo
+window.cfrCheckStatus = cfrCheckStatus;
+window.cfrStartProcess = cfrStartProcess;
+window.cfrStopProcess = cfrStopProcess;
+window.cfrRestartProcess = cfrRestartProcess;
 
 
 
