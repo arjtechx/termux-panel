@@ -517,8 +517,17 @@ module.exports = function createCloudflaredRoutes() {
             if (!tunnelId || tunnelId === 'SEU_TUNNEL_ID_OU_NOME') {
                 return res.status(400).json({ success: false, error: 'Tunnel ID não encontrado. Crie um túnel ou edite o config.yml.' });
             }
-            const { exec } = require('child_process');
-            exec(`cloudflared tunnel run ${tunnelId} > /dev/null 2>&1 &`);
+            const { spawn } = require('child_process');
+            const homeDir = process.env.HOME || os.homedir() || '/data/data/com.termux/files/home';
+            const logPath = path.join(homeDir, '.cloudflared', 'proxy_reverso.log');
+            const out = fs.openSync(logPath, 'a');
+            
+            const child = spawn('cloudflared', ['tunnel', 'run', tunnelId], {
+                detached: true,
+                stdio: ['ignore', out, out]
+            });
+            child.unref();
+
             res.json({ success: true, message: 'Comando de iniciar túnel enviado.' });
         } catch (err) {
             res.status(500).json({ success: false, error: err.message });
@@ -528,9 +537,8 @@ module.exports = function createCloudflaredRoutes() {
     router.post('/cloudflared/process/stop', (req, res) => {
         try {
             const { execSync } = require('child_process');
-            try {
-                execSync('pkill -f cloudflared');
-            } catch (e) {}
+            try { execSync('pkill -f cloudflared'); } catch (e) {}
+            try { execSync('killall -9 cloudflared'); } catch (e) {}
             res.json({ success: true, message: 'Processo parado.' });
         } catch (err) {
             res.status(500).json({ success: false, error: err.message });
@@ -640,9 +648,28 @@ module.exports = function createCloudflaredRoutes() {
 
     router.get('/cloudflared/logs', (req, res) => {
         try {
+            const homeDir = process.env.HOME || os.homedir() || '/data/data/com.termux/files/home';
+            const logPath = path.join(homeDir, '.cloudflared', 'proxy_reverso.log');
+            
+            if (fs.existsSync(logPath)) {
+                let logs = '';
+                if (process.platform !== 'win32') {
+                    try {
+                        logs = execSync(`tail -n 150 "${logPath}"`).toString();
+                    } catch (e) {
+                        const content = fs.readFileSync(logPath, 'utf8').split('\n');
+                        logs = content.slice(-150).join('\n');
+                    }
+                } else {
+                    const content = fs.readFileSync(logPath, 'utf8').split('\n');
+                    logs = content.slice(-150).join('\n');
+                }
+                return res.json({ success: true, logs });
+            }
+
             const tunnels = manager.getTunnels();
             if (tunnels.length === 0) {
-                return res.json({ success: true, logs: 'Nenhum túnel cadastrado.' });
+                return res.json({ success: true, logs: 'Nenhum túnel cadastrado e arquivo de log proxy_reverso.log não encontrado.' });
             }
             const logs = processManager.readLogs(tunnels[0].id, 150);
             res.json({ success: true, logs });
