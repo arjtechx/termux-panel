@@ -691,7 +691,16 @@ function install_panel() {
 function update_panel() {
     show_banner
     detect_os
-    
+
+    if [ -f "scripts/update-tags.sh" ]; then
+        bash scripts/update-tags.sh
+        return
+    fi
+
+    if [ -f "scripts/update.sh" ]; then
+        bash scripts/update.sh
+        return
+    fi    
     # ─── Gerar my.cnf robusto se necessário ──────────────────────
     generate_my_cnf
     
@@ -838,3 +847,4 @@ while true; do
         *) warn "Opção inválida." ;;
     esac
 done
+

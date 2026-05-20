@@ -84,9 +84,11 @@ cleanup_termux_api_duplicates() {
 cleanup_panel_duplicates() {
     CURRENT_PID="${1:-}"
     PIDS="$(pgrep -f 'node .*server\.js|node server\.js|node.*termux-panel/server\.js' 2>/dev/null | sort -n)"
+    KEEP_PID="$(printf '%s\n' "$PIDS" | tail -n 1)"
     for PID in $PIDS; do
         [ -z "$PID" ] && continue
         [ "$PID" = "$CURRENT_PID" ] && continue
+        [ "$PID" = "$KEEP_PID" ] && continue
         CWD="$(readlink "/proc/$PID/cwd" 2>/dev/null || true)"
         CMDLINE="$(tr '\0' ' ' < "/proc/$PID/cmdline" 2>/dev/null || true)"
         if [ "$CWD" != "$PANEL_DIR" ] && ! printf '%s' "$CMDLINE" | grep -F "$PANEL_DIR/server.js" >/dev/null 2>&1; then
