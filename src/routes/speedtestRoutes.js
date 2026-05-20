@@ -37,6 +37,29 @@ async function measurePing() {
     return minPing === Infinity ? 999 : minPing;
 }
 
+// Função auxiliar para lidar com redirects no GET
+function getWithRedirects(url, options, callback, onReqCreated, redirectCount = 0) {
+    if (redirectCount > 5) {
+        throw new Error('Too many redirects');
+    }
+    
+    const parsedUrl = new URL(url);
+    const lib = parsedUrl.protocol === 'http:' ? require('http') : require('https');
+    
+    const req = lib.get(url, options, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+            res.resume(); // Consome a resposta do redirect
+            const newUrl = new URL(res.headers.location, url).href;
+            return getWithRedirects(newUrl, options, callback, onReqCreated, redirectCount + 1);
+        }
+        callback(res);
+    });
+
+    if (onReqCreated) {
+        onReqCreated(req);
+    }
+}
+
 // 2. Função auxiliar para medir velocidade de Download (Média ponderada em janela de 10 segundos)
 function runDownloadTest(onProgress) {
     return new Promise((resolve) => {
@@ -45,18 +68,19 @@ function runDownloadTest(onProgress) {
         const durationLimit = 10000; // Janela estável de 10 segundos
         let bytesReceived = 0;
         let isDone = false;
+        let currentReq = null;
 
         const timeoutTimer = setTimeout(() => {
             if (!isDone) {
                 isDone = true;
-                req.destroy();
+                if (currentReq) currentReq.destroy();
                 const duration = (Date.now() - startTime) / 1000;
                 const speedMbps = duration > 0 ? ((bytesReceived * 8) / (1024 * 1024)) / duration : 0;
                 resolve(parseFloat(speedMbps.toFixed(2)));
             }
         }, durationLimit);
 
-        const req = https.get(url, (res) => {
+        getWithRedirects(url, {}, (res) => {
             const contentLength = parseInt(res.headers['content-length']) || 100000000;
 
             res.on('data', (chunk) => {
@@ -87,16 +111,17 @@ function runDownloadTest(onProgress) {
                     resolve(parseFloat(speedMbps.toFixed(2)));
                 }
             });
-        });
-
-        req.on('error', () => {
-            if (!isDone) {
-                isDone = true;
-                clearTimeout(timeoutTimer);
-                const duration = (Date.now() - startTime) / 1000;
-                const speedMbps = bytesReceived > 0 && duration > 0 ? ((bytesReceived * 8) / (1024 * 1024)) / duration : 0;
-                resolve(parseFloat(speedMbps.toFixed(2)));
-            }
+        }, (req) => {
+            currentReq = req;
+            req.on('error', () => {
+                if (!isDone) {
+                    isDone = true;
+                    clearTimeout(timeoutTimer);
+                    const duration = (Date.now() - startTime) / 1000;
+                    const speedMbps = bytesReceived > 0 && duration > 0 ? ((bytesReceived * 8) / (1024 * 1024)) / duration : 0;
+                    resolve(parseFloat(speedMbps.toFixed(2)));
+                }
+            });
         });
     });
 }
