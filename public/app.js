@@ -550,6 +550,21 @@ async function updateCpuStatus() {
     }
 
     const total = data.cpuTotal || '--%';
+    if (data.success === true) {
+        if (el.cpu) el.cpu.textContent = total;
+        if (el.cpuTotal) el.cpuTotal.textContent = total;
+        if (el.cpuTotalPercent) el.cpuTotalPercent.textContent = total;
+        if (el.cpuName) el.cpuName.textContent = data.cpuName || 'CPU Android';
+        if (el.cpuNameCompact) el.cpuNameCompact.textContent = data.cpuName || 'CPU Android';
+        if (el.cpuCoresCount) el.cpuCoresCount.textContent = data.coresCount ?? '--';
+        if (el.cpuCoresCompact) el.cpuCoresCompact.textContent = `${data.coresCount ?? '--'} núcleos`;
+        if (el.cpuStatus) el.cpuStatus.textContent = data.status || 'Monitorando CPU';
+        if (el.cpuDetails) el.cpuDetails.textContent = `${data.coresCount || '--'} Nucleos | ${total}`;
+
+        renderCpuCoreList(data.cores || []);
+        renderCpuVisual({ cpu: total, cpuCores: data.coresCount || 1 });
+        return;
+    }
     if (el.cpu) el.cpu.textContent = total;
     if (el.cpuTotal) el.cpuTotal.textContent = total;
     if (el.cpuTotalPercent) el.cpuTotalPercent.textContent = total;

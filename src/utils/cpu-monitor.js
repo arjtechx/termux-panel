@@ -6,7 +6,7 @@ const PROC_STAT = '/proc/stat';
 const PROC_CPUINFO = '/proc/cpuinfo';
 const SYS_CPU_DIR = '/sys/devices/system/cpu';
 
-let lastCpuSnapshot = null;
+let lastCpuTimes = null;
 let cachedCpuName = null;
 let cachedCoreIds = null;
 
@@ -37,50 +37,74 @@ function safeReadText(filePath) {
     }
 }
 
-function parseCpuLine(line) {
-    const parts = String(line || '').trim().split(/\s+/);
-    const id = parts.shift();
-    if (!id || !/^cpu\d*$/.test(id)) return null;
-
-    const values = parts.map(value => Number.parseInt(value, 10) || 0);
-    const user = values[0] || 0;
-    const nice = values[1] || 0;
-    const system = values[2] || 0;
-    const idleBase = values[3] || 0;
-    const iowait = values[4] || 0;
-    const irq = values[5] || 0;
-    const softirq = values[6] || 0;
-    const steal = values[7] || 0;
-    const idle = idleBase + iowait;
-    const total = user + nice + system + idleBase + iowait + irq + softirq + steal;
-
-    return { id, idle, total };
-}
-
-function readCpuSnapshot() {
+function readProcStatSafe() {
     try {
-        if (fs.existsSync(PROC_STAT)) {
-            const raw = readText(PROC_STAT);
-            const snapshot = {};
-            raw.split('\n').forEach(line => {
-                const parsed = parseCpuLine(line);
-                if (parsed) snapshot[parsed.id] = parsed;
-            });
-            if (snapshot.cpu) return snapshot;
+        if (!fs.existsSync(PROC_STAT)) {
+            return [];
         }
-    } catch (_) {}
 
-    return null;
+        const content = readText(PROC_STAT);
+
+        return content
+            .split('\n')
+            .filter(line => /^cpu[0-9]*\s/.test(line))
+            .map(line => {
+                const parts = line.trim().split(/\s+/);
+                const id = parts[0];
+                const values = parts.slice(1).map(value => Number(value));
+
+                return {
+                    id,
+                    user: values[0] || 0,
+                    nice: values[1] || 0,
+                    system: values[2] || 0,
+                    idle: values[3] || 0,
+                    iowait: values[4] || 0,
+                    irq: values[5] || 0,
+                    softirq: values[6] || 0,
+                    steal: values[7] || 0
+                };
+            });
+    } catch (error) {
+        console.error('[CPU] Erro ao ler /proc/stat:', error.message);
+        return [];
+    }
 }
 
-function calculateUsage(current, previous) {
-    if (!current || !previous) return null;
-    const totalDiff = current.total - previous.total;
-    const idleDiff = current.idle - previous.idle;
-    if (totalDiff <= 0) return null;
+function calculateCpuUsage(current, previous) {
+    if (!current || !previous) return 0;
+
+    const idleNow = current.idle + current.iowait;
+    const idlePrev = previous.idle + previous.iowait;
+
+    const totalNow =
+        current.user +
+        current.nice +
+        current.system +
+        current.idle +
+        current.iowait +
+        current.irq +
+        current.softirq +
+        current.steal;
+
+    const totalPrev =
+        previous.user +
+        previous.nice +
+        previous.system +
+        previous.idle +
+        previous.iowait +
+        previous.irq +
+        previous.softirq +
+        previous.steal;
+
+    const totalDiff = totalNow - totalPrev;
+    const idleDiff = idleNow - idlePrev;
+
+    if (!Number.isFinite(totalDiff) || totalDiff <= 0) return 0;
+
     const usage = ((totalDiff - idleDiff) / totalDiff) * 100;
-    if (!Number.isFinite(usage)) return null;
-    return Math.max(0, Math.min(100, Number(usage.toFixed(1))));
+
+    return Math.max(0, Math.min(100, usage));
 }
 
 function parseOnlineCpuList(value) {
@@ -203,57 +227,82 @@ function readCpuName() {
     return cachedCpuName;
 }
 
-function formatUsage(percent) {
-    return percent === null ? 'Calculando...' : `${percent.toFixed(1)}%`;
-}
-
 function getCpuStatus() {
-    let currentSnapshot;
-    try {
-        currentSnapshot = readCpuSnapshot();
-    } catch (error) {
-        console.error('[CPU] Falha em /proc/stat:', error.message);
-        return fallbackCpuStatus(error);
-    }
-
-    if (!currentSnapshot || !currentSnapshot.cpu) {
-        return fallbackCpuStatus(null, { error: 'PROC_STAT_UNAVAILABLE' });
-    }
-
-    const previousSnapshot = lastCpuSnapshot;
-    lastCpuSnapshot = currentSnapshot;
-
+    const current = readProcStatSafe();
+    const cpuName = readCpuName();
     const coreIds = getCoreIds();
+
+    if (!current || current.length === 0) {
+        return {
+            success: false,
+            cpuName,
+            cpuTotal: '--%',
+            cpuTotalPercent: 0,
+            coresCount: coreIds.length || 0,
+            cores: [],
+            status: 'Nao foi possivel ler /proc/stat',
+            error: 'PROC_STAT_EMPTY'
+        };
+    }
+
     const onlineSet = readOnlineSet();
-    const totalPercent = calculateUsage(currentSnapshot.cpu, previousSnapshot && previousSnapshot.cpu);
-    const cores = coreIds.map(coreId => {
-        const index = Number.parseInt(coreId.slice(3), 10);
-        const online = isCoreOnline(coreId, onlineSet);
-        const usagePercent = online ? calculateUsage(currentSnapshot[coreId], previousSnapshot && previousSnapshot[coreId]) : null;
-        const frequency = online ? readFrequency(coreId) : { formatted: 'freq. indisponivel' };
+
+    if (!lastCpuTimes) {
+        lastCpuTimes = current;
 
         return {
-            id: coreId,
-            label: `CPU ${index}`,
-            usagePercent,
-            usage: online ? formatUsage(usagePercent) : 'offline',
-            online,
-            frequency
+            success: true,
+            partial: true,
+            cpuName,
+            cpuTotal: 'Calculando...',
+            cpuTotalPercent: 0,
+            coresCount: coreIds.length || current.filter(cpu => cpu.id !== 'cpu').length,
+            cores: current
+                .filter(cpu => cpu.id !== 'cpu')
+                .map(cpu => ({
+                    id: cpu.id,
+                    label: cpu.id.toUpperCase().replace('CPU', 'CPU '),
+                    usagePercent: 0,
+                    usage: 'Calculando...',
+                    online: isCoreOnline(cpu.id, onlineSet),
+                    frequency: readFrequency(cpu.id)
+                })),
+            status: 'Coletando primeira leitura'
         };
-    });
+    }
 
-    const hasUnavailableFrequency = cores.some(core => core.online && core.frequency.formatted === 'freq. indisponivel');
-    let status = previousSnapshot ? 'Monitorando CPU' : 'Calculando...';
-    if (previousSnapshot && hasUnavailableFrequency) status = 'Frequencia indisponivel';
+    const previousMap = Object.fromEntries(lastCpuTimes.map(cpu => [cpu.id, cpu]));
+    const totalCpu = current.find(cpu => cpu.id === 'cpu');
+    const previousTotalCpu = previousMap.cpu;
+    const cpuTotalPercent = calculateCpuUsage(totalCpu, previousTotalCpu);
+
+    const cores = current
+        .filter(cpu => cpu.id !== 'cpu')
+        .map(cpu => {
+            const previous = previousMap[cpu.id];
+            const online = isCoreOnline(cpu.id, onlineSet);
+            const usagePercent = online ? calculateCpuUsage(cpu, previous) : 0;
+
+            return {
+                id: cpu.id,
+                label: cpu.id.toUpperCase().replace('CPU', 'CPU '),
+                usagePercent: Number(usagePercent.toFixed(1)),
+                usage: online ? `${usagePercent.toFixed(1)}%` : 'offline',
+                online,
+                frequency: online ? readFrequency(cpu.id) : { formatted: 'freq. indisponivel' }
+            };
+        });
+
+    lastCpuTimes = current;
 
     return {
         success: true,
-        cpuName: readCpuName(),
-        cpuTotalPercent: totalPercent,
-        cpuTotal: formatUsage(totalPercent),
-        coresCount: coreIds.length,
+        cpuName,
+        cpuTotalPercent: Number(cpuTotalPercent.toFixed(1)),
+        cpuTotal: `${cpuTotalPercent.toFixed(1)}%`,
+        coresCount: coreIds.length || cores.length,
         cores,
-        status
+        status: 'Monitorando CPU'
     };
 }
 
