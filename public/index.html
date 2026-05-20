@@ -506,9 +506,6 @@
                     <button class="fm-ico" onclick="fmTerminalHere()" title="Terminal"><i data-lucide="terminal"></i></button>
                     <button class="fm-ico" onclick="loadFiles()" title="Atualizar"><i data-lucide="refresh-cw"></i></button>
                 </div>
-
-                <!-- Container de Notificações Toast -->
-                <div class="fm-toast-container" id="fm-toast-container"></div>
             </div>
 
             <!-- === TAB: TERMINAL === -->
@@ -1561,8 +1558,11 @@
     </div>
 </div>
 
+<!-- Container de Notificações Toast Global -->
+<div class="fm-toast-container" id="fm-toast-container"></div>
+
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.64"></script>
+<script src="filemanager.js?v=0.2.65"></script>
 <script src="app.js?v=4.2"></script>
 </body>
 </html>

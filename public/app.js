@@ -260,7 +260,7 @@ function connectTerminal() {
     const saveCheck = document.getElementById('sshSaveDetails')?.checked;
 
     if (!username || !password) {
-        alert('Preencha usuário e senha SSH!');
+        showToast('Preencha usuário e senha SSH!', 'warning');
         return;
     }
 
@@ -509,9 +509,10 @@ async function killProcess(pid) {
 async function cleanupDuplicateProcesses() {
     const data = await safeFetch(`${API_BASE}/processes/cleanup-duplicates`, 'POST', null, 10000);
     if (data?.success) {
+        showToast('Processos duplicados limpos com sucesso!', 'success');
         fetchProcesses();
     } else {
-        alert(data?.error || 'Falha ao limpar processos duplicados.');
+        showToast(data?.error || 'Falha ao limpar processos duplicados.', 'error');
     }
 }
 
@@ -763,12 +764,12 @@ async function handleCreateDatabase(e) {
     const dbPass = document.getElementById('modalDbPass').value;
 
     if (!dbName.match(/^[a-zA-Z0-9_]+$/)) {
-        alert('Nome de banco inválido! Use apenas letras, números e underline.');
+        showToast('Nome de banco inválido! Use apenas letras, números e underline.', 'warning');
         return;
     }
     
     if (dbUser && !dbUser.match(/^[a-zA-Z0-9_-]+$/)) {
-        alert('Nome de usuário inválido! Use apenas letras, números, underline e hífen.');
+        showToast('Nome de usuário inválido! Use apenas letras, números, underline e hífen.', 'warning');
         return;
     }
 
@@ -779,17 +780,18 @@ async function handleCreateDatabase(e) {
             logToDbConsole(`create_db --name=${dbName} --user=${dbUser || 'none'}`, 
                 `✓ Banco "${dbName}" criado com sucesso!\n` +
                 (dbUser ? `✓ Usuário "${dbUser}" criado com privilégios totais concedidos no banco "${dbName}".` : '✓ Nenhum usuário adicional criado.'));
-            alert('✅ Banco criado com sucesso!');
+            showToast('Banco criado com sucesso!', 'success');
             closeDbCreateModal();
             e.target.reset();
             currentDbManager = dbName;
             fetchDatabases();
         } else {
             logToDbConsole(`create_db --name=${dbName} --user=${dbUser || 'none'}`, `❌ Erro ao criar banco: ${result?.message || 'Falha interna'}`, true);
-            alert(`❌ Erro ao criar banco: ${result?.message || 'Erro interno'}`);
+            showToast(`Erro ao criar banco: ${result?.message || 'Erro interno'}`, 'error');
         }
     } catch (err) {
         logToDbConsole(`create_db --name=${dbName} --user=${dbUser || 'none'}`, `❌ Erro de rede: ${err.message}`, true);
+        showToast(`Erro de rede: ${err.message}`, 'error');
     }
 }
 
@@ -994,12 +996,14 @@ async function actionResetPassword() {
                 });
             }
             logToDbConsole(`mysql -e "ALTER USER '${username}' IDENTIFIED BY '***';"`, logMsg);
-            alert('✅ Senha redefinida com sucesso!');
+            showToast('Senha redefinida com sucesso!', 'success');
         } else {
             logToDbConsole(`mysql -e "ALTER USER '${username}' IDENTIFIED BY '***';"`, `❌ Erro: ${data.error || 'Falha ao redefinir senha.'}`, true);
+            showToast(`Erro: ${data.error || 'Falha ao redefinir senha.'}`, 'error');
         }
     } catch(err) {
         logToDbConsole(`mysql -e "ALTER USER '${username}' IDENTIFIED BY '***';"`, `❌ Erro de rede: ${err.message}`, true);
+        showToast(`Erro de rede: ${err.message}`, 'error');
     }
 }
 
@@ -1029,11 +1033,11 @@ async function actionPermissions() {
 
 async function actionRename() {
     const newName = document.getElementById('dbRenameInput').value.trim();
-    if (!newName) return alert('Digite o novo nome do banco.');
-    if (newName === currentDbManager) return alert('O novo nome deve ser diferente do atual.');
+    if (!newName) return showToast('Digite o novo nome do banco.', 'warning');
+    if (newName === currentDbManager) return showToast('O novo nome deve ser diferente do atual.', 'warning');
 
     if (!newName.match(/^[a-zA-Z0-9_]+$/)) {
-        return alert('Nome de banco inválido. Use apenas letras, números e underline.');
+        return showToast('Nome de banco inválido. Use apenas letras, números e underline.', 'warning');
     }
 
     const deleteOld = confirm(`Excluir o banco antigo "${currentDbManager}" após clonar e validar com sucesso?\n\n(Selecione CANCELAR para manter o banco antigo ativo como backup por segurança)`);
@@ -1053,14 +1057,16 @@ async function actionRename() {
                 `- Backup temporário de segurança criado: ${data.backupFile.split(/[\\/]/).pop()}\n` +
                 `- Validação estrutural: OK\n` +
                 `- Exclusão do banco antigo: ${deleteOld ? 'Banco antigo excluído' : 'Mantido por segurança'}`);
-            alert(`✅ Banco renomeado com sucesso!`);
+            showToast('Banco renomeado com sucesso!', 'success');
             currentDbManager = newName;
             fetchDatabases();
         } else {
             logToDbConsole(`rename_db "${currentDbManager}" "${newName}"`, `❌ Erro ao renomear: ${data.error || 'Falha interna.'}`, true);
+            showToast(`Erro ao renomear: ${data.error || 'Falha interna.'}`, 'error');
         }
     } catch(err) {
         logToDbConsole(`rename_db "${currentDbManager}" "${newName}"`, `❌ Erro de rede: ${err.message}`, true);
+        showToast(`Erro de rede: ${err.message}`, 'error');
     }
 }
 
@@ -1088,14 +1094,16 @@ async function actionDrop() {
         const data = await res.json();
         if (data.success) {
             logToDbConsole(`DROP DATABASE \`${currentDbManager}\`;`, `✓ Banco "${currentDbManager}" deletado com sucesso do servidor MariaDB.`);
-            alert('✅ Banco deletado permanentemente com sucesso!');
+            showToast('Banco deletado permanentemente com sucesso!', 'success');
             currentDbManager = null;
             fetchDatabases();
         } else {
             logToDbConsole(`DROP DATABASE \`${currentDbManager}\`;`, `❌ Erro ao excluir banco: ${data.error || 'Falha interna.'}`, true);
+            showToast(`Erro ao excluir banco: ${data.error || 'Falha interna.'}`, 'error');
         }
     } catch(err) {
         logToDbConsole(`DROP DATABASE \`${currentDbManager}\`;`, `❌ Erro de rede: ${err.message}`, true);
+        showToast(`Erro de rede: ${err.message}`, 'error');
     }
 }
 
@@ -1131,7 +1139,11 @@ async function mariadbAction(action) {
 
 async function testDbConnection() {
     const data = await safeFetch(`${API_BASE}/db/test`);
-    alert(data?.success ? `✅ ${data.message}` : `❌ ${data?.message || 'Falha na conexão'}`);
+    if (data?.success) {
+        showToast(data.message || 'Conexão testada com sucesso!', 'success');
+    } else {
+        showToast(data?.message || 'Falha na conexão', 'error');
+    }
 }
 
 async function createDbBackup() {
@@ -1142,9 +1154,10 @@ async function createDbBackup() {
         const resultEl   = document.getElementById('db-backup-result');
         if (filenameEl) filenameEl.textContent = result.filename;
         if (resultEl)   resultEl.classList.remove('hidden');
+        showToast('Backup gerado com sucesso!', 'success');
         loadDbBackups();
     } else {
-        alert('❌ Erro ao gerar backup. Verifique a conexão.');
+        showToast('Erro ao gerar backup. Verifique a conexão.', 'error');
     }
 }
 
@@ -1159,10 +1172,14 @@ async function loadDbBackups() {
 async function restoreDbBackup() {
     const filename = document.getElementById('dbRestoreFile')?.value;
     const dbName   = document.getElementById('dbRestoreTarget')?.value;
-    if (!filename) { alert('Selecione um arquivo de backup!'); return; }
+    if (!filename) { showToast('Selecione um arquivo de backup!', 'warning'); return; }
     if (!confirm(`Restaurar "${filename}"? Isso substituirá os dados existentes.`)) return;
     const result = await safeFetch(`${API_BASE}/db/restore`, 'POST', { filename, dbName });
-    alert(result?.success ? '✅ Banco restaurado com sucesso!' : '❌ Erro ao restaurar.');
+    if (result?.success) {
+        showToast('Banco restaurado com sucesso!', 'success');
+    } else {
+        showToast('Erro ao restaurar banco de dados.', 'error');
+    }
 }
 
 function showDbSetup() { document.getElementById('dbSetupModal').classList.remove('hidden'); }
@@ -1178,7 +1195,11 @@ async function saveDbSetup() {
     if (result?.success) {
         // Testa conexão automaticamente após salvar
         const test = await safeFetch(`${API_BASE}/db/test`);
-        alert(test?.success ? '✅ Configuração salva! Conexão OK.' : `⚠️ Configuração salva mas conexão falhou: ${test?.message}`);
+        if (test?.success) {
+            showToast('Configuração salva! Conexão OK.', 'success');
+        } else {
+            showToast(`Configuração salva mas conexão falhou: ${test?.message}`, 'warning');
+        }
         fetchDatabases();
     }
 }
@@ -1443,14 +1464,15 @@ async function deleteNginxSite(file) {
 }
 
 async function actionNginx(action) {
-    const labels = { start: 'iniciar', stop: 'parar', restart: 'reiniciar' };
-    if (!confirm(`Deseja ${labels[action]} o serviço do NGINX?`)) return;
+    const labels = { start: 'iniciado', stop: 'parado', restart: 'reiniciado' };
+    const verb = { start: 'iniciar', stop: 'parar', restart: 'reiniciar' };
+    if (!confirm(`Deseja ${verb[action]} o serviço do NGINX?`)) return;
     const res = await safeFetch(`${API_BASE}/nginx/action`, 'POST', { action });
     if (res?.success) {
-        alert(`NGINX ${labels[action]} com sucesso!`);
+        showToast(`NGINX ${labels[action]} com sucesso!`, 'success');
         fetchNginxSites();
     } else {
-        alert('Erro ao processar o comando.');
+        showToast('Erro ao processar o comando do NGINX.', 'error');
     }
 }
 
@@ -1468,7 +1490,11 @@ async function saveCron() {
     const content = document.getElementById('cronEditor')?.value;
     // Servidor espera campo {cron: '...'}
     const result = await safeFetch(`${API_BASE}/cron`, 'POST', { cron: content });
-    if (result?.success) alert('Crontab salvo com sucesso!');
+    if (result?.success) {
+        showToast('Crontab salvo com sucesso!', 'success');
+    } else {
+        showToast('Erro ao salvar crontab.', 'error');
+    }
 }
 
 // ============================================================
@@ -1502,14 +1528,18 @@ async function toggleNoip() {
 
 async function saveNoipConfig(e) {
     e.preventDefault();
-    await safeFetch(`${API_BASE}/noip`, 'POST', {
+    const res = await safeFetch(`${API_BASE}/noip`, 'POST', {
         username: document.getElementById('noipUsername').value,
         password: document.getElementById('noipPassword').value,
         hostname: document.getElementById('noipHostname').value,
         interval: parseInt(document.getElementById('noipInterval').value),
         autostart: document.getElementById('noipAutostart').checked,
     });
-    alert('Configuração salva!');
+    if (res?.error) {
+        showToast('Erro ao salvar configuração do No-IP: ' + res.error, 'error');
+    } else {
+        showToast('Configuração do No-IP salva!', 'success');
+    }
     fetchNoipStatus();
 }
 
@@ -1698,7 +1728,7 @@ async function runManualSystemUpdate() {
     const select = document.getElementById('github-versions-select');
     const tag = select?.value;
     if (!tag) {
-        alert('❌ Selecione uma versão válida!');
+        showToast('Selecione uma versão válida!', 'warning');
         return;
     }
 
@@ -1810,15 +1840,15 @@ async function saveGithubRepo() {
     if (input) input.value = repo;
 
     if (!repo || !repo.includes('/')) {
-        alert('Formato inválido. Use: usuario/repositorio');
+        showToast('Formato inválido. Use: usuario/repositorio', 'warning');
         return;
     }
     const result = await safeFetch(`${API_BASE}/system/update/config`, 'POST', { github_repo: repo });
     if (result?.success) {
-        alert(`✅ Repositório salvo: ${repo}\n\nAgora clique em "Verificar" para checar atualizações.`);
+        showToast(`Repositório salvo: ${repo}. Agora clique em "Verificar" para checar atualizações.`, 'success');
         checkSystemUpdates();
     } else {
-        alert('❌ Erro ao salvar configuração.');
+        showToast('Erro ao salvar configuração do repositório.', 'error');
     }
 }
 
@@ -2031,13 +2061,14 @@ async function toggleBootAutostart() {
 
     const res = await safeFetch(`${API_BASE}/system/settings/autostart/toggle`, 'POST', { active: nextState });
     if (res?.success) {
-        alert(nextState 
-            ? '✅ Regra de inicialização (Ao abrir o Termux) configurada com sucesso!' 
-            : '✅ Regra de inicialização (Ao abrir o Termux) removida.'
+        showToast(nextState 
+            ? 'Regra de inicialização (Ao abrir o Termux) configurada com sucesso!' 
+            : 'Regra de inicialização (Ao abrir o Termux) removida.',
+            'success'
         );
         loadSettings();
     } else {
-        alert('❌ Falha ao alterar a regra de auto-inicialização.');
+        showToast('Falha ao alterar a regra de auto-inicialização.', 'error');
     }
 }
 
@@ -2048,13 +2079,14 @@ async function toggleTermuxBoot() {
 
     const res = await safeFetch(`${API_BASE}/system/settings/autostart-boot/toggle`, 'POST', { active: nextState });
     if (res?.success) {
-        alert(nextState 
-            ? '✅ Regra de inicialização via Termux:Boot configurada!\n\nNota importante: Lembre-se de instalar o aplicativo auxiliar "Termux:Boot" no seu celular para que o script rode de forma invisível em segundo plano ao ligar o celular.' 
-            : '✅ Regra de inicialização via Termux:Boot removida com sucesso.'
+        showToast(nextState 
+            ? 'Regra de inicialização via Termux:Boot configurada! Instale o app auxiliar "Termux:Boot" para inicialização invisível em segundo plano.' 
+            : 'Regra de inicialização via Termux:Boot removida com sucesso.',
+            'success'
         );
         loadSettings();
     } else {
-        alert('❌ Falha ao alterar a regra do Termux:Boot.');
+        showToast('Falha ao alterar a regra do Termux:Boot.', 'error');
     }
 }
 
@@ -2062,7 +2094,7 @@ async function savePanelPort() {
     const input = document.getElementById('settings-port-input');
     const newPort = parseInt(input?.value);
     if (!newPort || newPort < 1 || newPort > 65535) {
-        alert('❌ Porta inválida! Insira um valor entre 1 e 65535.');
+        showToast('Porta inválida! Insira um valor entre 1 e 65535.', 'warning');
         return;
     }
 
@@ -2072,12 +2104,12 @@ async function savePanelPort() {
 
     const res = await safeFetch(`${API_BASE}/system/settings/port`, 'POST', { port: newPort });
     if (res?.success) {
-        alert(`✅ Porta alterada com sucesso!\n\nO servidor está reiniciando agora. Você será redirecionado para a nova porta em 5 segundos.`);
+        showToast('Porta alterada com sucesso! O servidor está reiniciando, redirecionando em 5 segundos...', 'success');
         setTimeout(() => {
             window.location.href = `http://${window.location.hostname}:${newPort}`;
         }, 5000);
     } else {
-        alert(`❌ Erro: ${res?.error || 'Não foi possível alterar a porta.'}`);
+        showToast(`Erro: ${res?.error || 'Não foi possível alterar a porta.'}`, 'error');
     }
 }
 
@@ -2088,7 +2120,7 @@ async function savePanelAuth() {
     const pass = passInput?.value;
 
     if (!user || !pass || user === '' || pass === '') {
-        alert('❌ Usuário e senha não podem ficar vazios!');
+        showToast('Usuário e senha não podem ficar vazios!', 'warning');
         return;
     }
 
@@ -2098,10 +2130,10 @@ async function savePanelAuth() {
 
     const res = await safeFetch(`${API_BASE}/system/settings/auth`, 'POST', { user, pass });
     if (res?.success) {
-        alert('✅ Credenciais atualizadas com sucesso!');
+        showToast('Credenciais atualizadas com sucesso!', 'success');
         loadSettings();
     } else {
-        alert(`❌ Erro: ${res?.error || 'Não foi possível salvar as credenciais.'}`);
+        showToast(`Erro: ${res?.error || 'Não foi possível salvar as credenciais.'}`, 'error');
     }
 }
 
@@ -2333,7 +2365,7 @@ async function createHostingService(e) {
     const createIndex = document.getElementById('hsCreateIndex').checked;
 
     if (!name || !listenPort) {
-        alert('❌ Nome e Porta Pública são obrigatórios!');
+        showToast('Nome e Porta Pública são obrigatórios!', 'warning');
         return;
     }
 
@@ -2348,14 +2380,14 @@ async function createHostingService(e) {
         const res = await safeFetch(`${API_BASE}/hosting`, 'POST', payload);
         
         if (res?.success) {
-            alert('✅ Serviço de Hospedagem criado com sucesso!');
+            showToast('Serviço de Hospedagem criado com sucesso!', 'success');
             closeHostingModal();
             fetchHostingServices();
         } else {
-            alert(`❌ Falha ao criar serviço:\n\n${res?.error || 'Erro desconhecido.'}`);
+            showToast(`Falha ao criar serviço: ${res?.error || 'Erro desconhecido.'}`, 'error');
         }
     } catch (err) {
-        alert(`❌ Falha de rede: ${err.message}`);
+        showToast(`Falha de rede: ${err.message}`, 'error');
     } finally {
         submitBtn.disabled = false;
         submitBtn.innerHTML = originalText;
@@ -2367,12 +2399,13 @@ async function toggleHostingProcess(id, start) {
     try {
         const res = await safeFetch(`${API_BASE}/hosting/${id}/toggle`, 'POST', { active: start });
         if (res?.success) {
+            showToast(`Processo ${start ? 'iniciado' : 'parado'} com sucesso!`, 'success');
             fetchHostingServices();
         } else {
-            alert(`❌ Falha ao alterar estado do processo:\n\n${res?.error || 'Erro interno.'}`);
+            showToast(`Falha ao alterar estado do processo: ${res?.error || 'Erro interno.'}`, 'error');
         }
     } catch (err) {
-        alert(`❌ Erro de rede: ${err.message}`);
+        showToast(`Erro de rede: ${err.message}`, 'error');
     }
 }
 
@@ -2384,13 +2417,13 @@ async function deleteHostingService(id, name) {
     try {
         const res = await safeFetch(`${API_BASE}/hosting/${id}`, 'DELETE');
         if (res?.success) {
-            alert('✅ Serviço excluído com sucesso!');
+            showToast('Serviço excluído com sucesso!', 'success');
             fetchHostingServices();
         } else {
-            alert(`❌ Falha ao excluir serviço:\n\n${res?.error || 'Erro interno.'}`);
+            showToast(`Falha ao excluir serviço: ${res?.error || 'Erro interno.'}`, 'error');
         }
     } catch (err) {
-        alert(`❌ Erro de rede: ${err.message}`);
+        showToast(`Erro de rede: ${err.message}`, 'error');
     }
 }
 
@@ -2483,8 +2516,8 @@ async function cfCreateTunnel(e) {
         autoStart: document.getElementById('cfAutoStart').checked
     };
 
-    if (payload.type === 'token' && !payload.token) return alert('Insira o Token.');
-    if (payload.type !== 'token' && !payload.localPort) return alert('Insira a porta local.');
+    if (payload.type === 'token' && !payload.token) return showToast('Insira o Token.', 'warning');
+    if (payload.type !== 'token' && !payload.localPort) return showToast('Insira a porta local.', 'warning');
 
     try {
         const res = await fetch(`${API_BASE}/tunnel/create`, {
@@ -2496,8 +2529,9 @@ async function cfCreateTunnel(e) {
         if (!data.success) throw new Error(data.error);
         cfCloseCreateModal();
         cfFetchTunnels();
+        showToast('Túnel criado com sucesso!', 'success');
     } catch (e) {
-        alert('Erro ao criar túnel: ' + e.message);
+        showToast('Erro ao criar túnel: ' + e.message, 'error');
     }
 }
 
@@ -2640,10 +2674,14 @@ async function cfStartTunnel(id) {
             body: JSON.stringify({ id })
         });
         const data = await res.json();
-        if (!data.success) alert('Falha ao iniciar: ' + data.error);
+        if (!data.success) {
+            showToast('Falha ao iniciar: ' + data.error, 'error');
+        } else {
+            showToast('Túnel iniciado com sucesso!', 'success');
+        }
         cfFetchTunnels();
     } catch (e) {
-        alert('Erro ao iniciar túnel: ' + e.message);
+        showToast('Erro ao iniciar túnel: ' + e.message, 'error');
     }
 }
 
@@ -2655,10 +2693,14 @@ async function cfStopTunnel(id) {
             body: JSON.stringify({ id })
         });
         const data = await res.json();
-        if (!data.success) alert('Falha ao parar: ' + data.error);
+        if (!data.success) {
+            showToast('Falha ao parar: ' + data.error, 'error');
+        } else {
+            showToast('Túnel parado com sucesso!', 'success');
+        }
         cfFetchTunnels();
     } catch (e) {
-        alert('Erro ao parar túnel: ' + e.message);
+        showToast('Erro ao parar túnel: ' + e.message, 'error');
     }
 }
 
@@ -2670,35 +2712,44 @@ async function cfRestartTunnel(id) {
             body: JSON.stringify({ id })
         });
         const data = await res.json();
-        if (!data.success) alert('Falha ao reiniciar: ' + data.error);
+        if (!data.success) {
+            showToast('Falha ao reiniciar: ' + data.error, 'error');
+        } else {
+            showToast('Túnel reiniciado com sucesso!', 'success');
+        }
         cfFetchTunnels();
     } catch (e) {
-        alert('Erro ao reiniciar túnel: ' + e.message);
+        showToast('Erro ao reiniciar túnel: ' + e.message, 'error');
     }
 }
 
 async function cfDeleteTunnel(id) {
     if (!confirm('Excluir este túnel permanentemente?')) return;
     try {
-        await fetch(`${API_BASE}/tunnel/delete`, {
+        const res = await fetch(`${API_BASE}/tunnel/delete`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ id })
         });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
         cfFetchTunnels();
+        showToast('Túnel excluído com sucesso!', 'success');
     } catch (e) {
-        alert('Erro ao excluir: ' + e.message);
+        showToast('Erro ao excluir: ' + e.message, 'error');
     }
 }
 
 async function cfKillZombies() {
     if (!confirm('Deseja enviar um sinal SIGKILL para todos os processos Cloudflared do celular? Isso força a parada de processos zumbis invisíveis.')) return;
     try {
-        await fetch(`${API_BASE}/system/kill-zombies`, { method: 'POST' });
-        alert('Sinal enviado. Os processos zumbis foram aniquilados.');
+        const res = await fetch(`${API_BASE}/system/kill-zombies`, { method: 'POST' });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+        showToast('Sinal enviado. Os processos zumbis foram aniquilados!', 'success');
         cfFetchTunnels();
     } catch (e) {
-        alert('Erro: ' + e.message);
+        showToast('Erro: ' + e.message, 'error');
     }
 }
 
@@ -2755,8 +2806,9 @@ async function cfUpdateTunnelSubmit(e) {
         if (!data.success) throw new Error(data.error);
         cfCloseEditModal();
         cfFetchTunnels();
+        showToast('Túnel atualizado com sucesso!', 'success');
     } catch (e) {
-        alert('Erro ao atualizar: ' + e.message);
+        showToast('Erro ao atualizar: ' + e.message, 'error');
     }
 }
 
@@ -2827,8 +2879,9 @@ async function cfSaveYaml() {
         if (!data.success) throw new Error(data.error);
         cfCloseYamlModal();
         cfFetchTunnels();
+        showToast('Configuração YAML salva com sucesso!', 'success');
     } catch (e) {
-        alert('Erro ao salvar configuração YAML: ' + e.message);
+        showToast('Erro ao salvar configuração YAML: ' + e.message, 'error');
     }
 }
 
@@ -2848,8 +2901,9 @@ async function cfGenerateYamlTemplate() {
         const data = await res.json();
         document.getElementById('cfYamlTextarea').value = data.yamlConfig || '';
         cfLiveValidateYaml();
+        showToast('Modelo padrão gerado com sucesso!', 'success');
     } catch (e) {
-        alert('Erro ao gerar modelo padrão: ' + e.message);
+        showToast('Erro ao gerar modelo padrão: ' + e.message, 'error');
     }
 }
 
@@ -2895,13 +2949,13 @@ async function cfImportConfigs(e) {
             });
             const data = await res.json();
             if (data.success) {
-                alert(`Importado com sucesso! ${data.count} túneis carregados.`);
+                showToast(`Importado com sucesso! ${data.count} túneis carregados.`, 'success');
                 cfFetchTunnels();
             } else {
-                alert('Erro ao importar: ' + data.error);
+                showToast('Erro ao importar: ' + data.error, 'error');
             }
         } catch(err) {
-            alert('Arquivo JSON inválido.');
+            showToast('Arquivo JSON inválido.', 'error');
         }
     };
     reader.readAsText(file);
@@ -3019,14 +3073,14 @@ async function cfClearCert() {
         const res = await fetch(`${API_BASE}/auth/logout`, { method: 'POST' });
         const data = await res.json();
         if (data.success) {
-            alert('Certificado removido! Você já pode gerar um novo.');
+            showToast('Certificado removido com sucesso!', 'success');
             document.getElementById('cfLoginStatus').textContent = 'Pronto para um novo Login.';
             document.getElementById('cfLoginLink').classList.add('hidden');
         } else {
-            alert('Falha ao remover certificado: ' + data.error);
+            showToast('Falha ao remover certificado: ' + data.error, 'error');
         }
     } catch (e) {
-        alert('Erro: ' + e.message);
+        showToast('Erro: ' + e.message, 'error');
     }
 }
 
@@ -3038,14 +3092,14 @@ async function cfResetManager() {
         const res = await fetch(`${API_BASE}/system/reset`, { method: 'POST' });
         const data = await res.json();
         if (data.success) {
-            alert('Configurações e certificado removidos com sucesso!');
+            showToast('Configurações e certificado removidos com sucesso!', 'success');
             cfFetchTunnels();
             cfCheckLoginStatus();
         } else {
-            alert('Falha ao limpar configurações: ' + (data.error || 'Erro desconhecido.'));
+            showToast('Falha ao limpar configurações: ' + (data.error || 'Erro desconhecido.'), 'error');
         }
     } catch (e) {
-        alert('Erro ao se conectar com o backend: ' + e.message);
+        showToast('Erro ao se conectar com o backend: ' + e.message, 'error');
     }
 }
 

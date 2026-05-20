@@ -219,6 +219,9 @@ function updateTunnel(id, data) {
     if (data.name) t.name = data.name;
     if (data.type) t.type = data.type;
     if (data.token !== undefined) t.token = data.token;
+    
+    let needsYamlRegen = false;
+
     if (data.domain !== undefined) {
         if (t.type === 'classic_custom' && t.uuid && data.domain && data.domain !== t.domain) {
             console.log(`[CLOUDFLARED] Roteando novo domínio ${data.domain} para o túnel ${t.uuid}...`);
@@ -231,14 +234,32 @@ function updateTunnel(id, data) {
             } catch (dnsErr) {
                 console.warn(`[CLOUDFLARED] Aviso ao rotear novo DNS: ${dnsErr.message}`);
             }
+            needsYamlRegen = true;
         }
         t.domain = data.domain;
     }
-    if (data.proto !== undefined) t.proto = data.proto;
-    if (data.localHost !== undefined) t.localHost = data.localHost;
-    if (data.localPort !== undefined) t.localPort = String(data.localPort);
+    if (data.proto !== undefined) {
+        if (data.proto !== t.proto && t.type === 'classic_custom') needsYamlRegen = true;
+        t.proto = data.proto;
+    }
+    if (data.localHost !== undefined) {
+        if (data.localHost !== t.localHost && t.type === 'classic_custom') needsYamlRegen = true;
+        t.localHost = data.localHost;
+    }
+    if (data.localPort !== undefined) {
+        const newPort = String(data.localPort);
+        if (newPort !== t.localPort && t.type === 'classic_custom') needsYamlRegen = true;
+        t.localPort = newPort;
+    }
     if (data.autoStart !== undefined) t.autoStart = !!data.autoStart;
-    if (data.ingress !== undefined) t.ingress = data.ingress;
+    if (data.ingress !== undefined) {
+        t.ingress = data.ingress;
+        if (t.type === 'classic_custom') needsYamlRegen = true;
+    }
+    
+    if (needsYamlRegen) {
+        t.yamlConfig = generateYamlConfig(t);
+    }
     
     // Save YAML changes directly if provided and validated
     if (data.yamlConfig !== undefined) {
