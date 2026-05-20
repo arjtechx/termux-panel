@@ -178,41 +178,20 @@
                         </span>
                         <strong id="stat-temperature">--°C</strong>
                     </div>
-                    <div class="stat-card" style="position: relative; display: flex; flex-direction: column; justify-content: space-between; min-height: 240px;">
-                        <span class="card-label" style="display: flex; justify-content: space-between; align-items: center; width: 100%; margin-bottom: 12px;">
-                            <span style="display: flex; align-items: center; gap: 6px;"><i data-lucide="arrow-up-down"></i> Rede em Tempo Real</span>
-                            <button id="root-toggle" class="btn btn-secondary btn-sm" style="padding: 2px 6px; font-size: 0.65rem; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;" onclick="toggleRootMode()">🔓 Normal</button>
+                    <div class="stat-card" style="position: relative;">
+                        <span class="card-label" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                            <span><i data-lucide="arrow-up-down"></i> Rede (<span id="net-interface">---</span>)</span>
+                            <button id="root-toggle" onclick="toggleRootMode(event)" style="background: var(--bg-lighter); border: 1px solid var(--border); color: var(--text-color); font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; cursor: pointer; z-index: 3;" title="Alternar modo root">🔓 Normal</button>
                         </span>
-                        
-                        <div style="display: flex; flex-direction: column; gap: 8px; flex-grow: 1; justify-content: center;">
-                            <div style="display: flex; justify-content: space-between; font-size: 0.85rem; align-items: center;">
-                                <span style="color: var(--text-muted);">Interface:</span>
-                                <strong id="net-interface" style="font-size: 0.95rem; font-weight: 600; letter-spacing: normal;">---</strong>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; font-size: 0.85rem; align-items: center;">
-                                <span style="color: var(--text-muted);">↓ Download atual:</span>
-                                <strong id="net-down" style="font-size: 0.95rem; font-weight: 600; letter-spacing: normal; color: var(--success);">0 B/s</strong>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; font-size: 0.85rem; align-items: center;">
-                                <span style="color: var(--text-muted);">↑ Upload atual:</span>
-                                <strong id="net-up" style="font-size: 0.95rem; font-weight: 600; letter-spacing: normal; color: var(--warning);">0 B/s</strong>
-                            </div>
-                            
-                            <hr style="border: 0; border-top: 1px solid var(--border); margin: 6px 0;">
-                            
-                            <div style="display: flex; justify-content: space-between; font-size: 0.85rem; align-items: center;">
-                                <span style="color: var(--text-muted);">Total recebido:</span>
-                                <strong id="net-total-down" style="font-size: 0.95rem; font-weight: 600; letter-spacing: normal;">0 B</strong>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; font-size: 0.85rem; align-items: center;">
-                                <span style="color: var(--text-muted);">Total enviado:</span>
-                                <strong id="net-total-up" style="font-size: 0.95rem; font-weight: 600; letter-spacing: normal;">0 B</strong>
-                            </div>
-                        </div>
-                        
-                        <div style="margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 0.72rem; color: var(--text-muted); display: flex; align-items: center; justify-content: space-between;">
-                            <span id="net-status">Verificando...</span>
-                        </div>
+                        <strong style="font-size: 1.15rem; display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px;">
+                            <span id="net-down" style="color: var(--success); font-weight: 700;">↓ 0 B/s</span>
+                            <span style="color: var(--border);">|</span>
+                            <span id="net-up" style="color: var(--warning); font-weight: 700;">↑ 0 B/s</span>
+                        </strong>
+                        <small style="margin-top: 4px; display: block; font-size: 0.72rem; color: var(--text-muted);">
+                            Total: <span id="net-total-down">0 B</span> / <span id="net-total-up">0 B</span>
+                        </small>
+                        <small id="net-status" style="font-size: 0.65rem; color: var(--text-muted); margin-top: 4px; display: block;">Verificando...</small>
                     </div>
                     <!-- Speedtest Card -->
                     <div class="stat-card speedtest-card" id="speedtest-card" style="cursor: pointer; transition: all 0.3s ease; position: relative; overflow: hidden; display: flex; flex-direction: column;" onclick="if(event.target.closest('#speedtest-unit-btn')) return; startSpeedTest()">
@@ -1626,7 +1605,7 @@
 <div class="fm-toast-container" id="fm-toast-container"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.80"></script>
+<script src="filemanager.js?v=0.2.81"></script>
 <script src="app.js?v=4.4"></script>
 </body>
 </html>

@@ -3531,7 +3531,11 @@ async function updateNetworkStatus() {
     }
 }
 
-async function toggleRootMode() {
+async function toggleRootMode(e) {
+    if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
     try {
         const nextState = !rootModeActive;
         const response = await fetch("/api/network/root", {
@@ -3555,3 +3559,8 @@ async function toggleRootMode() {
         showToast("Erro ao alternar modo root", "error");
     }
 }
+
+// Expor funcoes para escopo global (window)
+window.toggleRootMode = toggleRootMode;
+window.checkNetworkAccess = checkNetworkAccess;
+window.updateNetworkStatus = updateNetworkStatus;
