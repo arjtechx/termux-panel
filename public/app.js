@@ -82,6 +82,9 @@ async function runBootSequence() {
     setTimeout(() => {
         bootDone();
         // Inicia polling após o boot
+        checkNetworkAccess();
+        updateNetworkStatus();
+        setInterval(updateNetworkStatus, 1000);
         setInterval(fetchStatus,    5000);
         setInterval(fetchApps,     15000);
         setInterval(fetchProcesses, 10000);
@@ -3451,4 +3454,104 @@ function startSpeedTest() {
         updateNeedle(0);
         eventSource.close();
     };
+}
+
+// ============================================================
+//  MONITORAMENTO DE REDE EM TEMPO REAL
+// ============================================================
+let rootModeActive = false;
+
+async function checkNetworkAccess() {
+    try {
+        const response = await fetch("/api/network/test");
+        const data = await response.json();
+        
+        const rootToggle = document.getElementById("root-toggle");
+        const netStatus = document.getElementById("net-status");
+        
+        if (data.mode === "normal") {
+            if (netStatus) netStatus.textContent = "Monitorando sem root";
+            if (rootToggle) rootToggle.style.display = "none";
+        } else if (data.mode === "root_available") {
+            if (netStatus) netStatus.textContent = "Modo normal falhou. Root disponível.";
+            if (rootToggle) {
+                rootToggle.style.display = "inline-flex";
+                rootToggle.innerHTML = rootModeActive ? "🔐 Root ON" : "🔓 Normal";
+            }
+        } else {
+            if (netStatus) {
+                netStatus.textContent = `Erro de permissão ou interface não encontrada`;
+            }
+            if (rootToggle) rootToggle.style.display = "none";
+        }
+    } catch (err) {
+        const netStatus = document.getElementById("net-status");
+        if (netStatus) netStatus.textContent = "Erro ao verificar rede";
+    }
+}
+
+async function updateNetworkStatus() {
+    try {
+        const response = await fetch("/api/network/status");
+        const data = await response.json();
+        
+        const ifaceEl = document.getElementById("net-interface");
+        const downEl = document.getElementById("net-down");
+        const upEl = document.getElementById("net-up");
+        const totalDownEl = document.getElementById("net-total-down");
+        const totalUpEl = document.getElementById("net-total-up");
+        const statusEl = document.getElementById("net-status");
+        const rootToggle = document.getElementById("root-toggle");
+        
+        if (data.success) {
+            rootModeActive = !!data.root;
+            if (ifaceEl) ifaceEl.textContent = data.interface || "---";
+            if (downEl) downEl.textContent = data.downloadSpeed || '0 B/s';
+            if (upEl) upEl.textContent = data.uploadSpeed || '0 B/s';
+            if (totalDownEl) totalDownEl.textContent = data.totalReceived || '0 B';
+            if (totalUpEl) totalUpEl.textContent = data.totalSent || '0 B';
+            
+            if (statusEl) {
+                statusEl.textContent = data.root ? "Monitorando com root" : "Monitorando sem root";
+            }
+            if (rootToggle) {
+                rootToggle.innerHTML = data.root ? "🔐 Root ON" : "🔓 Normal";
+            }
+        } else {
+            if (ifaceEl) ifaceEl.textContent = "---";
+            if (downEl) downEl.textContent = "---";
+            if (upEl) upEl.textContent = "---";
+            if (totalDownEl) totalDownEl.textContent = "---";
+            if (totalUpEl) totalUpEl.textContent = "---";
+            if (statusEl) statusEl.textContent = data.error || "Erro ao ler rede";
+        }
+    } catch (err) {
+        const statusEl = document.getElementById("net-status");
+        if (statusEl) statusEl.textContent = "Erro de conexão com API de rede";
+    }
+}
+
+async function toggleRootMode() {
+    try {
+        const nextState = !rootModeActive;
+        const response = await fetch("/api/network/root", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ enabled: nextState })
+        });
+        const data = await response.json();
+        if (data.success) {
+            rootModeActive = !!data.root;
+            const rootToggle = document.getElementById("root-toggle");
+            if (rootToggle) {
+                rootToggle.innerHTML = rootModeActive ? "🔐 Root ON" : "🔓 Normal";
+            }
+            showToast(`Modo root ${rootModeActive ? 'ativado' : 'desativado'} com sucesso!`, "success");
+            updateNetworkStatus();
+        } else {
+            showToast("Falha ao alternar modo root", "error");
+        }
+    } catch (err) {
+        showToast("Erro ao alternar modo root", "error");
+    }
 }
