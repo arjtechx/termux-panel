@@ -37,11 +37,12 @@ async function measurePing() {
     return minPing === Infinity ? 999 : minPing;
 }
 
-// 2. Função auxiliar para medir velocidade de Download (Limite de 8 segundos)
+// 2. Função auxiliar para medir velocidade de Download (Média ponderada em janela de 10 segundos)
 function runDownloadTest(onProgress) {
     return new Promise((resolve) => {
-        const url = 'https://speed.cloudflare.com/__down?bytes=10000000'; // 10MB
+        const url = 'https://speed.cloudflare.com/__down?bytes=100000000'; // 100MB
         const startTime = Date.now();
+        const durationLimit = 10000; // Janela estável de 10 segundos
         let bytesReceived = 0;
         let isDone = false;
 
@@ -53,10 +54,10 @@ function runDownloadTest(onProgress) {
                 const speedMbps = duration > 0 ? ((bytesReceived * 8) / (1024 * 1024)) / duration : 0;
                 resolve(parseFloat(speedMbps.toFixed(2)));
             }
-        }, 8000); // Failsafe de 8 segundos max
+        }, durationLimit);
 
         const req = https.get(url, (res) => {
-            const contentLength = parseInt(res.headers['content-length']) || 10000000;
+            const contentLength = parseInt(res.headers['content-length']) || 100000000;
 
             res.on('data', (chunk) => {
                 if (isDone) return;
@@ -64,7 +65,12 @@ function runDownloadTest(onProgress) {
 
                 const elapsed = (Date.now() - startTime) / 1000;
                 const speedMbps = elapsed > 0 ? ((bytesReceived * 8) / (1024 * 1024)) / elapsed : 0;
-                const percent = Math.min(100, Math.round((bytesReceived / contentLength) * 100));
+                
+                // Progresso baseado no tempo decorrido ou nos bytes recebidos (o que for maior)
+                const percent = Math.min(100, Math.max(
+                    Math.round((bytesReceived / contentLength) * 100),
+                    Math.round((elapsed / (durationLimit / 1000)) * 100)
+                ));
 
                 onProgress({
                     percent,
@@ -95,13 +101,16 @@ function runDownloadTest(onProgress) {
     });
 }
 
-// 3. Função auxiliar para medir velocidade de Upload (Limite de 8 segundos)
+// 3. Função auxiliar para medir velocidade de Upload (Loop de escrita em janela de 10 segundos)
 function runUploadTest(onProgress) {
     return new Promise((resolve) => {
         const url = 'https://speed.cloudflare.com/__up';
-        const bufferSize = 4 * 1024 * 1024; // 4MB de bytes aleatórios
-        const buffer = crypto.randomBytes(bufferSize);
+        const targetUploadSize = 100 * 1024 * 1024; // Alvo de até 100MB
+        const bufferChunkSize = 2 * 1024 * 1024; // Buffer físico de 2MB em memória (baixo consumo)
+        const buffer = crypto.randomBytes(bufferChunkSize);
         const startTime = Date.now();
+        const durationLimit = 10000; // Janela estável de 10 segundos
+        let bytesWritten = 0;
         let isDone = false;
 
         const parsedUrl = new URL(url);
@@ -111,7 +120,7 @@ function runUploadTest(onProgress) {
             path: parsedUrl.pathname,
             method: 'POST',
             headers: {
-                'Content-Length': bufferSize,
+                'Content-Length': targetUploadSize,
                 'Content-Type': 'application/octet-stream'
             }
         };
@@ -120,9 +129,11 @@ function runUploadTest(onProgress) {
             if (!isDone) {
                 isDone = true;
                 req.destroy();
-                resolve(0);
+                const duration = (Date.now() - startTime) / 1000;
+                const speedMbps = duration > 0 ? ((bytesWritten * 8) / (1024 * 1024)) / duration : 0;
+                resolve(parseFloat(speedMbps.toFixed(2)));
             }
-        }, 8000); // Failsafe de 8 segundos max
+        }, durationLimit);
 
         const req = https.request(options, (res) => {
             res.on('data', () => {}); // Consome resposta
@@ -131,7 +142,7 @@ function runUploadTest(onProgress) {
                     isDone = true;
                     clearTimeout(timeoutTimer);
                     const duration = (Date.now() - startTime) / 1000;
-                    const speedMbps = duration > 0 ? ((bufferSize * 8) / (1024 * 1024)) / duration : 0;
+                    const speedMbps = duration > 0 ? ((bytesWritten * 8) / (1024 * 1024)) / duration : 0;
                     resolve(parseFloat(speedMbps.toFixed(2)));
                 }
             });
@@ -141,28 +152,43 @@ function runUploadTest(onProgress) {
             if (!isDone) {
                 isDone = true;
                 clearTimeout(timeoutTimer);
-                resolve(0);
+                const duration = (Date.now() - startTime) / 1000;
+                const speedMbps = bytesWritten > 0 && duration > 0 ? ((bytesWritten * 8) / (1024 * 1024)) / duration : 0;
+                resolve(parseFloat(speedMbps.toFixed(2)));
             }
         });
 
-        // Envia os chunks em partes pequenas para poder metrificar progresso em tempo real
-        const chunkSize = 256 * 1024; // 256KB
-        let offset = 0;
+        // Loop de escrita assíncrono e contínuo
+        const sliceSize = 256 * 1024; // Escreve chunks de 256KB para monitoramento suave
+        let localOffset = 0;
 
         function writeChunk() {
             if (isDone) return;
 
-            if (offset >= bufferSize) {
+            // Se atingir limite de upload do alvo ou tempo limite, finaliza
+            if (bytesWritten >= targetUploadSize) {
                 req.end();
                 return;
             }
 
-            const chunk = buffer.subarray(offset, offset + chunkSize);
+            // Loop circular sob o buffer físico de 2MB
+            if (localOffset >= bufferChunkSize) {
+                localOffset = 0;
+            }
+
+            const chunk = buffer.subarray(localOffset, localOffset + sliceSize);
             req.write(chunk, () => {
-                offset += chunk.length;
+                bytesWritten += chunk.length;
+                localOffset += chunk.length;
+
                 const elapsed = (Date.now() - startTime) / 1000;
-                const speedMbps = elapsed > 0 ? ((offset * 8) / (1024 * 1024)) / elapsed : 0;
-                const percent = Math.min(100, Math.round((offset / bufferSize) * 100));
+                const speedMbps = elapsed > 0 ? ((bytesWritten * 8) / (1024 * 1024)) / elapsed : 0;
+                
+                // Progresso baseado no tempo decorrido ou nos bytes gravados (o que for maior)
+                const percent = Math.min(100, Math.max(
+                    Math.round((bytesWritten / targetUploadSize) * 100),
+                    Math.round((elapsed / (durationLimit / 1000)) * 100)
+                ));
 
                 onProgress({
                     percent,
