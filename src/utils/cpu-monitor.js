@@ -5,26 +5,13 @@ const { execSync } = require('child_process');
 
 const PROC_STAT = '/proc/stat';
 const PROC_CPUINFO = '/proc/cpuinfo';
+const PROC_LOADAVG = '/proc/loadavg';
 const SYS_CPU_DIR = '/sys/devices/system/cpu';
 
+let cpuUseRoot = false;
 let lastCpuTimes = null;
 let cachedCpuName = null;
 let cachedCoreIds = null;
-
-function fallbackCpuStatus(error, extra = {}) {
-    return {
-        success: false,
-        cpuName: readCpuName(),
-        cpuTotal: '--%',
-        cpuTotalPercent: 0,
-        coresCount: getCoreIds().length || 0,
-        cores: [],
-        status: 'Erro ao ler CPU',
-        error: 'CPU_READ_ERROR',
-        details: error ? error.message : undefined,
-        ...extra
-    };
-}
 
 function readText(filePath) {
     return fs.readFileSync(filePath, 'utf8');
@@ -50,11 +37,11 @@ function readTextFileSafe(filePath) {
     }
 }
 
-function execSafe(command) {
+function execSafe(command, timeout = 3000) {
     try {
         const output = execSync(command, {
             encoding: 'utf8',
-            timeout: 2000,
+            timeout,
             stdio: ['ignore', 'pipe', 'pipe']
         });
         if (!output || !output.trim()) return null;
@@ -89,34 +76,38 @@ function parseProcStat(content) {
         });
 }
 
+function readProcStatRaw(useRoot = false) {
+    if (!useRoot) {
+        const fsContent = readTextFileSafe(PROC_STAT);
+        if (fsContent) return { content: fsContent, method: 'fs:/proc/stat' };
+
+        const catContent = execSafe('cat /proc/stat');
+        if (catContent) return { content: catContent, method: 'cat:/proc/stat' };
+        return null;
+    }
+
+    const suContent = execSafe("su -c 'cat /proc/stat'");
+    if (suContent) return { content: suContent, method: 'su:/proc/stat' };
+    return null;
+}
+
 function readProcStatSafe() {
-    let content = readTextFileSafe(PROC_STAT);
-    let parsed = parseProcStat(content);
-
-    if (parsed.length > 0) {
+    const raw = readProcStatRaw(cpuUseRoot);
+    if (!raw || !raw.content) {
         return {
-            success: true,
-            method: 'fs:/proc/stat',
-            cpus: parsed
+            success: false,
+            cpus: [],
+            method: cpuUseRoot ? 'su:/proc/stat' : 'fs:/proc/stat',
+            error: 'PROC_STAT_UNAVAILABLE'
         };
     }
 
-    content = execSafe('cat /proc/stat');
-    parsed = parseProcStat(content);
-
-    if (parsed.length > 0) {
-        return {
-            success: true,
-            method: 'cat:/proc/stat',
-            cpus: parsed
-        };
-    }
-
+    const cpus = parseProcStat(raw.content);
     return {
-        success: false,
-        method: null,
-        cpus: [],
-        error: 'PROC_STAT_EMPTY_OR_UNREADABLE'
+        success: cpus.length > 0,
+        cpus,
+        method: raw.method,
+        error: cpus.length > 0 ? null : 'PROC_STAT_EMPTY'
     };
 }
 
@@ -152,7 +143,6 @@ function calculateCpuUsage(current, previous) {
     if (!Number.isFinite(totalDiff) || totalDiff <= 0) return 0;
 
     const usage = ((totalDiff - idleDiff) / totalDiff) * 100;
-
     return Math.max(0, Math.min(100, usage));
 }
 
@@ -199,9 +189,9 @@ function isCoreOnline(coreId, onlineSet) {
 
 function readOnlineSet() {
     try {
-        const p = path.join(SYS_CPU_DIR, 'online');
-        if (fs.existsSync(p)) {
-            const raw = safeReadText(p);
+        const onlinePath = path.join(SYS_CPU_DIR, 'online');
+        if (fs.existsSync(onlinePath)) {
+            const raw = safeReadText(onlinePath);
             if (raw) return parseOnlineCpuList(raw);
         }
     } catch (_) {}
@@ -221,22 +211,20 @@ function readFrequency(coreId) {
                     const raw = safeReadText(candidate).trim();
                     const khz = Number.parseInt(raw, 10);
                     if (Number.isInteger(khz) && khz > 0) {
-                        const mhz = Math.round(khz / 1000);
                         const ghz = Number((khz / 1000000).toFixed(2));
-                        return { khz, mhz, ghz, formatted: `${ghz.toFixed(2)} GHz` };
+                        return { formatted: `${ghz.toFixed(2)} GHz` };
                     }
                 }
             }
         }
     } catch (_) {}
 
-    // Fallback para Node OS
     const cpus = os.cpus();
     const index = Number.parseInt(coreId.slice(3), 10);
     if (cpus[index] && cpus[index].speed) {
         const mhz = cpus[index].speed;
         const ghz = Number((mhz / 1000).toFixed(2));
-        return { khz: mhz * 1000, mhz, ghz, formatted: `${ghz.toFixed(2)} GHz` };
+        return { formatted: `${ghz.toFixed(2)} GHz` };
     }
 
     return { formatted: 'freq. indisponivel' };
@@ -260,142 +248,207 @@ function readCpuName() {
         }
     } catch (_) {}
 
-    // Fallback Node OS
     const cpus = os.cpus();
     if (cpus && cpus.length > 0 && cpus[0].model) {
         cachedCpuName = cpus[0].model;
         return cachedCpuName;
     }
 
-    const arch = os.arch();
-    if (arch === 'arm64' || arch === 'aarch64') {
-        cachedCpuName = 'AArch64 Processor';
-    } else {
-        cachedCpuName = 'CPU Android nao identificado';
-    }
+    cachedCpuName = os.arch() === 'arm64' || os.arch() === 'aarch64'
+        ? 'AArch64 Processor'
+        : 'CPU Android nao identificado';
     return cachedCpuName;
 }
 
 function getLoadAverageSafe() {
-    try {
-        const content = readTextFileSafe('/proc/loadavg');
-        if (content) {
-            const parts = content.trim().split(/\s+/);
-            return {
-                source: "/proc/loadavg",
-                load1: Number(parts[0]) || 0,
-                load5: Number(parts[1]) || 0,
-                load15: Number(parts[2]) || 0,
-                formatted: `${parts[0]} / ${parts[1]} / ${parts[2]}`
-            };
-        }
-    } catch {}
+    const raw = readTextFileSafe(PROC_LOADAVG);
+    if (raw) {
+        const parts = raw.trim().split(/\s+/);
+        return {
+            source: '/proc/loadavg',
+            load1: Number(parts[0]) || 0,
+            load5: Number(parts[1]) || 0,
+            load15: Number(parts[2]) || 0,
+            formatted: `${parts[0]} / ${parts[1]} / ${parts[2]}`
+        };
+    }
 
     try {
         const avg = os.loadavg();
         return {
-            source: "os.loadavg",
+            source: 'os.loadavg',
             load1: avg[0] || 0,
             load5: avg[1] || 0,
             load15: avg[2] || 0,
             formatted: `${avg[0].toFixed(2)} / ${avg[1].toFixed(2)} / ${avg[2].toFixed(2)}`
         };
-    } catch {}
+    } catch (_) {
+        return null;
+    }
+}
+
+function readCpuUsageFromTopSafe() {
+    const output = execSafe('top -bn1 | head -20');
+    if (!output) return null;
+
+    let match = output.match(/CPU:\s*([\d.]+)%\s*usr\s*([\d.]+)%\s*sys/i);
+    if (match) {
+        const usr = Number(match[1]) || 0;
+        const sys = Number(match[2]) || 0;
+        const total = Math.min(100, Math.max(0, usr + sys));
+        return {
+            success: true,
+            method: 'top',
+            cpuTotalPercent: Number(total.toFixed(1)),
+            cpuTotal: `${total.toFixed(1)}%`
+        };
+    }
+
+    match = output.match(/([\d.]+)\s*us,\s*([\d.]+)\s*sy.*?([\d.]+)\s*id/i);
+    if (match) {
+        const idle = Number(match[3]) || 0;
+        const total = Math.min(100, Math.max(0, 100 - idle));
+        return {
+            success: true,
+            method: 'top',
+            cpuTotalPercent: Number(total.toFixed(1)),
+            cpuTotal: `${total.toFixed(1)}%`
+        };
+    }
 
     return null;
 }
 
-function getCpuStatus() {
+function setCpuRootMode(enabled) {
+    cpuUseRoot = Boolean(enabled);
+    lastCpuTimes = null;
+    return {
+        success: true,
+        root: cpuUseRoot
+    };
+}
+
+function getCpuRootMode() {
+    return cpuUseRoot;
+}
+
+function getCpuStats() {
     const cpuName = readCpuName();
-    const coresCount = getCoreIds().length;
+    const coreIds = getCoreIds();
+    const coresCount = coreIds.length || 0;
     const loadAverage = getLoadAverageSafe();
+    const onlineSet = readOnlineSet();
 
     const statResult = readProcStatSafe();
+    if (statResult.success && statResult.cpus.length > 0) {
+        const current = statResult.cpus;
 
-    if (!statResult.success || !statResult.cpus.length) {
+        if (!lastCpuTimes) {
+            lastCpuTimes = current;
+            return {
+                success: true,
+                partial: true,
+                root: cpuUseRoot,
+                mode: 'calculating',
+                method: statResult.method,
+                cpuName,
+                cpuTotal: 'Calculando...',
+                cpuTotalPercent: 0,
+                coresCount,
+                cores: current
+                    .filter(cpu => cpu.id !== 'cpu')
+                    .map(cpu => ({
+                        id: cpu.id,
+                        label: cpu.id.toUpperCase().replace('CPU', 'CPU '),
+                        usagePercent: 0,
+                        usage: 'Calculando...',
+                        online: isCoreOnline(cpu.id, onlineSet),
+                        frequency: readFrequency(cpu.id)
+                    })),
+                loadAverage,
+                status: cpuUseRoot ? 'Coletando primeira leitura com root' : 'Coletando primeira leitura'
+            };
+        }
+
+        const previousMap = Object.fromEntries(lastCpuTimes.map(cpu => [cpu.id, cpu]));
+        const totalCpu = current.find(cpu => cpu.id === 'cpu');
+        const previousTotalCpu = previousMap.cpu;
+        const cpuTotalPercent = calculateCpuUsage(totalCpu, previousTotalCpu);
+
+        const cores = current
+            .filter(cpu => cpu.id !== 'cpu')
+            .map(cpu => {
+                const previous = previousMap[cpu.id];
+                const online = isCoreOnline(cpu.id, onlineSet);
+                const usagePercent = online ? calculateCpuUsage(cpu, previous) : 0;
+                return {
+                    id: cpu.id,
+                    label: cpu.id.toUpperCase().replace('CPU', 'CPU '),
+                    usagePercent: Number(usagePercent.toFixed(1)),
+                    usage: online ? `${usagePercent.toFixed(1)}%` : 'offline',
+                    online,
+                    frequency: online ? readFrequency(cpu.id) : { formatted: 'freq. indisponivel' }
+                };
+            });
+
+        lastCpuTimes = current;
+        return {
+            success: true,
+            root: cpuUseRoot,
+            mode: cpuUseRoot ? 'root' : 'normal',
+            method: statResult.method,
+            cpuName,
+            cpuTotalPercent: Number(cpuTotalPercent.toFixed(1)),
+            cpuTotal: `${cpuTotalPercent.toFixed(1)}%`,
+            coresCount,
+            cores,
+            loadAverage,
+            status: cpuUseRoot ? 'Monitorando CPU com root' : 'Monitorando CPU'
+        };
+    }
+
+    const topUsage = readCpuUsageFromTopSafe();
+    if (topUsage) {
+        lastCpuTimes = null;
         return {
             success: true,
             partial: true,
-            mode: "loadavg_fallback",
+            root: cpuUseRoot,
+            mode: 'top_fallback',
+            method: topUsage.method,
             cpuName,
-            cpuTotal: "--%",
-            cpuTotalPercent: 0,
+            cpuTotal: topUsage.cpuTotal,
+            cpuTotalPercent: topUsage.cpuTotalPercent,
             coresCount,
             cores: [],
             loadAverage,
-            status: loadAverage
-                ? "Uso percentual indisponível. Mostrando carga média."
-                : "Não foi possível ler /proc/stat",
-            error: "PROC_STAT_UNAVAILABLE"
+            status: 'Monitorando CPU via top',
+            error: statResult.error || 'PROC_STAT_UNAVAILABLE'
         };
     }
 
-    const current = statResult.cpus;
-    const onlineSet = readOnlineSet();
-
-    if (!lastCpuTimes) {
-        lastCpuTimes = current;
-
-        return {
-            success: true,
-            partial: true,
-            mode: "calculating",
-            method: statResult.method,
-            cpuName,
-            cpuTotal: "Calculando...",
-            cpuTotalPercent: 0,
-            coresCount,
-            cores: current
-                .filter(cpu => cpu.id !== 'cpu')
-                .map(cpu => ({
-                    id: cpu.id,
-                    label: cpu.id.toUpperCase().replace('CPU', 'CPU '),
-                    usagePercent: 0,
-                    usage: "Calculando...",
-                    online: isCoreOnline(cpu.id, onlineSet),
-                    frequency: readFrequency(cpu.id)
-                })),
-            loadAverage,
-            status: "Coletando primeira leitura"
-        };
-    }
-
-    const previousMap = Object.fromEntries(lastCpuTimes.map(cpu => [cpu.id, cpu]));
-    const totalCpu = current.find(cpu => cpu.id === 'cpu');
-    const previousTotalCpu = previousMap.cpu;
-    const cpuTotalPercent = calculateCpuUsage(totalCpu, previousTotalCpu);
-
-    const cores = current
-        .filter(cpu => cpu.id !== 'cpu')
-        .map(cpu => {
-            const previous = previousMap[cpu.id];
-            const online = isCoreOnline(cpu.id, onlineSet);
-            const usagePercent = online ? calculateCpuUsage(cpu, previous) : 0;
-
-            return {
-                id: cpu.id,
-                label: cpu.id.toUpperCase().replace('CPU', 'CPU '),
-                usagePercent: Number(usagePercent.toFixed(1)),
-                usage: online ? `${usagePercent.toFixed(1)}%` : 'offline',
-                online,
-                frequency: online ? readFrequency(cpu.id) : { formatted: 'freq. indisponivel' }
-            };
-        });
-
-    lastCpuTimes = current;
-
+    lastCpuTimes = null;
     return {
         success: true,
+        partial: true,
+        root: cpuUseRoot,
+        mode: 'loadavg_fallback',
         cpuName,
-        cpuTotalPercent: Number(cpuTotalPercent.toFixed(1)),
-        cpuTotal: `${cpuTotalPercent.toFixed(1)}%`,
+        cpuTotal: '--%',
+        cpuTotalPercent: 0,
         coresCount,
-        cores,
+        cores: [],
         loadAverage,
-        status: 'Monitorando CPU'
+        status: cpuUseRoot
+            ? 'Root ativo, mas /proc/stat indisponivel. Usando carga media.'
+            : 'Modo parcial - usando carga media',
+        error: statResult.error || 'PROC_STAT_UNAVAILABLE'
     };
 }
 
 module.exports = {
-    getCpuStatus
+    getCpuStats,
+    getCpuStatus: getCpuStats,
+    setCpuRootMode,
+    getCpuRootMode
 };

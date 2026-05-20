@@ -153,22 +153,44 @@ app.use('/', networkRoutes);
 const speedtestRoutes = require('./src/routes/speedtestRoutes');
 app.use('/api', speedtestRoutes);
 
-const cpuMonitor = require('./src/utils/cpu-monitor');
+const {
+    getCpuStats,
+    setCpuRootMode,
+    getCpuRootMode
+} = require('./src/utils/cpu-monitor');
+
+app.post('/api/cpu/root', (req, res) => {
+    try {
+        const enabled = Boolean(req.body && req.body.enabled);
+        return res.json(setCpuRootMode(enabled));
+    } catch (error) {
+        console.error('[CPU] Erro ao alternar root:', error.message);
+        return res.json({
+            success: false,
+            root: getCpuRootMode(),
+            error: 'CPU_ROOT_TOGGLE_FAILED',
+            details: error.message
+        });
+    }
+});
+
 app.get('/api/cpu/status', (req, res) => {
     try {
-        res.json(cpuMonitor.getCpuStatus());
-    } catch (err) {
-        console.error('[CPU] Erro ao ler CPU:', err);
-        res.json({
+        return res.json(getCpuStats());
+    } catch (error) {
+        console.error('[CPU] Erro geral:', error.message);
+        return res.json({
             success: false,
+            root: getCpuRootMode(),
             cpuName: 'CPU Android nao identificado',
             cpuTotal: '--%',
             cpuTotalPercent: 0,
             coresCount: 0,
             cores: [],
+            loadAverage: null,
             status: 'Erro ao ler CPU',
             error: 'CPU_READ_ERROR',
-            details: err.message
+            details: error.message
         });
     }
 });

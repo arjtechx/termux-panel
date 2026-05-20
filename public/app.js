@@ -9,6 +9,7 @@ let socket = null;
 let currentDir = '/';
 let currentFiles = [];
 let bootCompleted = false;
+let cpuRootEnabled = localStorage.getItem('cpu-root-enabled') === 'true';
 const CPU_HISTORY_LIMIT = 28;
 const cpuHistory = [];
 
@@ -129,6 +130,7 @@ function initElements() {
         cpuCoresCount: document.getElementById('cpu-cores-count'),
         cpuCoresList: document.getElementById('cpu-cores-list'),
         cpuStatus: document.getElementById('cpu-status'),
+        cpuRootToggle: document.getElementById('cpu-root-toggle'),
         cpuNameCompact: document.getElementById('cpu-name-compact'),
         cpuCoresCompact: document.getElementById('cpu-cores-compact'),
         ram:        document.getElementById('stat-ram'),
@@ -551,6 +553,7 @@ async function updateCpuStatus() {
         return;
     }
 
+    updateCpuRootButton(Boolean(data.root));
     const total = data.cpuTotal || '--%';
 
     // CPU Name
@@ -631,6 +634,39 @@ function renderCpuCoreList(cores) {
     }).join('');
 }
 
+function updateCpuRootButton(enabled) {
+    cpuRootEnabled = Boolean(enabled);
+    localStorage.setItem('cpu-root-enabled', String(cpuRootEnabled));
+
+    if (!el.cpuRootToggle) return;
+    el.cpuRootToggle.classList.toggle('is-active', cpuRootEnabled);
+    el.cpuRootToggle.setAttribute('aria-pressed', String(cpuRootEnabled));
+    el.cpuRootToggle.title = cpuRootEnabled
+        ? 'Desativar leitura root da CPU'
+        : 'Ativar leitura root da CPU';
+}
+
+async function toggleCpuRoot() {
+    const nextEnabled = !cpuRootEnabled;
+    if (el.cpuRootToggle) {
+        el.cpuRootToggle.disabled = true;
+        el.cpuRootToggle.classList.add('is-loading');
+    }
+
+    const data = await safeFetch(`${API_BASE}/cpu/root`, 'POST', { enabled: nextEnabled }, 5000);
+    if (data?.success) {
+        updateCpuRootButton(Boolean(data.root));
+        await updateCpuStatus();
+    } else if (el.cpuStatus) {
+        el.cpuStatus.textContent = 'Nao foi possivel alternar leitura root';
+    }
+
+    if (el.cpuRootToggle) {
+        el.cpuRootToggle.disabled = false;
+        el.cpuRootToggle.classList.remove('is-loading');
+    }
+}
+
 function parsePercent(value) {
     const numeric = Number(String(value || '').replace('%', '').replace(',', '.').trim());
     if (!Number.isFinite(numeric)) return 0;
@@ -651,7 +687,7 @@ function renderCpuVisual(data) {
 function renderCpuCores(cores, usage) {
     if (!el.cpuCoreGrid) return;
 
-    const activeCores = Math.min(cores, Math.ceil(usage / 100));
+    const activeCores = Math.min(cores, Math.ceil((usage / 100) * cores));
     if (el.cpuCoreGrid.dataset.cores !== String(cores)) {
         el.cpuCoreGrid.dataset.cores = String(cores);
         el.cpuCoreGrid.innerHTML = Array.from({ length: cores }, (_, index) => (
@@ -3819,6 +3855,7 @@ function renderTempChart() {
 
 // Expor funcoes para escopo global (window)
 window.toggleRootMode = toggleRootMode;
+window.toggleCpuRoot = toggleCpuRoot;
 window.checkNetworkAccess = checkNetworkAccess;
 window.updateNetworkStatus = updateNetworkStatus;
 window.updateTemperatureHistory = updateTemperatureHistory;

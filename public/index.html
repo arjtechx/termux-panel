@@ -187,6 +187,7 @@
                                 <span class="card-label" style="margin:0;"><i data-lucide="cpu"></i> Monitor CPU</span>
                             </div>
                             <div class="monitor-card-actions">
+                                <button id="cpu-root-toggle" class="monitor-su-btn" onclick="toggleCpuRoot()" title="Ativar leitura root da CPU">SU</button>
                                 <button class="card-toggle-btn" data-toggle-card="cpu">⌄</button>
                             </div>
                         </div>
@@ -1798,7 +1799,8 @@
 <div class="fm-toast-container" id="fm-toast-container"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.86"></script>
+<script src="filemanager.js?v=0.2.87"></script>
 <script src="app.js?v=4.5"></script>
 </body>
 </html>
+
