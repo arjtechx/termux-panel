@@ -48,7 +48,7 @@ function saveTunnels(tunnels) {
  */
 function generateYamlConfig(tunnel) {
     let yaml = `# Configuração automática gerada pelo Termux Panel\n`;
-    yaml += `tunnel: "${tunnel.name}"\n`;
+    yaml += `tunnel: "${tunnel.uuid || tunnel.name}"\n`;
     
     const credPath = path.join(CONFIGS_DIR, `${tunnel.id}.json`);
     yaml += `credentials-file: "${credPath}"\n\n`;
@@ -131,7 +131,65 @@ function createTunnel(data) {
         yamlConfig: ''
     };
 
-    // If classic_custom, pre-generate default YAML
+    // If classic_custom, automatically create the tunnel on Cloudflare via CLI
+    if (newTunnel.type === 'classic_custom') {
+        if (!isClassicAuthenticated()) {
+            throw new Error('Você precisa autenticar a Cloudflare primeiro! Vá na aba de Autenticação Clássica e faça login.');
+        }
+
+        const slug = name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').trim();
+        try {
+            console.log(`[CLOUDFLARED] Criando túnel na Cloudflare: ${slug}`);
+            const stdout = execSync(`cloudflared tunnel create "${slug}"`, { 
+                encoding: 'utf8',
+                env: { ...process.env }
+            });
+            console.log(`[CLOUDFLARED] Saída da criação:\n${stdout}`);
+            
+            // Parse UUID and credentials path
+            const uuid = (stdout.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i) || [])[0];
+            let credPath = (stdout.match(/(?:[A-Za-z]:)?[^\r\n"'<>]*\.json/i) || [])[0]?.trim();
+            
+            if (!uuid) {
+                throw new Error('Não foi possível obter o UUID do túnel a partir da saída do comando.');
+            }
+            
+            if (!credPath) {
+                const homeDir = process.env.HOME || os.homedir() || '/data/data/com.termux/files/home';
+                credPath = path.join(homeDir, '.cloudflared', `${uuid}.json`);
+            }
+            
+            if (!fs.existsSync(credPath)) {
+                throw new Error(`Arquivo de credenciais não encontrado em: ${credPath}`);
+            }
+            
+            // Copy credentials to our CONFIGS_DIR as ${id}.json
+            const targetCredPath = path.join(CONFIGS_DIR, `${id}.json`);
+            fs.copyFileSync(credPath, targetCredPath);
+            
+            // Store UUID inside tunnel metadata
+            newTunnel.uuid = uuid;
+
+            // Automatically route the public subdomain/domain in Cloudflare DNS
+            if (domain) {
+                console.log(`[CLOUDFLARED] Roteando domínio ${domain} para o túnel ${uuid}...`);
+                try {
+                    const dnsStdout = execSync(`cloudflared tunnel route dns "${uuid}" "${domain}"`, {
+                        encoding: 'utf8',
+                        env: { ...process.env }
+                    });
+                    console.log(`[CLOUDFLARED] Saída do roteamento DNS:\n${dnsStdout}`);
+                } catch (dnsErr) {
+                    console.warn(`[CLOUDFLARED] Aviso ao rotear DNS: ${dnsErr.message}`);
+                }
+            }
+            
+        } catch (err) {
+            throw new Error(`Falha ao criar o túnel na Cloudflare: ${err.message}`);
+        }
+    }
+
+    // Pre-generate default YAML
     if (newTunnel.type === 'classic_custom') {
         newTunnel.yamlConfig = generateYamlConfig(newTunnel);
     }
@@ -153,7 +211,21 @@ function updateTunnel(id, data) {
     if (data.name) t.name = data.name;
     if (data.type) t.type = data.type;
     if (data.token !== undefined) t.token = data.token;
-    if (data.domain !== undefined) t.domain = data.domain;
+    if (data.domain !== undefined) {
+        if (t.type === 'classic_custom' && t.uuid && data.domain && data.domain !== t.domain) {
+            console.log(`[CLOUDFLARED] Roteando novo domínio ${data.domain} para o túnel ${t.uuid}...`);
+            try {
+                const dnsStdout = execSync(`cloudflared tunnel route dns "${t.uuid}" "${data.domain}"`, {
+                    encoding: 'utf8',
+                    env: { ...process.env }
+                });
+                console.log(`[CLOUDFLARED] Saída do roteamento DNS:\n${dnsStdout}`);
+            } catch (dnsErr) {
+                console.warn(`[CLOUDFLARED] Aviso ao rotear novo DNS: ${dnsErr.message}`);
+            }
+        }
+        t.domain = data.domain;
+    }
     if (data.proto !== undefined) t.proto = data.proto;
     if (data.localHost !== undefined) t.localHost = data.localHost;
     if (data.localPort !== undefined) t.localPort = String(data.localPort);
@@ -165,6 +237,28 @@ function updateTunnel(id, data) {
         if (data.yamlConfig) {
             const check = validateYamlConfig(data.yamlConfig);
             if (!check.valid) throw new Error(check.error);
+
+            // Extract all hostnames from custom YAML and route them in Cloudflare DNS
+            if (t.type === 'classic_custom' && t.uuid) {
+                const hostnames = [];
+                const regex = /hostname:\s*["']?([a-zA-Z0-9.-]+)["']?/g;
+                let match;
+                while ((match = regex.exec(data.yamlConfig)) !== null) {
+                    hostnames.push(match[1]);
+                }
+                
+                hostnames.forEach(hostname => {
+                    console.log(`[CLOUDFLARED] Roteando hostname do YAML ${hostname} para o túnel ${t.uuid}...`);
+                    try {
+                        execSync(`cloudflared tunnel route dns "${t.uuid}" "${hostname}"`, {
+                            encoding: 'utf8',
+                            env: { ...process.env }
+                        });
+                    } catch (dnsErr) {
+                        console.warn(`[CLOUDFLARED] Aviso ao rotear hostname do YAML ${hostname}: ${dnsErr.message}`);
+                    }
+                });
+            }
         }
         t.yamlConfig = data.yamlConfig;
     }

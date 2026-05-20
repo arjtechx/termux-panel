@@ -28,7 +28,7 @@ find_phpmyadmin_dir() {
         fi
     done
 
-    find "$PREFIX/share" -name "phpmyadmin" -type d 2>/dev/null | head -1
+    find "$PREFIX/share" -maxdepth 2 -name "phpmyadmin" -type d 2>/dev/null | head -1
 }
 
 detect_fastcgi_pass() {
@@ -81,9 +81,7 @@ configure_phpmyadmin_sso() {
     local sample_config="$pma_dir/config.sample.inc.php"
 
     echo "Configurando phpMyAdmin em: $pma_dir"
-    chown -R "$CURRENT_USER" "$pma_dir" 2>/dev/null || true
-
-
+    chown "$CURRENT_USER" "$pma_dir" 2>/dev/null || true
 
     if [ ! -f "$pma_config" ] && [ -f "$sample_config" ]; then
         cp "$sample_config" "$pma_config"
@@ -104,9 +102,10 @@ configure_phpmyadmin_sso() {
     echo "  [+] test.php de diagnóstico criado"
 
     # Remove antigas configurações e insere as estáveis de Cookie Auth via script Node para evitar que o sed-i trave no Termux
-    node -e '
+    PMA_CONFIG_FILE="$pma_config" node -e '
 const fs = require("fs");
-const file = process.argv[1];
+const file = process.env.PMA_CONFIG_FILE;
+if (!file || !fs.existsSync(file)) process.exit(0);
 let content = fs.readFileSync(file, "utf8");
 
 // Remover linhas de config antiga conflitantes
@@ -137,7 +136,7 @@ if (content.includes("[\x27Servers\x27]")) {
 }
 
 fs.writeFileSync(file, content, "utf8");
-' "$pma_config"
+'
 
     echo "  [+] config.inc.php ajustado para Cookie Auth (TCP/IP 127.0.0.1)"
 }
