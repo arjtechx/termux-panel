@@ -179,47 +179,19 @@
                         <span class="card-label"><i data-lucide="arrow-up-down"></i> Rede</span>
                         <strong id="stat-net-speed">-- / --</strong>
                     </div>
-                </div>
-
-                <!-- Teste de Conexão (Speedtest) -->
-                <div class="section-header" style="margin-top: 24px;">
-                    <h2>Teste de Conexão do Servidor</h2>
-                </div>
-                <div class="card speedtest-card" style="margin-bottom: 24px;">
-                    <div class="speedtest-layout">
-                        <div class="speedtest-left">
-                            <div class="speedtest-gauge-container">
-                                <svg class="speedtest-gauge" viewBox="0 0 100 100">
-                                    <circle class="gauge-bg" cx="50" cy="50" r="45"></circle>
-                                    <circle id="speedtest-gauge-fill" class="gauge-fill" cx="50" cy="50" r="45" stroke-dasharray="283" stroke-dashoffset="283"></circle>
-                                </svg>
-                                <div class="speedtest-gauge-text">
-                                    <span id="speedtest-gauge-value">0.0</span>
-                                    <small id="speedtest-gauge-unit">Mbps</small>
-                                </div>
-                            </div>
-                            <p id="speedtest-status-text" class="text-muted" style="text-align: center; font-size: 0.85rem; margin-top: 12px; font-weight: 500;">Pronto para iniciar o teste</p>
-                        </div>
-                        <div class="speedtest-right">
-                            <div class="speedtest-results-grid">
-                                <div class="speedtest-result-box">
-                                    <span class="label"><i data-lucide="arrow-down-right" style="color:var(--primary);"></i> PING</span>
-                                    <strong id="speedtest-ping">-- <small>ms</small></strong>
-                                </div>
-                                <div class="speedtest-result-box">
-                                    <span class="label"><i data-lucide="download" style="color:var(--success);"></i> DOWNLOAD</span>
-                                    <strong id="speedtest-download">-- <small>Mbps</small></strong>
-                                </div>
-                                <div class="speedtest-result-box">
-                                    <span class="label"><i data-lucide="upload" style="color:var(--warning);"></i> UPLOAD</span>
-                                    <strong id="speedtest-upload">-- <small>Mbps</small></strong>
-                                </div>
-                            </div>
-                            <div style="margin-top: 24px; display: flex; justify-content: center;">
-                                <button class="btn btn-primary" id="btn-start-speedtest" onclick="startSpeedTest()">
-                                    <i data-lucide="gauge"></i> Iniciar Teste de Conexão
-                                </button>
-                            </div>
+                    <!-- Speedtest Card -->
+                    <div class="stat-card speedtest-card" id="speedtest-card" style="cursor: pointer; transition: all 0.3s ease; position: relative;" onclick="startSpeedTest()">
+                        <span class="card-label" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                            <span style="display: flex; align-items: center; gap: 6px;"><i data-lucide="gauge"></i> Speedtest</span>
+                            <span id="speedtest-icon-container"><i data-lucide="play" style="color: var(--primary); width: 16px; height: 16px;"></i></span>
+                        </span>
+                        <strong id="speedtest-main-value" style="display: block; margin-top: 8px; font-size: 1.8rem; font-weight: 700; line-height: 1.2;">Testar</strong>
+                        <small id="speedtest-status-text" style="display: block; margin-top: 4px; font-size: 0.75rem; color: var(--text-muted); font-weight: 500;">Clique para iniciar</small>
+                        
+                        <div id="speedtest-mini-results" style="display: flex; justify-content: space-between; margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 0.7rem; color: var(--text-muted);">
+                            <span><i data-lucide="arrow-down-right" style="width: 10px; height: 10px; display: inline-block; vertical-align: middle;"></i> <span id="speedtest-ping">--</span>ms</span>
+                            <span><i data-lucide="download" style="width: 10px; height: 10px; display: inline-block; vertical-align: middle; color: var(--success);"></i> <span id="speedtest-download">--</span>Mb</span>
+                            <span><i data-lucide="upload" style="width: 10px; height: 10px; display: inline-block; vertical-align: middle; color: var(--warning);"></i> <span id="speedtest-upload">--</span>Mb</span>
                         </div>
                     </div>
                 </div>
@@ -1605,7 +1577,7 @@
 <div class="fm-toast-container" id="fm-toast-container"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.66"></script>
+<script src="filemanager.js?v=0.2.67"></script>
 <script src="app.js?v=4.2"></script>
 </body>
 </html>

@@ -3208,35 +3208,37 @@ async function initFileBrowserShortcuts() {
 // ============================================================
 //  TESTE DE VELOCIDADE (SPEEDTEST) - CLIENT LÓGICA
 // ============================================================
+let isSpeedtestRunning = false;
+
 function startSpeedTest() {
-    const btn = document.getElementById('btn-start-speedtest');
+    if (isSpeedtestRunning) return;
+
+    const card = document.getElementById('speedtest-card');
+    const iconContainer = document.getElementById('speedtest-icon-container');
+    const mainVal = document.getElementById('speedtest-main-value');
     const statusText = document.getElementById('speedtest-status-text');
     const pingVal = document.getElementById('speedtest-ping');
     const downVal = document.getElementById('speedtest-download');
     const upVal = document.getElementById('speedtest-upload');
-    const gaugeFill = document.getElementById('speedtest-gauge-fill');
-    const gaugeValue = document.getElementById('speedtest-gauge-value');
-    const gaugeUnit = document.getElementById('speedtest-gauge-unit');
-    const card = document.querySelector('.speedtest-card');
 
-    if (!btn || btn.disabled) return;
+    isSpeedtestRunning = true;
 
-    // Desativa botão e atualiza estado
-    btn.disabled = true;
-    btn.innerHTML = `<i data-lucide="loader-2" class="spin"></i> Testando...`;
+    // Change icon to loading spinner
+    if (iconContainer) {
+        iconContainer.innerHTML = `<i data-lucide="loader-2" class="spin" style="color: var(--primary); width: 16px; height: 16px;"></i>`;
+    }
     if (window.lucide) lucide.createIcons();
 
-    card.classList.add('speedtest-running');
-    pingVal.innerHTML = `-- <small>ms</small>`;
-    downVal.innerHTML = `-- <small>Mbps</small>`;
-    upVal.innerHTML = `-- <small>Mbps</small>`;
-    
-    // Reseta gauge
-    gaugeFill.style.strokeDashoffset = '283';
-    gaugeValue.textContent = '0.0';
-    gaugeUnit.textContent = 'Mbps';
+    if (card) {
+        card.classList.add('speedtest-running');
+        card.style.pointerEvents = 'none'; // prevent double clicks
+    }
 
-    statusText.textContent = 'Conectando ao servidor de testes...';
+    if (mainVal) mainVal.textContent = '---';
+    if (statusText) statusText.textContent = 'Conectando...';
+    if (pingVal) pingVal.textContent = '--';
+    if (downVal) downVal.textContent = '--';
+    if (upVal) upVal.textContent = '--';
 
     // Cria EventSource
     const eventSource = new EventSource('/api/speedtest');
@@ -3247,55 +3249,46 @@ function startSpeedTest() {
 
             if (data.stage === 'ping') {
                 if (data.status === 'running') {
-                    statusText.textContent = 'Medindo latência (Ping)...';
+                    statusText.textContent = 'Medindo ping...';
+                    mainVal.textContent = 'Ping';
                 } else if (data.status === 'done') {
-                    pingVal.innerHTML = `${data.ping} <small>ms</small>`;
-                    statusText.textContent = 'Ping concluído! Iniciando download...';
+                    if (pingVal) pingVal.textContent = data.ping;
+                    statusText.textContent = 'Download...';
                 }
             }
 
             if (data.stage === 'download') {
                 if (data.status === 'running') {
-                    statusText.textContent = `Testando Download... ${data.percent}%`;
-                    gaugeValue.textContent = data.speed.toFixed(1);
-                    gaugeUnit.textContent = 'Mbps';
-
-                    // Atualiza o gauge baseado no valor atual de download
-                    const maxGaugeSpeed = 100;
-                    const percentage = Math.min(100, (data.speed / maxGaugeSpeed) * 100);
-                    const offset = 283 - (283 * percentage) / 100;
-                    gaugeFill.style.strokeDashoffset = offset;
+                    statusText.textContent = `Download... ${data.percent}%`;
+                    mainVal.textContent = `${data.speed.toFixed(1)} Mb`;
                 } else if (data.status === 'done') {
-                    downVal.innerHTML = `${data.speed} <small>Mbps</small>`;
-                    statusText.textContent = 'Download concluído! Iniciando upload...';
+                    if (downVal) downVal.textContent = Math.round(data.speed);
+                    statusText.textContent = 'Upload...';
                 }
             }
 
             if (data.stage === 'upload') {
                 if (data.status === 'running') {
-                    statusText.textContent = `Testando Upload... ${data.percent}%`;
-                    gaugeValue.textContent = data.speed.toFixed(1);
-                    gaugeUnit.textContent = 'Mbps';
-
-                    // Atualiza o gauge baseado no valor atual de upload
-                    const maxGaugeSpeed = 100;
-                    const percentage = Math.min(100, (data.speed / maxGaugeSpeed) * 100);
-                    const offset = 283 - (283 * percentage) / 100;
-                    gaugeFill.style.strokeDashoffset = offset;
+                    statusText.textContent = `Upload... ${data.percent}%`;
+                    mainVal.textContent = `${data.speed.toFixed(1)} Mb`;
                 } else if (data.status === 'done') {
-                    upVal.innerHTML = `${data.speed} <small>Mbps</small>`;
+                    if (upVal) upVal.textContent = Math.round(data.speed);
                 }
             }
 
             if (data.stage === 'finished') {
-                statusText.textContent = 'Teste de conexão concluído com sucesso!';
-                gaugeValue.textContent = data.download.toFixed(1);
-                gaugeUnit.textContent = 'Mbps';
-
-                // Restaura o botão e remove classe de execução
-                btn.disabled = false;
-                btn.innerHTML = `<i data-lucide="gauge"></i> Iniciar Teste de Conexão`;
-                card.classList.remove('speedtest-running');
+                statusText.textContent = 'Conclúido!';
+                mainVal.textContent = `${Math.round(data.download)} Mb`;
+                
+                // Restaura estado
+                isSpeedtestRunning = false;
+                if (card) {
+                    card.classList.remove('speedtest-running');
+                    card.style.pointerEvents = 'auto';
+                }
+                if (iconContainer) {
+                    iconContainer.innerHTML = `<i data-lucide="check-circle" style="color: var(--success); width: 16px; height: 16px;"></i>`;
+                }
                 if (window.lucide) lucide.createIcons();
 
                 eventSource.close();
@@ -3306,10 +3299,17 @@ function startSpeedTest() {
             }
         } catch (e) {
             console.error('Erro ao processar dados de speedtest:', e);
-            statusText.textContent = 'Falha durante o teste de conexão.';
-            btn.disabled = false;
-            btn.innerHTML = `<i data-lucide="gauge"></i> Iniciar Teste de Conexão`;
-            card.classList.remove('speedtest-running');
+            statusText.textContent = 'Falha no teste.';
+            mainVal.textContent = 'Erro';
+            
+            isSpeedtestRunning = false;
+            if (card) {
+                card.classList.remove('speedtest-running');
+                card.style.pointerEvents = 'auto';
+            }
+            if (iconContainer) {
+                iconContainer.innerHTML = `<i data-lucide="play" style="color: var(--primary); width: 16px; height: 16px;"></i>`;
+            }
             if (window.lucide) lucide.createIcons();
             eventSource.close();
         }
@@ -3317,10 +3317,17 @@ function startSpeedTest() {
 
     eventSource.onerror = function(err) {
         console.error('Erro na conexão com SSE de speedtest:', err);
-        statusText.textContent = 'Erro ao conectar ao servidor de testes.';
-        btn.disabled = false;
-        btn.innerHTML = `<i data-lucide="gauge"></i> Iniciar Teste de Conexão`;
-        card.classList.remove('speedtest-running');
+        statusText.textContent = 'Erro de conexão.';
+        mainVal.textContent = 'Erro';
+        
+        isSpeedtestRunning = false;
+        if (card) {
+            card.classList.remove('speedtest-running');
+            card.style.pointerEvents = 'auto';
+        }
+        if (iconContainer) {
+            iconContainer.innerHTML = `<i data-lucide="play" style="color: var(--primary); width: 16px; height: 16px;"></i>`;
+        }
         if (window.lucide) lucide.createIcons();
         eventSource.close();
     };
