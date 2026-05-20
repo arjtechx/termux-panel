@@ -7,20 +7,19 @@ router.get('/api/network/status', (req, res) => {
   try {
     const rootMode = networkMonitor.getRootMode();
     const metrics = networkMonitor.updateMetrics(rootMode);
-    
-    res.json({
-      success: true,
-      root: rootMode,
-      interface: metrics.interface,
-      downloadSpeed: metrics.downloadSpeed,
-      uploadSpeed: metrics.uploadSpeed,
-      totalReceived: metrics.totalReceived,
-      totalSent: metrics.totalSent
-    });
+    res.json(metrics);
   } catch (error) {
-    res.status(500).json({
+    console.error("[NETWORK] Erro ao ler rede:", error);
+    res.json({
       success: false,
-      error: "Erro ao ler rede",
+      root: false,
+      interface: "---",
+      downloadSpeed: "-- KB/s",
+      uploadSpeed: "-- KB/s",
+      totalReceived: "--",
+      totalSent: "--",
+      status: "Erro ao ler rede",
+      error: "NETWORK_READ_ERROR",
       details: error.message
     });
   }

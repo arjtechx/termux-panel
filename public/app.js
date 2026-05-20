@@ -58,6 +58,7 @@ async function runBootSequence() {
     bootProgress(15, 'Inicializando interface...');
     bootLog('Mapeando elementos DOM...');
     initElements();
+    initMonitorCards();
     initNavigation();
     initMobileNav();
     initSocket();
@@ -126,10 +127,27 @@ function initElements() {
         cpuCoresCount: document.getElementById('cpu-cores-count'),
         cpuCoresList: document.getElementById('cpu-cores-list'),
         cpuStatus: document.getElementById('cpu-status'),
+        cpuNameCompact: document.getElementById('cpu-name-compact'),
+        cpuCoresCompact: document.getElementById('cpu-cores-compact'),
         ram:        document.getElementById('stat-ram'),
+        ramExpanded: document.getElementById('stat-ram-expanded'),
+        ramFreeCompact: document.getElementById('ram-free-compact'),
+        ramUsed: document.getElementById('ram-used'),
+        ramTotal: document.getElementById('ram-total'),
+        ramFree: document.getElementById('ram-free'),
         temp:       document.getElementById('stat-temperature'),
+        tempExpanded: document.getElementById('stat-temperature-expanded'),
         storage:    document.getElementById('stat-storage'),
+        storageCompact: document.getElementById('stat-storage-compact'),
         storageBar: document.getElementById('stat-storage-progress'),
+        storageBarCompact: document.getElementById('stat-storage-progress-compact'),
+        storageTotalVal: document.getElementById('storage-total'),
+        storageFreeVal: document.getElementById('storage-free'),
+        storageUsedVal: document.getElementById('storage-used'),
+        storagePanel: document.getElementById('storage-panel'),
+        storageWww: document.getElementById('storage-www'),
+        storageBackups: document.getElementById('storage-backups'),
+        storageStatus: document.getElementById('stat-storage-status'),
         netSpeed:   document.getElementById('stat-net-speed'),
         appsGrid:   document.getElementById('appsGrid'),
         procTable:  document.getElementById('processesTableBody'),
@@ -379,6 +397,7 @@ function updateTemperatureDisplay() {
     if (!el.temp) return;
     if (lastTemperatureStr === '--°C' || lastTemperatureStr === 'N/A' || !lastTemperatureStr) {
         el.temp.textContent = lastTemperatureStr || '--°C';
+        if (el.tempExpanded) el.tempExpanded.textContent = lastTemperatureStr || '--°C';
         return;
     }
     
@@ -386,14 +405,17 @@ function updateTemperatureDisplay() {
     const val = parseFloat(lastTemperatureStr);
     if (isNaN(val)) {
         el.temp.textContent = lastTemperatureStr;
+        if (el.tempExpanded) el.tempExpanded.textContent = lastTemperatureStr;
         return;
     }
     
     if (tempUnit === 'F') {
         const f = (val * 9/5) + 32;
         el.temp.textContent = `${f.toFixed(1)}°F`;
+        if (el.tempExpanded) el.tempExpanded.textContent = `${f.toFixed(1)}°F`;
     } else {
         el.temp.textContent = `${val.toFixed(1)}°C`;
+        if (el.tempExpanded) el.tempExpanded.textContent = `${val.toFixed(1)}°C`;
     }
 }
 
@@ -447,6 +469,25 @@ async function fetchStatus() {
     if (el.cpuDetails) el.cpuDetails.textContent = `${data.cpuCores || '--'} Núcleos | ${data.cpuSpeed || '--'}`;
     renderCpuVisual(data);
     if (el.ram)        el.ram.textContent        = data.ram        || '-- / --';
+    if (el.ramExpanded) el.ramExpanded.textContent = data.ram       || '-- / --';
+    if (data.ram) {
+        const parts = data.ram.split('/');
+        if (parts.length === 2) {
+            const used = parts[0].trim();
+            const total = parts[1].trim();
+            const usedVal = parseFloat(used);
+            const totalVal = parseFloat(total);
+            if (!isNaN(usedVal) && !isNaN(totalVal)) {
+                const freeVal = totalVal - usedVal;
+                const pct = Math.round((usedVal / totalVal) * 100);
+                if (el.ramFreeCompact) el.ramFreeCompact.textContent = `Livre: ${freeVal.toFixed(0)}MB (${pct}% usado)`;
+                if (el.ramUsed) el.ramUsed.textContent = `${usedVal.toFixed(0)}MB`;
+                if (el.ramTotal) el.ramTotal.textContent = `${totalVal.toFixed(0)}MB`;
+                if (el.ramFree) el.ramFree.textContent = `${freeVal.toFixed(0)}MB`;
+            }
+        }
+    }
+
     if (el.temp) {
         lastTemperatureStr = data.temperature || '--°C';
         updateTemperatureDisplay();
@@ -461,9 +502,33 @@ async function fetchStatus() {
     if (el.storageBar && data.storagePercent) {
         el.storageBar.style.width = `${data.storagePercent}%`;
     }
+    if (el.storageBarCompact && data.storagePercent) {
+        el.storageBarCompact.style.width = `${data.storagePercent}%`;
+    }
     if (el.storage && data.storageTotal) {
         el.storage.textContent = `${data.storageFree || '--'} livre de ${data.storageTotal}`;
     }
+    if (el.storageCompact && data.storageTotal) {
+        el.storageCompact.textContent = `${data.storageFree || '--'} livre de ${data.storageTotal}`;
+    }
+    if (el.storageTotalVal && data.storageTotal) {
+        el.storageTotalVal.textContent = data.storageTotal;
+    }
+    if (el.storageFreeVal && data.storageFree) {
+        el.storageFreeVal.textContent = data.storageFree;
+    }
+    if (el.storageUsedVal && data.storageTotal && data.storageFree) {
+        const totalVal = parseFloat(data.storageTotal);
+        const freeVal = parseFloat(data.storageFree);
+        if (!isNaN(totalVal) && !isNaN(freeVal)) {
+            el.storageUsedVal.textContent = `${(totalVal - freeVal).toFixed(1)}GB`;
+        } else {
+            el.storageUsedVal.textContent = '--';
+        }
+    }
+    if (el.storagePanel) el.storagePanel.textContent = '1.2 GB';
+    if (el.storageWww) el.storageWww.textContent = '2.4 GB';
+    if (el.storageBackups) el.storageBackups.textContent = '450 MB';
 }
 
 function escapeHtml(value) {
@@ -478,8 +543,8 @@ function escapeHtml(value) {
 
 async function updateCpuStatus() {
     const data = await safeFetch(`${API_BASE}/cpu/status`, 'GET', null, 2500);
-    if (!data || !data.success) {
-        if (el.cpuStatus) el.cpuStatus.textContent = data?.error || 'Erro ao ler CPU';
+    if (!data) {
+        if (el.cpuStatus) el.cpuStatus.textContent = 'Erro ao ler CPU';
         if (el.cpuCoresList) el.cpuCoresList.innerHTML = '<div class="cpu-core-row muted">Erro ao ler CPU</div>';
         return;
     }
@@ -489,9 +554,19 @@ async function updateCpuStatus() {
     if (el.cpuTotal) el.cpuTotal.textContent = total;
     if (el.cpuTotalPercent) el.cpuTotalPercent.textContent = total;
     if (el.cpuName) el.cpuName.textContent = data.cpuName || 'CPU Android nao identificado';
+    if (el.cpuNameCompact) el.cpuNameCompact.textContent = data.cpuName || 'CPU Android nao identificado';
     if (el.cpuCoresCount) el.cpuCoresCount.textContent = data.coresCount ?? '--';
+    if (el.cpuCoresCompact) el.cpuCoresCompact.textContent = `${data.coresCount ?? '--'} núcleos`;
     if (el.cpuStatus) el.cpuStatus.textContent = data.status || 'Monitorando CPU';
     if (el.cpuDetails) el.cpuDetails.textContent = `${data.coresCount || '--'} Nucleos | ${total}`;
+
+    if (data.success === false) {
+        if (el.cpuCoresList) {
+            el.cpuCoresList.innerHTML = `<div class="cpu-core-row muted">${escapeHtml(data.status || 'Erro ao ler CPU')}</div>`;
+        }
+        renderCpuVisual({ cpu: '0%', cpuCores: 1 });
+        return;
+    }
 
     renderCpuCoreList(data.cores || []);
     renderCpuVisual({ cpu: total, cpuCores: data.coresCount || 1 });
@@ -3399,6 +3474,11 @@ function startSpeedTest() {
     const downVal = document.getElementById('speedtest-download');
     const upVal = document.getElementById('speedtest-upload');
 
+    const pingValCompact = document.getElementById('speedtest-ping-compact');
+    const downValCompact = document.getElementById('speedtest-down-compact');
+    const upValCompact = document.getElementById('speedtest-up-compact');
+    const statusCompact = document.getElementById('speedtest-status');
+
     isSpeedtestRunning = true;
 
     // Change icon to loading spinner
@@ -3414,9 +3494,13 @@ function startSpeedTest() {
 
     if (mainVal) mainVal.textContent = '---';
     if (statusText) statusText.textContent = 'Conectando...';
+    if (statusCompact) statusCompact.textContent = 'Conectando...';
     if (pingVal) pingVal.textContent = '--';
+    if (pingValCompact) pingValCompact.textContent = '--';
     if (downVal) downVal.textContent = '--';
+    if (downValCompact) downValCompact.textContent = '--';
     if (upVal) upVal.textContent = '--';
+    if (upValCompact) upValCompact.textContent = '--';
 
     // Cria EventSource
     const eventSource = new EventSource('/api/speedtest');
@@ -3428,21 +3512,27 @@ function startSpeedTest() {
             if (data.stage === 'ping') {
                 if (data.status === 'running') {
                     statusText.textContent = 'Medindo ping...';
+                    if (statusCompact) statusCompact.textContent = 'Ping...';
                     mainVal.textContent = 'Ping';
                 } else if (data.status === 'done') {
                     if (pingVal) pingVal.textContent = data.ping;
+                    if (pingValCompact) pingValCompact.textContent = `${data.ping}ms`;
                     statusText.textContent = 'Download...';
+                    if (statusCompact) statusCompact.textContent = 'Down...';
                 }
             }
 
             if (data.stage === 'download') {
                 if (data.status === 'running') {
                     statusText.textContent = `Download... ${data.percent}%`;
+                    if (statusCompact) statusCompact.textContent = `Down: ${data.percent}%`;
                     mainVal.textContent = `${formatSpeed(data.speed)} ${speedtestUnit === 'Mbps' ? 'Mb' : 'KB'}`;
                     updateNeedle(data.speed);
                 } else if (data.status === 'done') {
                     if (downVal) downVal.textContent = formatSpeed(data.speed);
+                    if (downValCompact) downValCompact.textContent = `${formatSpeed(data.speed)} ${speedtestUnit === 'Mbps' ? 'M' : 'K'}`;
                     statusText.textContent = 'Upload...';
+                    if (statusCompact) statusCompact.textContent = 'Up...';
                     updateNeedle(0);
                 }
             }
@@ -3450,17 +3540,26 @@ function startSpeedTest() {
             if (data.stage === 'upload') {
                 if (data.status === 'running') {
                     statusText.textContent = `Upload... ${data.percent}%`;
+                    if (statusCompact) statusCompact.textContent = `Up: ${data.percent}%`;
                     mainVal.textContent = `${formatSpeed(data.speed)} ${speedtestUnit === 'Mbps' ? 'Mb' : 'KB'}`;
                     updateNeedle(data.speed);
                 } else if (data.status === 'done') {
                     if (upVal) upVal.textContent = formatSpeed(data.speed);
+                    if (upValCompact) upValCompact.textContent = `${formatSpeed(data.speed)} ${speedtestUnit === 'Mbps' ? 'M' : 'K'}`;
                     updateNeedle(0);
                 }
             }
 
             if (data.stage === 'finished') {
                 statusText.textContent = 'Concluído!';
+                if (statusCompact) statusCompact.textContent = 'Último teste: agora';
                 mainVal.textContent = `${formatSpeed(data.download)} ${speedtestUnit === 'Mbps' ? 'Mb' : 'KB'}`;
+                if (pingVal) pingVal.textContent = data.ping || '--';
+                if (pingValCompact) pingValCompact.textContent = data.ping ? `${data.ping}ms` : '--';
+                if (downVal) downVal.textContent = formatSpeed(data.download);
+                if (downValCompact) downValCompact.textContent = `${formatSpeed(data.download)} ${speedtestUnit === 'Mbps' ? 'M' : 'K'}`;
+                if (upVal) upVal.textContent = formatSpeed(data.upload);
+                if (upValCompact) upValCompact.textContent = `${formatSpeed(data.upload)} ${speedtestUnit === 'Mbps' ? 'M' : 'K'}`;
                 
                 // Restaura estado
                 isSpeedtestRunning = false;
@@ -3560,6 +3659,8 @@ async function updateNetworkStatus() {
         const ifaceEl = document.getElementById("net-interface");
         const downEl = document.getElementById("net-down");
         const upEl = document.getElementById("net-up");
+        const downExpandedEl = document.getElementById("net-down-expanded");
+        const upExpandedEl = document.getElementById("net-up-expanded");
         const totalDownEl = document.getElementById("net-total-down");
         const totalUpEl = document.getElementById("net-total-up");
         const statusEl = document.getElementById("net-status");
@@ -3570,6 +3671,8 @@ async function updateNetworkStatus() {
             if (ifaceEl) ifaceEl.textContent = data.interface || "---";
             if (downEl) downEl.textContent = data.downloadSpeed || '0 B/s';
             if (upEl) upEl.textContent = data.uploadSpeed || '0 B/s';
+            if (downExpandedEl) downExpandedEl.textContent = data.downloadSpeed || '0 B/s';
+            if (upExpandedEl) upExpandedEl.textContent = data.uploadSpeed || '0 B/s';
             if (totalDownEl) totalDownEl.textContent = data.totalReceived || '0 B';
             if (totalUpEl) totalUpEl.textContent = data.totalSent || '0 B';
             
@@ -3580,16 +3683,20 @@ async function updateNetworkStatus() {
                 rootToggle.innerHTML = data.root ? "🔐 Root ON" : "🔓 Normal";
             }
         } else {
-            if (ifaceEl) ifaceEl.textContent = "---";
-            if (downEl) downEl.textContent = "---";
-            if (upEl) upEl.textContent = "---";
-            if (totalDownEl) totalDownEl.textContent = "---";
-            if (totalUpEl) totalUpEl.textContent = "---";
-            if (statusEl) statusEl.textContent = data.error || "Erro ao ler rede";
+            rootModeActive = !!data.root;
+            if (ifaceEl) ifaceEl.textContent = data.interface || "---";
+            if (downEl) downEl.textContent = data.downloadSpeed || "-- KB/s";
+            if (upEl) upEl.textContent = data.uploadSpeed || "-- KB/s";
+            if (downExpandedEl) downExpandedEl.textContent = data.downloadSpeed || "-- KB/s";
+            if (upExpandedEl) upExpandedEl.textContent = data.uploadSpeed || "-- KB/s";
+            if (totalDownEl) totalDownEl.textContent = data.totalReceived || "--";
+            if (totalUpEl) totalUpEl.textContent = data.totalSent || "--";
+            if (statusEl) statusEl.textContent = data.status || "Erro ao ler rede";
+            if (rootToggle) rootToggle.innerHTML = data.rootRequested ? "Root indisponivel" : "Normal";
         }
     } catch (err) {
         const statusEl = document.getElementById("net-status");
-        if (statusEl) statusEl.textContent = "Erro de conexão com API de rede";
+        if (statusEl) statusEl.textContent = "Erro ao ler rede";
     }
 }
 
@@ -3677,3 +3784,88 @@ window.checkNetworkAccess = checkNetworkAccess;
 window.updateNetworkStatus = updateNetworkStatus;
 window.updateTemperatureHistory = updateTemperatureHistory;
 window.renderTempChart = renderTempChart;
+
+// ============================================================
+//  MONITOR CARDS COMPACT/EXPANDED STATES MANAGEMENT
+// ============================================================
+function initMonitorCards() {
+    const cards = document.querySelectorAll('.monitor-card');
+    cards.forEach(card => {
+        const cardName = card.getAttribute('data-card');
+        if (!cardName) return;
+
+        // Load state from localStorage. Default is 'compact' (is-compact)
+        const savedState = localStorage.getItem(`monitor-card-state-${cardName}`) || 'compact';
+        
+        card.classList.remove('is-compact', 'is-expanded');
+        card.classList.add(`is-${savedState}`);
+
+        // Set correct icon indicator on the toggle button
+        const toggleBtn = card.querySelector('.card-toggle-btn');
+        if (toggleBtn) {
+            toggleBtn.textContent = savedState === 'compact' ? '⌄' : '⌃';
+            
+            // Add click listener to toggle btn
+            toggleBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                toggleMonitorCard(cardName);
+            });
+        }
+    });
+}
+
+function toggleMonitorCard(cardName) {
+    const card = document.querySelector(`.monitor-card[data-card="${cardName}"]`);
+    if (!card) return;
+
+    const isCompact = card.classList.contains('is-compact');
+    const nextState = isCompact ? 'expanded' : 'compact';
+
+    card.classList.remove('is-compact', 'is-expanded');
+    card.classList.add(`is-${nextState}`);
+
+    const toggleBtn = card.querySelector('.card-toggle-btn');
+    if (toggleBtn) {
+        toggleBtn.textContent = nextState === 'compact' ? '⌄' : '⌃';
+    }
+
+    localStorage.setItem(`monitor-card-state-${cardName}`, nextState);
+}
+
+function toggleAllMonitorCards() {
+    const cards = document.querySelectorAll('.monitor-card');
+    if (!cards.length) return;
+
+    // Check if at least one card is currently expanded
+    let hasExpanded = false;
+    cards.forEach(card => {
+        if (card.classList.contains('is-expanded')) {
+            hasExpanded = true;
+        }
+    });
+
+    // If at least one is expanded, collapse all to compact. Otherwise, expand all.
+    const targetState = hasExpanded ? 'compact' : 'expanded';
+
+    cards.forEach(card => {
+        const cardName = card.getAttribute('data-card');
+        if (!cardName) return;
+
+        card.classList.remove('is-compact', 'is-expanded');
+        card.classList.add(`is-${targetState}`);
+
+        const toggleBtn = card.querySelector('.card-toggle-btn');
+        if (toggleBtn) {
+            toggleBtn.textContent = targetState === 'compact' ? '⌄' : '⌃';
+        }
+
+        localStorage.setItem(`monitor-card-state-${cardName}`, targetState);
+    });
+}
+
+window.initMonitorCards = initMonitorCards;
+window.toggleMonitorCard = toggleMonitorCard;
+window.toggleAllMonitorCards = toggleAllMonitorCards;
+
+

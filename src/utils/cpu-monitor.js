@@ -10,6 +10,21 @@ let lastCpuSnapshot = null;
 let cachedCpuName = null;
 let cachedCoreIds = null;
 
+function fallbackCpuStatus(error, extra = {}) {
+    return {
+        success: false,
+        cpuName: readCpuName(),
+        cpuTotal: '--%',
+        cpuTotalPercent: 0,
+        coresCount: getCoreIds().length || 0,
+        cores: [],
+        status: 'Erro ao ler CPU',
+        error: 'CPU_READ_ERROR',
+        details: error ? error.message : undefined,
+        ...extra
+    };
+}
+
 function readText(filePath) {
     return fs.readFileSync(filePath, 'utf8');
 }
@@ -55,33 +70,7 @@ function readCpuSnapshot() {
         }
     } catch (_) {}
 
-    // Fallback usando modulo OS nativo do Node
-    const cpus = os.cpus();
-    if (!cpus || cpus.length === 0) throw new Error("Nao foi possivel ler dados da CPU");
-
-    const snapshot = {};
-    let totalUser = 0, totalNice = 0, totalSys = 0, totalIdle = 0, totalIrq = 0;
-
-    cpus.forEach((core, index) => {
-        const t = core.times;
-        const idle = t.idle;
-        const total = t.user + t.nice + t.sys + t.idle + t.irq;
-        snapshot[`cpu${index}`] = { id: `cpu${index}`, idle, total };
-
-        totalUser += t.user;
-        totalNice += t.nice;
-        totalSys += t.sys;
-        totalIdle += t.idle;
-        totalIrq += t.irq;
-    });
-
-    snapshot['cpu'] = {
-        id: 'cpu',
-        idle: totalIdle,
-        total: totalUser + totalNice + totalSys + totalIdle + totalIrq
-    };
-
-    return snapshot;
+    return null;
 }
 
 function calculateUsage(current, previous) {
@@ -219,7 +208,18 @@ function formatUsage(percent) {
 }
 
 function getCpuStatus() {
-    const currentSnapshot = readCpuSnapshot();
+    let currentSnapshot;
+    try {
+        currentSnapshot = readCpuSnapshot();
+    } catch (error) {
+        console.error('[CPU] Falha em /proc/stat:', error.message);
+        return fallbackCpuStatus(error);
+    }
+
+    if (!currentSnapshot || !currentSnapshot.cpu) {
+        return fallbackCpuStatus(null, { error: 'PROC_STAT_UNAVAILABLE' });
+    }
+
     const previousSnapshot = lastCpuSnapshot;
     lastCpuSnapshot = currentSnapshot;
 

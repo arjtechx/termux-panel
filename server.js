@@ -158,9 +158,16 @@ app.get('/api/cpu/status', (req, res) => {
     try {
         res.json(cpuMonitor.getCpuStatus());
     } catch (err) {
-        res.status(500).json({
+        console.error('[CPU] Erro ao ler CPU:', err);
+        res.json({
             success: false,
-            error: 'Erro ao ler CPU',
+            cpuName: 'CPU Android nao identificado',
+            cpuTotal: '--%',
+            cpuTotalPercent: 0,
+            coresCount: 0,
+            cores: [],
+            status: 'Erro ao ler CPU',
+            error: 'CPU_READ_ERROR',
             details: err.message
         });
     }

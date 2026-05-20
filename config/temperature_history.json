@@ -294,5 +294,13 @@
   {
     "timestamp": 1779303023004,
     "temperature": 29.1
+  },
+  {
+    "timestamp": 1779304108570,
+    "temperature": 34.1
+  },
+  {
+    "timestamp": 1779304199787,
+    "temperature": 34.1
   }
 ]

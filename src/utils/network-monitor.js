@@ -13,6 +13,22 @@ let state = {
 
 let rootModeEnabled = false;
 
+function fallbackNetworkStatus(rootMode = false, error = 'NETWORK_READ_FAILED', details = '') {
+  return {
+    success: false,
+    root: false,
+    rootRequested: !!rootMode,
+    interface: '---',
+    downloadSpeed: '-- KB/s',
+    uploadSpeed: '-- KB/s',
+    totalReceived: '--',
+    totalSent: '--',
+    status: 'Erro ao ler rede',
+    error,
+    details
+  };
+}
+
 function setRootMode(enabled) {
   rootModeEnabled = !!enabled;
 }
@@ -46,9 +62,11 @@ function detectNetworkError(error) {
 function getAvailableInterfaces(rootMode = false) {
   try {
     if (!rootMode) {
+      if (!fs.existsSync('/sys/class/net')) return [];
       return fs.readdirSync('/sys/class/net');
     } else {
       try {
+        if (!fs.existsSync('/sys/class/net')) return [];
         return fs.readdirSync('/sys/class/net');
       } catch (_) {
         const output = execSync("su -c 'ls /sys/class/net'", { encoding: 'utf8', timeout: 1500 });
@@ -93,18 +111,22 @@ function chooseInterface(rootMode = false) {
 }
 
 function readBytes(iface, rootMode = false) {
+  if (!iface) return null;
   const rxPath = `/sys/class/net/${iface}/statistics/rx_bytes`;
   const txPath = `/sys/class/net/${iface}/statistics/tx_bytes`;
 
   if (!rootMode) {
+    if (!fs.existsSync(rxPath) || !fs.existsSync(txPath)) return null;
     const rx = parseInt(fs.readFileSync(rxPath, 'utf8').trim(), 10);
     const tx = parseInt(fs.readFileSync(txPath, 'utf8').trim(), 10);
+    if (!Number.isFinite(rx) || !Number.isFinite(tx)) return null;
     return { rx, tx };
   } else {
-    const rxStr = execSync(`su -c 'cat ${rxPath}'`, { encoding: 'utf8', timeout: 1000 }).trim();
-    const txStr = execSync(`su -c 'cat ${txPath}'`, { encoding: 'utf8', timeout: 1000 }).trim();
+    const rxStr = execSync(`su -c 'cat ${rxPath}'`, { encoding: 'utf8', timeout: 3000 }).trim();
+    const txStr = execSync(`su -c 'cat ${txPath}'`, { encoding: 'utf8', timeout: 3000 }).trim();
     const rx = parseInt(rxStr, 10);
     const tx = parseInt(txStr, 10);
+    if (!Number.isFinite(rx) || !Number.isFinite(tx)) return null;
     return { rx, tx };
   }
 }
@@ -121,7 +143,17 @@ function testNetworkAccess(rootMode = false) {
       };
     }
 
-    const { rx, tx } = readBytes(iface, rootMode);
+    const bytes = readBytes(iface, rootMode);
+    if (!bytes) {
+      return {
+        success: false,
+        reason: "READ_FAILED",
+        message: "Nao foi possivel ler os bytes da interface",
+        root: rootMode
+      };
+    }
+
+    const { rx, tx } = bytes;
 
     if (!Number.isFinite(rx) || !Number.isFinite(tx)) {
       return {
@@ -163,13 +195,18 @@ function formatBytes(bytes) {
 }
 
 function updateMetrics(rootMode = false) {
-  const now = Date.now();
-  const iface = chooseInterface(rootMode);
-  if (!iface) {
-    throw new Error("Nenhuma interface de rede encontrada");
-  }
+  try {
+    const now = Date.now();
+    const iface = chooseInterface(rootMode);
+    if (!iface) {
+      return fallbackNetworkStatus(rootMode, 'NO_INTERFACE', 'Nenhuma interface de rede encontrada');
+    }
 
-  const { rx, tx } = readBytes(iface, rootMode);
+    const bytes = readBytes(iface, rootMode);
+    if (!bytes) {
+      return fallbackNetworkStatus(rootMode, 'NETWORK_READ_FAILED', `Nao foi possivel ler bytes da interface ${iface}`);
+    }
+    const { rx, tx } = bytes;
   
   if (state.lastInterface === iface && state.lastTime > 0) {
     const timeDiffSec = (now - state.lastTime) / 1000;
@@ -187,13 +224,20 @@ function updateMetrics(rootMode = false) {
   state.lastTx = tx;
   state.lastTime = now;
 
-  return {
-    interface: iface,
-    downloadSpeed: formatBytes(state.downloadSpeed) + '/s',
-    uploadSpeed: formatBytes(state.uploadSpeed) + '/s',
-    totalReceived: formatBytes(rx),
-    totalSent: formatBytes(tx)
-  };
+    return {
+      success: true,
+      root: !!rootMode,
+      interface: iface,
+      downloadSpeed: formatBytes(state.downloadSpeed) + '/s',
+      uploadSpeed: formatBytes(state.uploadSpeed) + '/s',
+      totalReceived: formatBytes(rx),
+      totalSent: formatBytes(tx),
+      status: rootMode ? 'Monitorando com root' : 'Monitorando sem root'
+    };
+  } catch (error) {
+    console.error('[NETWORK] Erro ao ler rede:', error.message);
+    return fallbackNetworkStatus(rootMode, 'NETWORK_READ_ERROR', error.message);
+  }
 }
 
 module.exports = {
@@ -201,5 +245,6 @@ module.exports = {
   getRootMode,
   testNetworkAccess,
   updateMetrics,
-  formatBytes
+  formatBytes,
+  fallbackNetworkStatus
 };

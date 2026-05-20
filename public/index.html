@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Termux cPanel | Professional</title>
-    <link rel="stylesheet" href="style.css?v=4.0">
+    <link rel="stylesheet" href="style.css?v=4.1">
     <link rel="stylesheet" href="filemanager.css?v=0.0.11">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.1.0/css/xterm.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fira+Code&display=swap" rel="stylesheet">
@@ -137,147 +137,268 @@
                     <h1>Visão Geral do Servidor</h1>
                 </div>
 
+                
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; margin-top: 10px;">
+                    <h2 style="margin: 0; font-size: 1.1rem; color: var(--text-color);">Visão Geral</h2>
+                    <button id="toggle-all-cards" onclick="toggleAllMonitorCards()" style="background: var(--bg-lighter); border: 1px solid var(--border); color: var(--text-color); font-size: 0.75rem; padding: 4px 10px; border-radius: 6px; cursor: pointer; transition: all 0.2s;">Alternar Todos</button>
+                </div>
+
                 <!-- Storage Card -->
-                <div class="card storage-card">
-                    <div class="storage-icon"><i data-lucide="hard-drive"></i></div>
-                    <div class="storage-info">
-                        <span class="card-label">Armazenamento Interno</span>
-                        <div class="progress-track"><div class="progress-fill" id="stat-storage-progress"></div></div>
-                        <small id="stat-storage">-- livre de --</small>
+                <div class="card storage-card monitor-card is-compact" data-card="storage">
+                    <div class="monitor-card-header">
+                        <div class="monitor-card-title">
+                            <span class="card-label" style="margin:0;"><i data-lucide="hard-drive"></i> Armazenamento</span>
+                        </div>
+                        <div class="monitor-card-actions">
+                            <button class="card-toggle-btn" data-toggle-card="storage">⌄</button>
+                        </div>
+                    </div>
+                    
+                    <div class="monitor-card-compact">
+                        <strong id="stat-storage-compact" style="display:block; margin:8px 0; font-size: 0.9rem;">-- livre de --</strong>
+                        <div class="progress-track"><div class="progress-fill" id="stat-storage-progress-compact"></div></div>
+                    </div>
+
+                    <div class="monitor-card-expanded">
+                        <div class="monitor-detail-list">
+                            <div class="monitor-detail-row"><span>Total:</span> <strong id="storage-total">--</strong></div>
+                            <div class="monitor-detail-row"><span>Livre:</span> <strong id="storage-free">--</strong></div>
+                            <div class="monitor-detail-row"><span>Usado:</span> <strong id="storage-used">--</strong></div>
+                            <hr style="border-top:1px dashed var(--border); margin:4px 0;">
+                            <div class="monitor-detail-row"><span>Pasta painel:</span> <strong id="storage-panel">--</strong></div>
+                            <div class="monitor-detail-row"><span>Sites/www:</span> <strong id="storage-www">--</strong></div>
+                            <div class="monitor-detail-row"><span>Backups:</span> <strong id="storage-backups">--</strong></div>
+                        </div>
+                        <div class="progress-track" style="margin-top:12px;"><div class="progress-fill" id="stat-storage-progress"></div></div>
+                    </div>
+                    
+                    <div class="monitor-card-footer" style="margin-top: 12px;">
+                        <small id="stat-storage" style="display:none;"></small>
+                        <small id="stat-storage-status">Status: Normal</small>
                     </div>
                 </div>
 
                 <!-- Stats Cards -->
                 <div class="stats-grid">
-                    <div class="stat-card cpu-monitor-card">
-                        <div class="cpu-monitor-head">
-                            <span class="card-label"><i data-lucide="cpu"></i> Monitor CPU</span>
-                            <strong id="cpu-total">--%</strong>
-                        </div>
-                        <div class="cpu-monitor-summary">
-                            <div>
-                                <span>Processador</span>
-                                <strong id="cpu-name">CPU Android nao identificado</strong>
+                    <div class="stat-card cpu-monitor-card monitor-card is-compact" data-card="cpu">
+                        <div class="monitor-card-header">
+                            <div class="monitor-card-title">
+                                <span class="card-label" style="margin:0;"><i data-lucide="cpu"></i> Monitor CPU</span>
                             </div>
-                            <div>
-                                <span>Uso total</span>
-                                <strong id="cpu-total-percent">--%</strong>
-                            </div>
-                            <div>
-                                <span>Nucleos</span>
-                                <strong id="cpu-cores-count">--</strong>
+                            <div class="monitor-card-actions">
+                                <button class="card-toggle-btn" data-toggle-card="cpu">⌄</button>
                             </div>
                         </div>
-                        <div class="cpu-cores-list" id="cpu-cores-list" aria-label="Lista de uso por nucleo">
-                            <div class="cpu-core-row muted">Calculando...</div>
+
+                        <div class="monitor-card-compact">
+                            <strong id="cpu-total" style="display:block; margin-top:8px; font-size: 1.1rem;">--%</strong>
+                            <small id="cpu-name-compact" style="display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width: 100%;">Calculando...</small>
+                            <small id="cpu-cores-compact">-- núcleos</small>
                         </div>
-                        <small class="cpu-monitor-status">Status: <span id="cpu-status">Calculando...</span></small>
-                        <div class="legacy-cpu-visual hidden" aria-hidden="true">
-                        <span class="card-label"><i data-lucide="cpu"></i> CPU</span>
-                        <strong id="stat-cpu">--%</strong>
-                        <small id="stat-cpu-details">-- Núcleos</small>
-                        <div class="cpu-visual" aria-label="Visualizacao de nucleos da CPU">
-                            <div class="cpu-core-grid" id="cpu-core-grid"></div>
-                            <svg class="cpu-usage-chart" id="cpu-usage-chart" viewBox="0 0 160 48" preserveAspectRatio="none" aria-label="Grafico de uso da CPU">
-                                <defs>
-                                    <linearGradient id="cpu-chart-fill" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="0%" stop-color="var(--primary)" stop-opacity="0.34"></stop>
-                                        <stop offset="100%" stop-color="var(--primary)" stop-opacity="0.02"></stop>
-                                    </linearGradient>
-                                </defs>
-                                <path id="cpu-chart-area" class="cpu-chart-area" d=""></path>
-                                <path id="cpu-chart-line" class="cpu-chart-line" d=""></path>
-                            </svg>
+
+                        <div class="monitor-card-expanded">
+                            <div class="cpu-monitor-summary">
+                                <div>
+                                    <span>Processador</span>
+                                    <strong id="cpu-name">CPU Android nao identificado</strong>
+                                </div>
+                                <div>
+                                    <span>Uso total</span>
+                                    <strong id="cpu-total-percent">--%</strong>
+                                </div>
+                                <div>
+                                    <span>Nucleos</span>
+                                    <strong id="cpu-cores-count">--</strong>
+                                </div>
+                            </div>
+                            <div class="cpu-cores-list" id="cpu-cores-list" aria-label="Lista de uso por nucleo">
+                                <div class="cpu-core-row muted">Calculando...</div>
+                            </div>
+                            
+                            <div class="legacy-cpu-visual hidden" aria-hidden="true">
+                                <strong id="stat-cpu">--%</strong>
+                                <small id="stat-cpu-details">-- Núcleos</small>
+                                <div class="cpu-visual" aria-label="Visualizacao de nucleos da CPU">
+                                    <div class="cpu-core-grid" id="cpu-core-grid"></div>
+                                    <svg class="cpu-usage-chart" id="cpu-usage-chart" viewBox="0 0 160 48" preserveAspectRatio="none" aria-label="Grafico de uso da CPU">
+                                        <defs>
+                                            <linearGradient id="cpu-chart-fill" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="0%" stop-color="var(--primary)" stop-opacity="0.34"></stop>
+                                                <stop offset="100%" stop-color="var(--primary)" stop-opacity="0.02"></stop>
+                                            </linearGradient>
+                                        </defs>
+                                        <path id="cpu-chart-area" class="cpu-chart-area" d=""></path>
+                                        <path id="cpu-chart-line" class="cpu-chart-line" d=""></path>
+                                    </svg>
+                                </div>
+                            </div>
                         </div>
+
+                        <div class="monitor-card-footer">
+                            <small class="cpu-monitor-status">Status: <span id="cpu-status">Calculando...</span></small>
                         </div>
                     </div>
-                    <div class="stat-card">
-                        <span class="card-label"><i data-lucide="memory-stick"></i> RAM</span>
-                        <strong id="stat-ram">-- / --</strong>
-                    </div>
-                    <div class="stat-card" style="position: relative; display: flex; flex-direction: column; justify-content: space-between;">
-                        <span class="card-label" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                            <span><i data-lucide="thermometer"></i> Temperatura</span>
-                            <button id="temp-unit-btn" onclick="toggleTempUnit(event)" style="background: var(--bg-lighter); border: 1px solid var(--border); color: var(--text-color); font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; cursor: pointer; z-index: 3;" title="Alternar entre °C e °F">°C</button>
-                        </span>
-                        <strong id="stat-temperature">--°C</strong>
-                        <!-- Grafico de Temperatura -->
-                        <div class="temp-visual" style="margin-top: 8px; width: 100%;">
-                            <svg class="temp-usage-chart" id="temp-history-chart" viewBox="0 0 160 40" preserveAspectRatio="none" style="width: 100%; height: 32px; overflow: visible;" aria-label="Grafico de historico de temperatura">
-                                <defs>
-                                    <linearGradient id="temp-chart-fill" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.30"></stop>
-                                        <stop offset="100%" stop-color="#f59e0b" stop-opacity="0.01"></stop>
-                                    </linearGradient>
-                                </defs>
-                                <path id="temp-chart-area" class="cpu-chart-area" d="" fill="url(#temp-chart-fill)"></path>
-                                <path id="temp-chart-line" class="cpu-chart-line" d="" fill="none" stroke="#f59e0b" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0 2px 4px rgba(245, 158, 11, 0.20));"></path>
-                            </svg>
-                        </div>
-                    </div>
-                    <div class="stat-card" style="position: relative; display: flex; flex-direction: column; justify-content: space-between;">
-                        <!-- Cabecalho -->
-                        <span class="card-label" style="display: flex; justify-content: space-between; align-items: center; width: 100%; margin-bottom: 8px;">
-                            <span style="display: flex; align-items: center; gap: 6px; text-transform: uppercase; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.7px; color: var(--text-muted);">
-                                <i data-lucide="arrow-up-down" style="width: 14px; height: 14px;"></i> Rede (<span id="net-interface" style="text-transform: none; font-weight: 700; color: var(--text);">---</span>)
-                            </span>
-                            <button id="root-toggle" onclick="toggleRootMode(event)" style="background: var(--bg-lighter); border: 1px solid var(--border); color: var(--text); font-size: 0.65rem; padding: 3px 8px; border-radius: 6px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; transition: all 0.2s; outline: none; z-index: 3;" onmouseover="this.style.background='var(--border)'" onmouseout="this.style.background='var(--bg-lighter)'" title="Alternar modo root">🔓 Normal</button>
-                        </span>
-                        
-                        <!-- Velocidades em Capsulas Premium -->
-                        <div style="display: flex; gap: 8px; align-items: center; margin: 4px 0 8px 0;">
-                            <div style="display: flex; align-items: center; gap: 5px; background: rgba(16, 185, 129, 0.07); border: 1px solid rgba(16, 185, 129, 0.15); padding: 6px 10px; border-radius: 8px; flex: 1; justify-content: center; min-width: 0;">
-                                <i data-lucide="arrow-down" style="color: var(--success); width: 14px; height: 14px; flex-shrink: 0;"></i>
-                                <span id="net-down" style="font-size: 0.92rem; font-weight: 700; color: var(--success); letter-spacing: -0.3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">0 B/s</span>
+                    
+                    <div class="stat-card monitor-card is-compact" data-card="ram">
+                        <div class="monitor-card-header">
+                            <div class="monitor-card-title">
+                                <span class="card-label" style="margin:0;"><i data-lucide="memory-stick"></i> RAM</span>
                             </div>
-                            <div style="display: flex; align-items: center; gap: 5px; background: rgba(245, 158, 11, 0.07); border: 1px solid rgba(245, 158, 11, 0.15); padding: 6px 10px; border-radius: 8px; flex: 1; justify-content: center; min-width: 0;">
-                                <i data-lucide="arrow-up" style="color: var(--warning); width: 14px; height: 14px; flex-shrink: 0;"></i>
-                                <span id="net-up" style="font-size: 0.92rem; font-weight: 700; color: var(--warning); letter-spacing: -0.3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">0 B/s</span>
+                            <div class="monitor-card-actions">
+                                <button class="card-toggle-btn" data-toggle-card="ram">⌄</button>
                             </div>
                         </div>
                         
-                        <!-- Totais -->
-                        <div style="display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--text-muted); padding-top: 6px; border-top: 1px dashed var(--border); gap: 4px;">
-                            <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Rec: <b id="net-total-down" style="font-weight: 600; color: var(--text);">0 B</b></span>
-                            <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Env: <b id="net-total-up" style="font-weight: 600; color: var(--text);">0 B</b></span>
+                        <div class="monitor-card-compact">
+                            <strong id="stat-ram" style="display:block; margin-top:8px; font-size: 1.1rem;">-- / --</strong>
+                            <small id="ram-free-compact">Calculando...</small>
                         </div>
-                        
-                        <!-- Status Rodape -->
-                        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.65rem; color: var(--text-muted); margin-top: 6px; padding-top: 4px;">
-                            <span id="net-status" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Verificando...</span>
+
+                        <div class="monitor-card-expanded">
+                            <strong id="stat-ram-expanded" style="display:block; margin-bottom:8px; font-size: 1.1rem;">-- / --</strong>
+                            <div class="monitor-detail-list">
+                                <div class="monitor-detail-row"><span>Usado:</span> <strong id="ram-used">--</strong></div>
+                                <div class="monitor-detail-row"><span>Total:</span> <strong id="ram-total">--</strong></div>
+                                <div class="monitor-detail-row"><span>Livre:</span> <strong id="ram-free">--</strong></div>
+                            </div>
+                        </div>
+
+                        <div class="monitor-card-footer">
+                            <small>Status: Normal</small>
                         </div>
                     </div>
+                    
+                    <div class="stat-card monitor-card is-compact" data-card="temperature" style="position: relative; display: flex; flex-direction: column; justify-content: space-between;">
+                        <div class="monitor-card-header">
+                            <div class="monitor-card-title">
+                                <span class="card-label" style="margin:0;"><i data-lucide="thermometer"></i> Temperatura</span>
+                            </div>
+                            <div class="monitor-card-actions">
+                                <button id="temp-unit-btn" onclick="toggleTempUnit(event)" style="background: var(--bg-lighter); border: 1px solid var(--border); color: var(--text-color); font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; cursor: pointer; z-index: 3;" title="Alternar entre °C e °F">°C</button>
+                                <button class="card-toggle-btn" data-toggle-card="temperature">⌄</button>
+                            </div>
+                        </div>
+                        
+                        <div class="monitor-card-compact">
+                            <strong id="stat-temperature" style="display:block; margin-top:8px; font-size: 1.1rem;">--°C</strong>
+                        </div>
+
+                        <div class="monitor-card-expanded">
+                            <div class="monitor-detail-list">
+                                <div class="monitor-detail-row"><span>Sensor principal:</span> <strong>battery</strong></div>
+                                <div class="monitor-detail-row"><span>Temperatura:</span> <strong id="stat-temperature-expanded">--°C</strong></div>
+                            </div>
+                            <div class="temp-visual" style="margin-top: 8px; width: 100%;">
+                                <svg class="temp-usage-chart" id="temp-history-chart" viewBox="0 0 160 40" preserveAspectRatio="none" style="width: 100%; height: 32px; overflow: visible;" aria-label="Grafico de historico de temperatura">
+                                    <defs>
+                                        <linearGradient id="temp-chart-fill" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.30"></stop>
+                                            <stop offset="100%" stop-color="#f59e0b" stop-opacity="0.01"></stop>
+                                        </linearGradient>
+                                    </defs>
+                                    <path id="temp-chart-area" class="cpu-chart-area" d="" fill="url(#temp-chart-fill)"></path>
+                                    <path id="temp-chart-line" class="cpu-chart-line" d="" fill="none" stroke="#f59e0b" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0 2px 4px rgba(245, 158, 11, 0.20));"></path>
+                                </svg>
+                            </div>
+                        </div>
+
+                        <div class="monitor-card-footer" style="margin-top: 8px;">
+                            <small>Status: Normal</small>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card monitor-card is-compact" data-card="network" style="position: relative; display: flex; flex-direction: column; justify-content: space-between;">
+                        <div class="monitor-card-header">
+                            <div class="monitor-card-title">
+                                <span class="card-label" style="margin:0;"><i data-lucide="arrow-up-down"></i> Rede (<span id="net-interface" style="text-transform: none; font-weight: 700;">---</span>)</span>
+                            </div>
+                            <div class="monitor-card-actions">
+                                <button id="root-toggle" onclick="toggleRootMode(event)" style="background: var(--bg-lighter); border: 1px solid var(--border); color: var(--text); font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; transition: all 0.2s;" title="Alternar modo root">🔓 Normal</button>
+                                <button class="card-toggle-btn" data-toggle-card="network">⌄</button>
+                            </div>
+                        </div>
+                        
+                        <div class="monitor-card-compact">
+                            <div style="display: flex; gap: 8px; align-items: center; margin-top: 8px;">
+                                <div style="display: flex; align-items: center; gap: 5px; background: rgba(16, 185, 129, 0.07); border: 1px solid rgba(16, 185, 129, 0.15); padding: 4px 8px; border-radius: 6px; flex: 1; justify-content: center;">
+                                    <i data-lucide="arrow-down" style="color: var(--success); width: 12px; height: 12px;"></i>
+                                    <span id="net-down" style="font-size: 0.85rem; font-weight: 700; color: var(--success);">0 B/s</span>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 5px; background: rgba(245, 158, 11, 0.07); border: 1px solid rgba(245, 158, 11, 0.15); padding: 4px 8px; border-radius: 6px; flex: 1; justify-content: center;">
+                                    <i data-lucide="arrow-up" style="color: var(--warning); width: 12px; height: 12px;"></i>
+                                    <span id="net-up" style="font-size: 0.85rem; font-weight: 700; color: var(--warning);">0 B/s</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="monitor-card-expanded">
+                            <div class="monitor-detail-list">
+                                <div class="monitor-detail-row"><span>Download atual:</span> <strong id="net-down-expanded" style="color: var(--success);">0 B/s</strong></div>
+                                <div class="monitor-detail-row"><span>Upload atual:</span> <strong id="net-up-expanded" style="color: var(--warning);">0 B/s</strong></div>
+                                <hr style="border-top:1px dashed var(--border); margin:4px 0;">
+                                <div class="monitor-detail-row"><span>Total recebido:</span> <strong id="net-total-down">0 B</strong></div>
+                                <div class="monitor-detail-row"><span>Total enviado:</span> <strong id="net-total-up">0 B</strong></div>
+                            </div>
+                        </div>
+
+                        <div class="monitor-card-footer" style="margin-top: 8px;">
+                            <small id="net-status">Verificando...</small>
+                        </div>
+                    </div>
+                    
                     <!-- Speedtest Card -->
-                    <div class="stat-card speedtest-card" id="speedtest-card" style="cursor: pointer; transition: all 0.3s ease; position: relative; overflow: hidden; display: flex; flex-direction: column;" onclick="if(event.target.closest('#speedtest-unit-btn')) return; startSpeedTest()">
-                        <span class="card-label" style="display: flex; justify-content: space-between; align-items: center; width: 100%; z-index: 2;">
-                            <span style="display: flex; align-items: center; gap: 6px;"><i data-lucide="gauge"></i> Speedtest</span>
-                            <div style="display: flex; align-items: center; gap: 8px;">
-                                <button id="speedtest-unit-btn" onclick="toggleSpeedtestUnit(event)" style="background: var(--bg-lighter); border: 1px solid var(--border); color: var(--text-color); font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; cursor: pointer; z-index: 3;" title="Alternar entre Mbps e KB/s">Mbps</button>
-                                <span id="speedtest-icon-container"><i data-lucide="play" style="color: var(--primary); width: 16px; height: 16px;"></i></span>
+                    <div class="stat-card speedtest-card monitor-card is-compact" data-card="speedtest" id="speedtest-card" style="position: relative; overflow: hidden; display: flex; flex-direction: column;">
+                        <div class="monitor-card-header">
+                            <div class="monitor-card-title">
+                                <span class="card-label" style="margin:0; z-index: 2;"><i data-lucide="gauge"></i> Speedtest</span>
                             </div>
-                        </span>
-
-                        <div style="position: absolute; right: 10px; top: 40px; pointer-events: none; opacity: 0.25; width: 80px; height: 80px; z-index: 1;">
-                            <svg viewBox="0 0 100 50" style="width: 100%; height: 100%; overflow: visible;">
-                                <path d="M 10 50 A 40 40 0 0 1 90 50" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round" />
-                                <g id="speedtest-needle" style="transform-origin: 50px 50px; transform: rotate(-90deg); transition: transform 0.3s ease-out;">
-                                    <polygon points="47,50 53,50 50,10" fill="var(--primary)" />
-                                    <circle cx="50" cy="50" r="5" fill="var(--primary)" />
-                                </g>
-                            </svg>
+                            <div class="monitor-card-actions" style="z-index: 3;">
+                                <button id="speedtest-unit-btn" onclick="toggleSpeedtestUnit(event)" style="background: var(--bg-lighter); border: 1px solid var(--border); color: var(--text-color); font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; cursor: pointer;" title="Alternar entre Mbps e KB/s">Mbps</button>
+                                <button class="card-toggle-btn" data-toggle-card="speedtest">⌄</button>
+                            </div>
                         </div>
 
-                        <strong id="speedtest-main-value" style="display: block; margin-top: 8px; font-size: 1.8rem; font-weight: 700; line-height: 1.2; z-index: 2;">Testar</strong>
-                        <small id="speedtest-status-text" style="display: block; margin-top: 4px; font-size: 0.75rem; color: var(--text-muted); font-weight: 500; z-index: 2;">Clique para iniciar</small>
+                        <div class="monitor-card-compact" style="z-index: 2; margin-top: 8px;" onclick="if(event.target.closest('button')) return; startSpeedTest()">
+                            <div style="display: flex; gap: 8px;">
+                                <div style="flex: 1;">
+                                    <small>Ping</small><br>
+                                    <strong id="speedtest-ping-compact" style="font-size: 0.85rem;">--</strong>
+                                </div>
+                                <div style="flex: 1;">
+                                    <small>Down</small><br>
+                                    <strong id="speedtest-down-compact" style="font-size: 0.85rem;">--</strong>
+                                </div>
+                                <div style="flex: 1;">
+                                    <small>Up</small><br>
+                                    <strong id="speedtest-up-compact" style="font-size: 0.85rem;">--</strong>
+                                </div>
+                            </div>
+                            <button onclick="startSpeedTest()" style="margin-top: 8px; width: 100%; padding: 4px; background: var(--primary); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.75rem;">Testar</button>
+                        </div>
+
+                        <div class="monitor-card-expanded" style="z-index: 2;">
+                            <div style="display: flex; justify-content: center; margin: 12px 0;">
+                                <span id="speedtest-icon-container" style="cursor: pointer;" onclick="startSpeedTest()">
+                                    <i data-lucide="play-circle" style="color: var(--primary); width: 48px; height: 48px; opacity: 0.9;"></i>
+                                </span>
+                            </div>
+                            <div class="monitor-detail-list">
+                                <div class="monitor-detail-row"><span>Ping:</span> <strong id="speedtest-ping">--</strong></div>
+                                <div class="monitor-detail-row"><span>Download:</span> <strong id="speedtest-down">--</strong></div>
+                                <div class="monitor-detail-row"><span>Upload:</span> <strong id="speedtest-up">--</strong></div>
+                                <div class="monitor-detail-row"><span>Jitter:</span> <strong id="speedtest-jitter">--</strong></div>
+                            </div>
+                        </div>
+
+                        <div class="monitor-card-footer" style="z-index: 2; margin-top: 8px;">
+                            <small id="speedtest-status">Último teste: nunca</small>
+                        </div>
                         
-                        <div id="speedtest-mini-results" style="display: flex; justify-content: space-between; margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 0.7rem; color: var(--text-muted); z-index: 2;">
-                            <span><i data-lucide="arrow-down-right" style="width: 10px; height: 10px; display: inline-block; vertical-align: middle;"></i> <span id="speedtest-ping">--</span>ms</span>
-                            <span><i data-lucide="download" style="width: 10px; height: 10px; display: inline-block; vertical-align: middle; color: var(--success);"></i> <span id="speedtest-download">--</span><span class="speedtest-unit-label">Mb</span></span>
-                            <span><i data-lucide="upload" style="width: 10px; height: 10px; display: inline-block; vertical-align: middle; color: var(--warning);"></i> <span id="speedtest-upload">--</span><span class="speedtest-unit-label">Mb</span></span>
+                        <div style="position: absolute; right: 10px; top: 40px; pointer-events: none; opacity: 0.15; width: 80px; height: 80px; z-index: 1;">
+                            <i data-lucide="activity" style="width: 100%; height: 100%; color: var(--primary);"></i>
                         </div>
                     </div>
                 </div>
-
                 <!-- Apps Section -->
                 <div class="section-header">
                     <h2>Meus Apps</h2>
@@ -1659,7 +1780,7 @@
 <div class="fm-toast-container" id="fm-toast-container"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.83"></script>
-<script src="app.js?v=4.4"></script>
+<script src="filemanager.js?v=0.2.84"></script>
+<script src="app.js?v=4.5"></script>
 </body>
 </html>

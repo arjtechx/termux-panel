@@ -1727,3 +1727,123 @@ body[data-theme="light"] .gaming-terminal {
     animation: spin 1s linear infinite;
     display: inline-block;
 }
+
+/* ============================================================
+   MONITOR CARDS COMPACT & EXPANDED STATES
+   ============================================================ */
+.monitor-card {
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-height: 140px;
+}
+
+.monitor-card.is-compact .monitor-card-expanded {
+    display: none !important;
+}
+
+.monitor-card.is-expanded .monitor-card-compact {
+    display: none !important;
+}
+
+.monitor-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+}
+
+.monitor-card-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.monitor-card-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.card-toggle-btn {
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text-muted);
+    border-radius: 6px;
+    width: 24px;
+    height: 24px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    line-height: 1;
+    padding: 0;
+}
+
+.card-toggle-btn:hover {
+    background: var(--border);
+    color: var(--text);
+}
+
+.monitor-card-expanded {
+    margin-top: 12px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.monitor-card-compact {
+    margin-top: 10px;
+    flex: 1;
+}
+
+.monitor-detail-list {
+    display: grid;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.monitor-detail-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.8rem;
+}
+
+.monitor-detail-row span {
+    color: var(--text-muted);
+}
+
+.monitor-detail-row strong {
+    font-size: 0.8rem !important;
+    font-weight: 600 !important;
+}
+
+.monitor-card-expanded .monitor-detail-list {
+    max-height: 180px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 2px;
+}
+
+.monitor-card-footer {
+    margin-top: 10px;
+    border-top: 1px dashed var(--border);
+    padding-top: 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.monitor-card-footer small {
+    margin-top: 0 !important;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+
