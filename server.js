@@ -397,28 +397,26 @@ app.get('/api/status', async (req, res) => {
                 }
             } catch(_) {}
 
-            // Se for Termux e /proc/net/dev falhar (Android 10+ restringe) ou ler 0, tenta via ifconfig ou ip
+            // Termux: use only ip -s link when root not available, avoid ifconfig which may require root
             if (systemConfig.is_termux && totalDown === 0 && totalUp === 0) {
                 try {
-                    const ifconfigOut = await runCmd('ifconfig wlan0 2>/dev/null || ifconfig 2>/dev/null || echo ""');
-                    let matchRx = ifconfigOut.match(/RX[^b]*bytes[:\s]+(\d+)/i);
-                    let matchTx = ifconfigOut.match(/TX[^b]*bytes[:\s]+(\d+)/i);
-                    if (matchRx && matchTx) {
-                        totalDown = parseInt(matchRx[1]) || 0;
-                        totalUp = parseInt(matchTx[1]) || 0;
-                    } else {
-                        // Tenta fallback com ip -s link
-                        const ipOut = await runCmd('ip -s link show wlan0 2>/dev/null || ip -s link 2>/dev/null || echo ""');
-                        // Exemplo de output do ip -s link:
-                        // RX: bytes  packets  errors  dropped overrun mcast
-                        // 14567809   12345
-                        // TX: bytes  packets  errors  dropped carrier collsns
-                        // 9876543    1234
-                        let rxMatches = ipOut.match(/RX:[^\n]*\n\s*(\d+)/i);
-                        let txMatches = ipOut.match(/TX:[^\n]*\n\s*(\d+)/i);
-                        if (rxMatches && txMatches) {
-                            totalDown = parseInt(rxMatches[1]) || 0;
-                            totalUp = parseInt(txMatches[1]) || 0;
+                    // Prefer ip command; it works without root on most Termux setups
+                    const ipOut = await runCmd('ip -s link show wlan0 2> /dev/null || ip -s link 2> /dev/null || echo ""');
+                    // Parse RX bytes after the "RX:" header
+                    let rxMatches = ipOut.match(/RX:[^\n]*\n\s*(\d+)/i);
+                    // Parse TX bytes after the "TX:" header
+                    let txMatches = ipOut.match(/TX:[^\n]*\n\s*(\d+)/i);
+                    if (rxMatches && txMatches) {
+                        totalDown = parseInt(rxMatches[1]) || 0;
+                        totalUp = parseInt(txMatches[1]) || 0;
+                    } else if (systemConfig.has_root) {
+                        // If ip parsing fails and we have root, fallback to ifconfig as last resort
+                        const ifconfigOut = await runCmd('ifconfig wlan0 2> /dev/null || ifconfig 2> /dev/null || echo ""');
+                        let matchRx = ifconfigOut.match(/RX[^b]*bytes[:\s]+(\d+)/i);
+                        let matchTx = ifconfigOut.match(/TX[^b]*bytes[:\s]+(\d+)/i);
+                        if (matchRx && matchTx) {
+                            totalDown = parseInt(matchRx[1]) || 0;
+                            totalUp = parseInt(matchTx[1]) || 0;
                         }
                     }
                 } catch(_) {}
