@@ -146,17 +146,25 @@ function createTunnel(data) {
             });
             console.log(`[CLOUDFLARED] Saída da criação:\n${stdout}`);
             
-            // Parse UUID and credentials path
+            // Parse UUID
             const uuid = (stdout.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i) || [])[0];
-            let credPath = (stdout.match(/(?:[A-Za-z]:)?[^\r\n"'<>]*\.json/i) || [])[0]?.trim();
-            
             if (!uuid) {
                 throw new Error('Não foi possível obter o UUID do túnel a partir da saída do comando.');
             }
             
-            if (!credPath) {
-                const homeDir = process.env.HOME || os.homedir() || '/data/data/com.termux/files/home';
-                credPath = path.join(homeDir, '.cloudflared', `${uuid}.json`);
+            // Parse credentials path (must start with an absolute path slash/backslash or Windows drive letter)
+            let credPath;
+            const pathMatch = (stdout.match(/(?:[A-Za-z]:)?[\\\/][^\r\n"'<>]*?\.json/i) || [])[0];
+            if (pathMatch) {
+                credPath = pathMatch.trim();
+            }
+            
+            const homeDir = process.env.HOME || os.homedir() || '/data/data/com.termux/files/home';
+            const defaultCredPath = path.join(homeDir, '.cloudflared', `${uuid}.json`);
+            
+            // If parsed path doesn't exist or is invalid, fallback to the standard home directory location
+            if (!credPath || !fs.existsSync(credPath)) {
+                credPath = defaultCredPath;
             }
             
             if (!fs.existsSync(credPath)) {

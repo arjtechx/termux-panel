@@ -87,12 +87,7 @@ configure_phpmyadmin_sso() {
         cp "$sample_config" "$pma_config"
     fi
 
-    if [ ! -f "$pma_config" ]; then
-        echo "  [-] config.inc.php nao encontrado em $pma_dir"
-        return 1
-    fi
-
-    chmod 644 "$pma_config"
+    chmod 644 "$pma_config" 2>/dev/null || true
     chown "$CURRENT_USER" "$pma_config" 2>/dev/null || true
 
     # Garante que criamos o test.php para diagnóstico mínimo obrigatório
@@ -101,44 +96,57 @@ configure_phpmyadmin_sso() {
     chown "$CURRENT_USER" "$pma_dir/test.php" 2>/dev/null || true
     echo "  [+] test.php de diagnóstico criado"
 
-    # Remove antigas configurações e insere as estáveis de Cookie Auth via script Node para evitar que o sed-i trave no Termux
-    PMA_CONFIG_FILE="$pma_config" node -e '
+    # Remove antigas configurações e insere as estáveis de Cookie Auth via script Node de forma robusta e idempotente
+    PMA_CONFIG_FILE="$pma_config" PMA_SAMPLE_FILE="$sample_config" node -e '
 const fs = require("fs");
 const file = process.env.PMA_CONFIG_FILE;
-if (!file || !fs.existsSync(file)) process.exit(0);
+const sampleFile = process.env.PMA_SAMPLE_FILE;
+
+if (!file || !fs.existsSync(file)) {
+    if (sampleFile && fs.existsSync(sampleFile)) {
+        fs.copyFileSync(sampleFile, file);
+    } else {
+        console.error("[-] Arquivo de configuracao nao encontrado.");
+        process.exit(1);
+    }
+}
+
+// Se o arquivo for muito grande (indicando corrupcao/loop anterior), resetamos a partir do sample
+try {
+    const stats = fs.statSync(file);
+    if (stats.size > 100 * 1024) {
+        console.log("  [!] config.inc.php corrompido/muito grande. Resetando a partir do modelo...");
+        if (sampleFile && fs.existsSync(sampleFile)) {
+            fs.copyFileSync(sampleFile, file);
+        }
+    }
+} catch (e) {
+    console.error("[-] Erro ao verificar tamanho do arquivo:", e.message);
+}
+
 let content = fs.readFileSync(file, "utf8");
 
-// Remover linhas de config antiga conflitantes
-const toRemove = [
-    /\x5B\x27auth_type\x27\x5D/i,
-    /\x5B\x27SignonSession\x27\x5D/i,
-    /\x5B\x27SignonURL\x27\x5D/i,
-    /\x5B\x27LogoutURL\x27\x5D/i,
-    /\x5B\x27host\x27\x5D/i,
-    /\x5B\x27port\x27\x5D/i
-];
-
-content = content.split("\n").filter(line => {
-    return !toRemove.some(regex => regex.test(line));
-}).join("\n");
+// Evitar insercao duplicada (idempotencia)
+if (content.includes("[TERMUX-PANEL-SSO-SIGNATURE]")) {
+    console.log("  [+] phpMyAdmin ja configurado anteriormente.");
+    process.exit(0);
+}
 
 const configBlock = `
+// [TERMUX-PANEL-SSO-SIGNATURE] - Configuracoes automaticas geradas pelo Termux Panel
 $cfg[\x27Servers\x27][$i][\x27host\x27] = \x27127.0.0.1\x27;
 $cfg[\x27Servers\x27][$i][\x27port\x27] = \x273306\x27;
 $cfg[\x27Servers\x27][$i][\x27auth_type\x27] = \x27cookie\x27;
 $cfg[\x27Servers\x27][$i][\x27AllowNoPassword\x27] = true;
 `;
 
-if (content.includes("[\x27Servers\x27]")) {
-    content = content.replace(/(\x5B\x27Servers\x27\x5D)/, "$1\n" + configBlock);
-} else {
-    content += "\n\n$i = $i ?? 1;" + configBlock + "\n";
-}
+// Remove tags de fechamento PHP para anexar de forma segura no final do arquivo
+content = content.replace(/\?>/g, "");
+content += "\n" + configBlock + "\n";
 
 fs.writeFileSync(file, content, "utf8");
+console.log("  [+] config.inc.php configurado com sucesso de forma limpa.");
 '
-
-    echo "  [+] config.inc.php ajustado para Cookie Auth (TCP/IP 127.0.0.1)"
 }
 
 configure_nginx_vhost() {
