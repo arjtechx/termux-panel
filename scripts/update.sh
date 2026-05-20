@@ -191,8 +191,13 @@ else
     warn "Script de reparo NGINX nao encontrado: $SCRIPT_DIR/nginx-termux-repair.sh"
 fi
 
-log "Atualizando dependências Node.js..."
-npm install --no-audit --no-fund
+log "Aplicando dependências Node.js..."
+# npm install --no-audit --no-fund  # Desativado para evitar reinstalação automática de dependências
+if [ -d "node_modules" ]; then
+    ok "Dependências Node já presentes."
+else
+    warn "Diretório node_modules não encontrado. Instale manualmente se necessário."
+fi
 
 # Garante a existência do cloudflared atualizado no sistema
 function ensure_cloudflared_binary() {

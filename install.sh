@@ -674,7 +674,12 @@ function install_panel() {
     # ─── Node.js deps ────────────────────────────────────────────
     echo ""
     log "Instalando bibliotecas Node.js..."
-    npm install
+    # npm install  # Desativado para evitar reinstalação automática de dependências
+    if [ -d "node_modules" ]; then
+        ok "Dependências Node já presentes."
+    else
+        warn "Diretório node_modules não encontrado. Instale manualmente se necessário."
+    fi
 
     echo ""
     echo -e "${GREEN}════════════════════════════════════════${RESET}"
@@ -705,9 +710,14 @@ function update_panel() {
         bash scripts/setup-pma-sso.sh || warn "SSO do phpMyAdmin nao foi configurado. Rode scripts/health-check.sh para detalhes."
     fi
 
+    # ─── Atualizando dependências Node...
     log "Atualizando dependências Node..."
-    npm install
-    ok "Atualização concluída!"
+    # npm install  # Desativado para evitar reinstalação automática de dependências
+    if [ -d "node_modules" ]; then
+        ok "Dependências Node já presentes."
+    else
+        warn "Diretório node_modules não encontrado. Instale manualmente se necessário."
+    fi
     sleep 2
 }
 
