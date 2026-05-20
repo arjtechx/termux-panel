@@ -178,8 +178,11 @@
                         </span>
                         <strong id="stat-temperature">--°C</strong>
                     </div>
-                    <div class="stat-card">
-                        <span class="card-label"><i data-lucide="arrow-up-down"></i> Rede</span>
+                    <div class="stat-card" style="position: relative;">
+                        <span class="card-label" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                            <span><i data-lucide="arrow-up-down"></i> Rede</span>
+                            <button id="net-unit-btn" onclick="toggleNetUnit(event)" style="background: var(--bg-lighter); border: 1px solid var(--border); color: var(--text-color); font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; cursor: pointer; z-index: 3;" title="Alternar entre MB e KB">MB</button>
+                        </span>
                         <strong id="stat-net-speed">-- / --</strong>
                     </div>
                     <!-- Speedtest Card -->
@@ -1594,7 +1597,7 @@
 <div class="fm-toast-container" id="fm-toast-container"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.72"></script>
-<script src="app.js?v=4.2"></script>
+<script src="filemanager.js?v=0.2.73"></script>
+<script src="app.js?v=4.4"></script>
 </body>
 </html>

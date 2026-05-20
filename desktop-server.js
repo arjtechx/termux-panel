@@ -239,7 +239,7 @@ function startPublishing(res, params) {
 
         steps.push({
             desc: 'Commitando alterações...',
-            cmd: `git commit -F "${commitMsgPath}"`
+            cmd: `git -c user.name="ReleaseBot" -c user.email="bot@localhost" commit --no-verify --no-gpg-sign -F "${commitMsgPath}"`
         });
 
         // Git workflow (network - marcadas para resiliência)
@@ -263,7 +263,7 @@ function startPublishing(res, params) {
 
         steps.push({
             desc: `Criando tag Git oficial v${newVersion}...`,
-            cmd: `git tag -a v${newVersion} -F "${tagMsgPath}"`
+            cmd: `git -c user.name="ReleaseBot" -c user.email="bot@localhost" tag -a v${newVersion} --no-sign -F "${tagMsgPath}"`
         });
 
         steps.push({

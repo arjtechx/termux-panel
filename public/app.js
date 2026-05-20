@@ -383,6 +383,43 @@ function updateTemperatureDisplay() {
     }
 }
 
+let netUnit = 'MB';
+let lastNetDownStr = '--';
+let lastNetUpStr = '--';
+
+function toggleNetUnit(e) {
+    if (e) {
+        e.stopPropagation();
+        e.preventDefault();
+    }
+    netUnit = netUnit === 'MB' ? 'KB' : 'MB';
+    const btn = document.getElementById('net-unit-btn');
+    if (btn) btn.textContent = netUnit;
+    updateNetDisplay();
+}
+
+function updateNetDisplay() {
+    if (!el.netSpeed) return;
+    if (lastNetDownStr === '--' || lastNetUpStr === '--') {
+        el.netSpeed.textContent = `${lastNetDownStr} / ${lastNetUpStr}`;
+        return;
+    }
+
+    const downVal = parseFloat(lastNetDownStr);
+    const upVal = parseFloat(lastNetUpStr);
+
+    if (isNaN(downVal) || isNaN(upVal)) {
+        el.netSpeed.textContent = `${lastNetDownStr} / ${lastNetUpStr}`;
+        return;
+    }
+
+    if (netUnit === 'KB') {
+        el.netSpeed.textContent = `${(downVal * 1024).toFixed(0)} KB / ${(upVal * 1024).toFixed(0)} KB`;
+    } else {
+        el.netSpeed.textContent = `${downVal.toFixed(2)} MB / ${upVal.toFixed(2)} MB`;
+    }
+}
+
 // ============================================================
 //  STATUS DO SISTEMA — alinhado com os campos reais da API
 // ============================================================
@@ -400,7 +437,11 @@ async function fetchStatus() {
         lastTemperatureStr = data.temperature || '--°C';
         updateTemperatureDisplay();
     }
-    if (el.netSpeed)   el.netSpeed.textContent   = `${data.totalDown || '--'} / ${data.totalUp || '--'}`;
+    if (el.netSpeed) {
+        lastNetDownStr = data.totalDown || '--';
+        lastNetUpStr = data.totalUp || '--';
+        updateNetDisplay();
+    }
 
     // Storage — campos: storageFree, storageTotal, storagePercent
     if (el.storageBar && data.storagePercent) {

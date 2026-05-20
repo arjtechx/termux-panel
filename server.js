@@ -292,7 +292,7 @@ async function readTermuxBatteryTemperature() {
             const raw = await runCmdTimeout('termux-battery-status', 3500);
             const bat = JSON.parse(raw || '{}');
             if (bat.temperature) {
-                lastBatteryTemperature = `${bat.temperature}Â°C`;
+                lastBatteryTemperature = `${bat.temperature}°C`;
                 lastBatteryProbeAt = Date.now();
             }
         } catch (_) {
