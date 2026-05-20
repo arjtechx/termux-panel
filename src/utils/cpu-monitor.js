@@ -441,6 +441,119 @@ function setCpuRootMode(enabled) {
     };
 }
 
+let cachedTermuxNativeEstimate = null;
+let termuxEstimatorInterval = null;
+let isProcStatBlocked = false;
+
+function readPidStat(pid) {
+    try {
+        const raw = fs.readFileSync(`/proc/${pid}/stat`, 'utf8').trim();
+        const endComm = raw.lastIndexOf(')');
+        if (endComm === -1) return null;
+        const after = raw.slice(endComm + 2).split(/\s+/);
+        const utime = Number(after[11] || 0);
+        const stime = Number(after[12] || 0);
+        return { pid, ticks: utime + stime };
+    } catch (_) {
+        return null;
+    }
+}
+
+function getClkTck() {
+    try {
+        return Number(execSync('getconf CLK_TCK', { encoding: 'utf8' }).trim()) || 100;
+    } catch (_) {
+        return 100;
+    }
+}
+
+function listAccessiblePids() {
+    try {
+        return fs.readdirSync('/proc')
+            .filter(x => /^\d+$/.test(x))
+            .map(Number);
+    } catch (_) {
+        return [];
+    }
+}
+
+function getCmdline(pid) {
+    try {
+        return fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').replace(/\0/g, ' ').trim();
+    } catch (_) {
+        return '';
+    }
+}
+
+async function updateTermuxNativeCpuEstimate() {
+    const clkTck = getClkTck();
+    const cores = os.cpus()?.length || 1;
+    const pids = listAccessiblePids();
+
+    const first = new Map();
+    for (const pid of pids) {
+        const stat = readPidStat(pid);
+        if (stat) first.set(pid, stat.ticks);
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    const results = [];
+    const pidsSecond = listAccessiblePids();
+
+    for (const pid of pidsSecond) {
+        const stat = readPidStat(pid);
+        if (!stat || !first.has(pid)) continue;
+
+        const deltaTicks = stat.ticks - first.get(pid);
+        const cpuPercent = (deltaTicks / clkTck) / 1 * 100 / cores;
+
+        if (cpuPercent > 0.01) {
+            results.push({
+                pid,
+                cpuPercent: Number(cpuPercent.toFixed(2)),
+                command: getCmdline(pid) || `Processo ${pid}`
+            });
+        }
+    }
+
+    results.sort((a, b) => b.cpuPercent - a.cpuPercent);
+
+    const panelProcesses = results.filter(p =>
+        p.command.includes('server.js') ||
+        p.command.includes('termux-panel') ||
+        p.command.includes('cloudflared') ||
+        p.command.includes('nginx') ||
+        p.command.includes('mariadbd') ||
+        p.command.includes('php-fpm')
+    );
+
+    const panelCpu = panelProcesses.reduce((sum, p) => sum + p.cpuPercent, 0);
+
+    const nodeProcesses = results.filter(p => p.command.includes('server.js'));
+    const nodeCpuPercent = nodeProcesses.reduce((sum, p) => sum + p.cpuPercent, 0);
+
+    cachedTermuxNativeEstimate = {
+        available: true,
+        mode: 'termux_native_estimated',
+        source: '/proc/[pid]/stat',
+        message: 'CPU total bloqueada pelo Android. Exibindo uso estimado dos processos acessíveis ao Termux.',
+        cores,
+        nodeCpuPercent: Number(nodeCpuPercent.toFixed(2)),
+        panelCpuPercent: Number(panelCpu.toFixed(2)),
+        topProcesses: results.slice(0, 10),
+        panelProcesses
+    };
+}
+
+function startTermuxNativeCpuEstimator() {
+    if (termuxEstimatorInterval) return;
+    updateTermuxNativeCpuEstimate().catch(() => {});
+    termuxEstimatorInterval = setInterval(() => {
+        updateTermuxNativeCpuEstimate().catch(() => {});
+    }, 4000);
+}
+
 function getCpuRootMode() {
     return cpuUseRoot;
 }
@@ -455,6 +568,72 @@ function getCpuStats() {
 
     // Roda medição principal da CPU
     const statResult = readProcStatSafe();
+
+    if (!statResult.success && !cpuUseRoot) {
+        isProcStatBlocked = true;
+        startTermuxNativeCpuEstimator();
+
+        if (cachedTermuxNativeEstimate) {
+            const cores = Array.from({ length: coresCount }, (_, index) => {
+                const coreId = `cpu${index}`;
+                const online = isCoreOnline(coreId, onlineSet);
+                return {
+                    id: coreId,
+                    label: coreId.toUpperCase().replace('CPU', 'CPU '),
+                    usagePercent: 0,
+                    usage: online ? 'N/A' : 'offline',
+                    online,
+                    frequency: online ? readFrequency(coreId) : { formatted: 'N/A' }
+                };
+            });
+
+            return {
+                success: true,
+                root: false,
+                mode: 'termux_native_estimated',
+                method: 'termux_native_estimated',
+                cpuName,
+                cpuTotal: 'Indisponível',
+                cpuTotalPercent: 0,
+                coresCount,
+                cores,
+                loadAverage,
+                nodeCpuUsagePercent: cachedTermuxNativeEstimate.nodeCpuPercent,
+                panelCpuPercent: cachedTermuxNativeEstimate.panelCpuPercent,
+                topProcesses: cachedTermuxNativeEstimate.topProcesses,
+                panelProcesses: cachedTermuxNativeEstimate.panelProcesses,
+                status: 'CPU total bloqueada pelo Android. Exibindo uso estimado dos processos do Termux.',
+                message: 'CPU total bloqueada pelo Android. Exibindo uso estimado dos processos acessíveis ao Termux.'
+            };
+        } else {
+            const cores = Array.from({ length: coresCount }, (_, index) => {
+                const coreId = `cpu${index}`;
+                const online = isCoreOnline(coreId, onlineSet);
+                return {
+                    id: coreId,
+                    label: coreId.toUpperCase().replace('CPU', 'CPU '),
+                    usagePercent: 0,
+                    usage: 'Calculando...',
+                    online,
+                    frequency: online ? readFrequency(coreId) : { formatted: 'N/A' }
+                };
+            });
+            return {
+                success: true,
+                root: false,
+                mode: 'calculating',
+                method: 'termux_native_estimated',
+                cpuName,
+                cpuTotal: 'Calculando...',
+                cpuTotalPercent: 0,
+                coresCount,
+                cores,
+                loadAverage,
+                nodeCpuUsagePercent,
+                status: 'Iniciando estimador de processos acessíveis ao Termux...'
+            };
+        }
+    }
 
     if (statResult.success && statResult.cpus.length > 0) {
         const current = statResult.cpus;

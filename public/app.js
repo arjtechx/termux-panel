@@ -94,6 +94,11 @@ async function runBootSequence() {
         setInterval(fetchStatus,    5000);
         setInterval(fetchApps,     15000);
         setInterval(fetchProcesses, 10000);
+        
+        // Inicializa as rotas do proxy reverso do Cloudflared
+        if (typeof cfrFetchRoutes === 'function') {
+            cfrFetchRoutes();
+        }
     }, 400);
 }
 
@@ -565,6 +570,70 @@ async function updateCpuStatus() {
 
     // Status text
     if (el.cpuStatus) el.cpuStatus.textContent = data.status || 'Monitorando CPU';
+
+    // Handle Termux native estimated fallback mode
+    if (data.mode === 'termux_native_estimated') {
+        if (el.cpu) el.cpu.textContent = 'Indisponível';
+        if (el.cpuTotal) el.cpuTotal.textContent = 'Indisponível';
+        if (el.cpuTotalPercent) el.cpuTotalPercent.textContent = 'Indisponível';
+
+        if (el.cpuCoresCompact) {
+            el.cpuCoresCompact.textContent = `Painel: ${data.panelCpuPercent || 0}%`;
+        }
+        if (el.cpuDetails) {
+            el.cpuDetails.textContent = `CPU Estimada | Painel: ${data.panelCpuPercent || 0}%`;
+        }
+
+        if (el.cpuCoresList) {
+            let html = `
+                <div style="margin-top: 10px; border-top: 1px solid var(--border); padding-top: 10px; width: 100%;">
+                    <div style="font-size: 0.85rem; font-weight: bold; margin-bottom: 8px; color: var(--primary); display: flex; align-items: center; gap: 6px;">
+                        <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--primary);"></span>
+                        Processos do Termux Estimados
+                    </div>
+                    <div class="cpu-core-row" style="background: var(--bg-hover); border-radius: 6px; padding: 6px 10px; margin-bottom: 8px;">
+                        <span>Uso Total do Painel</span>
+                        <strong>${data.panelCpuPercent || 0}%</strong>
+                        <em style="color: var(--primary);">Estimado</em>
+                    </div>
+            `;
+            if (data.topProcesses && data.topProcesses.length > 0) {
+                html += `
+                    <div style="font-size: 0.8rem; font-weight: bold; margin: 12px 0 6px 0; color: var(--text-muted);">Processos Acessíveis</div>
+                `;
+                data.topProcesses.forEach(proc => {
+                    const shortCmd = proc.command.split(' ')[0].split('/').pop() || proc.command;
+                    html += `
+                        <div class="cpu-core-row" style="font-size: 0.8rem; padding: 4px 10px;">
+                            <span style="max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(proc.command)}">${escapeHtml(shortCmd)} <small class="muted">(PID ${proc.pid})</small></span>
+                            <strong>${proc.cpuPercent}%</strong>
+                            <em style="font-size: 0.75rem;">ativo</em>
+                        </div>
+                    `;
+                });
+            }
+            if (data.cores && data.cores.length > 0) {
+                html += `
+                    <div style="font-size: 0.8rem; font-weight: bold; margin: 16px 0 6px 0; color: var(--text-muted);">Status & Frequências dos Núcleos</div>
+                `;
+                html += data.cores.map(core => {
+                    const freq = core.online ? (core.frequency?.formatted || 'N/A') : 'offline';
+                    return `
+                        <div class="cpu-core-row${core.online ? '' : ' offline'}" style="padding: 4px 10px; opacity: 0.8;">
+                            <span>${escapeHtml(core.label)}</span>
+                            <strong>${core.online ? 'Online' : 'Offline'}</strong>
+                            <em>${escapeHtml(freq)}</em>
+                        </div>
+                    `;
+                }).join('');
+            }
+            html += `</div>`;
+            el.cpuCoresList.innerHTML = html;
+        }
+
+        renderCpuVisual({ cpu: '0%', cpuCores: data.coresCount || 1 });
+        return;
+    }
 
     // Handle load average fallback mode
     if (data.mode === 'loadavg_fallback') {
@@ -1090,16 +1159,28 @@ async function handleCreateDatabase(e) {
     }
 }
 
+function getPhpMyAdminBaseUrl() {
+    const isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname) || 
+                    window.location.hostname.startsWith('192.168.') || 
+                    window.location.hostname.startsWith('10.') ||
+                    window.location.port === '8088'; // porta interna do painel
+
+    if (isLocal && window.location.port) {
+        return window.location.protocol + '//' + window.location.hostname + ':8080';
+    }
+    return ''; // Usar caminho relativo para domínios públicos
+}
+
 async function actionPhpMyAdmin() {
     logToDbConsole('open_phpmyadmin --db=' + currentDbManager, `Redirecionando para o phpMyAdmin (Cookie Auth)...`);
-    const baseUrl = window.location.protocol + '//' + window.location.hostname + ':8080';
+    const baseUrl = getPhpMyAdminBaseUrl();
     const url = `${baseUrl}/phpmyadmin/index.php${currentDbManager ? '?db=' + encodeURIComponent(currentDbManager) : ''}`;
     window.open(url, '_blank');
 }
 
 async function actionShowTables() {
     logToDbConsole('open_phpmyadmin_tables --db=' + currentDbManager, `Redirecionando para estrutura de tabelas no phpMyAdmin...`);
-    const baseUrl = window.location.protocol + '//' + window.location.hostname + ':8080';
+    const baseUrl = getPhpMyAdminBaseUrl();
     const tablesUrl = `${baseUrl}/phpmyadmin/index.php?db=${encodeURIComponent(currentDbManager)}&target=${encodeURIComponent('tbl_structure.php')}`;
     window.open(tablesUrl, '_blank');
 }
@@ -1504,7 +1585,8 @@ async function saveDbSetup() {
 //  PHPMYADMIN SSO
 // ============================================================
 async function openPhpMyAdmin(dbName = null, targetPage = null) {
-    let url = window.location.protocol + '//' + window.location.hostname + ':8080/phpmyadmin/index.php';
+    const baseUrl = getPhpMyAdminBaseUrl();
+    let url = `${baseUrl}/phpmyadmin/index.php`;
     const params = [];
     if (dbName) {
         params.push(`db=${encodeURIComponent(dbName)}`);
@@ -3303,6 +3385,10 @@ function cfCloseLogsModal() {
         clearInterval(cfLogInterval);
         cfLogInterval = null;
     }
+    if (window.cfrLogInterval) {
+        clearInterval(window.cfrLogInterval);
+        window.cfrLogInterval = null;
+    }
 }
 
 async function cfLoadLogs() {
@@ -4147,6 +4233,785 @@ window.diagnoseProcesses = diagnoseProcesses;
 window.closeProcessDiagnosticModal = closeProcessDiagnosticModal;
 window.stopDuplicatePanel = stopDuplicatePanel;
 window.safeRestartPanel = safeRestartPanel;
+
+// ============================================================
+//  CLOUDFLARED PROXY REVERSO (INGRESS PATH-BASED ROUTING)
+// ============================================================
+let cfrRoutesListCached = [];
+window.cfrLogInterval = null;
+
+async function cfrFetchRoutes() {
+    const listEl = document.getElementById('cfrRoutesList');
+    if (!listEl) return;
+
+    try {
+        const res = await fetch(`${API_BASE}/cloudflared/routes`);
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || `HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        if (data.success) {
+            cfrRoutesListCached = data.routes || [];
+            cfrRenderRoutes(cfrRoutesListCached);
+        } else {
+            throw new Error(data.error || 'Erro desconhecido ao carregar rotas.');
+        }
+    } catch (err) {
+        console.error('[cfrFetchRoutes] Erro:', err);
+        showToast('Erro ao carregar rotas do Proxy Reverso: ' + err.message, 'error');
+        listEl.innerHTML = `<tr><td colspan="7" style="padding: 20px; text-align: center; color: var(--danger);">❌ Falha ao carregar rotas da API: ${err.message}</td></tr>`;
+    }
+}
+
+function cfrRenderRoutes(routes) {
+    const listEl = document.getElementById('cfrRoutesList');
+    if (!listEl) return;
+
+    if (!routes || routes.length === 0) {
+        listEl.innerHTML = `<tr><td colspan="7" style="padding: 20px; text-align: center; color: var(--text-muted);">Nenhuma rota configurada. Clique em "Preset phpMyAdmin" ou "Adicionar Rota" para começar.</td></tr>`;
+        return;
+    }
+
+    const sorted = [...routes].sort((a, b) => (a.order || 0) - (b.order || 0));
+
+    listEl.innerHTML = sorted.map((r, idx) => {
+        const localUrl = `${r.targetProtocol}://${r.targetHost}:${r.targetPort}${r.path}`;
+        const publicUrl = `https://${r.hostname}${r.path}`;
+
+        const isFirst = idx === 0;
+        const isLast = idx === sorted.length - 1;
+
+        const upBtn = `<button class="btn btn-secondary btn-sm" style="padding: 3px 6px; margin-right: 2px;" onclick="cfrMoveRouteUp('${r.id}')" ${isFirst ? 'disabled style="opacity:0.4; cursor:not-allowed;"' : ''} title="Mover para Cima">▲</button>`;
+        const downBtn = `<button class="btn btn-secondary btn-sm" style="padding: 3px 6px;" onclick="cfrMoveRouteDown('${r.id}')" ${isLast ? 'disabled style="opacity:0.4; cursor:not-allowed;"' : ''} title="Mover para Baixo">▼</button>`;
+
+        const testLocalBtn = `<button class="btn btn-secondary btn-sm" style="padding: 4px 8px;" id="btn-test-local-${r.id}" onclick="cfrTestRoute('${r.id}', '${localUrl}')" title="Testar Conexão Local"><i data-lucide="activity"></i> Local</button>`;
+        const testPublicBtn = `<button class="btn btn-secondary btn-sm" style="padding: 4px 8px;" id="btn-test-pub-${r.id}" onclick="cfrTestPublicUrl('${r.id}', '${publicUrl}')" title="Testar URL Pública"><i data-lucide="globe"></i> Pública</button>`;
+
+        const editBtn = `<button class="btn btn-secondary btn-sm" style="padding: 4px 8px;" onclick="cfrOpenRouteModal('${r.id}')" title="Editar"><i data-lucide="edit-2"></i></button>`;
+        const deleteBtn = `<button class="btn btn-danger btn-sm" style="padding: 4px 8px;" onclick="cfrDeleteRoute('${r.id}')" title="Excluir"><i data-lucide="trash-2"></i></button>`;
+
+        const statusToggle = `
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <input type="checkbox" id="toggle-route-${r.id}" ${r.enabled ? 'checked' : ''} onchange="cfrToggleRouteEnabled('${r.id}', ${r.enabled})" style="width: 16px; height: 16px; cursor: pointer;">
+                <span class="badge ${r.enabled ? 'badge-success' : 'badge-danger'}" style="font-size: 0.75rem;">
+                    ${r.enabled ? 'Ativo' : 'Inativo'}
+                </span>
+            </div>
+        `;
+
+        return `
+            <tr id="cfr-row-${r.id}">
+                <td style="padding: 12px 16px; vertical-align: middle;">
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <span style="font-weight: bold; min-width: 16px;">${r.order || (idx + 1)}</span>
+                        <div style="display: flex; flex-direction: row; gap: 2px;">
+                            ${upBtn}
+                            ${downBtn}
+                        </div>
+                    </div>
+                </td>
+                <td style="padding: 12px 16px; font-weight: 500; vertical-align: middle;">${cfEscape(r.name)}</td>
+                <td style="padding: 12px 16px; vertical-align: middle;">
+                    <a href="${publicUrl}" target="_blank" class="text-primary" style="text-decoration: none; font-family: monospace; font-size: 0.85rem; font-weight: 600;">
+                        ${cfEscape(r.hostname)}
+                    </a>
+                </td>
+                <td style="padding: 12px 16px; vertical-align: middle;"><code style="background: var(--bg-secondary); padding: 2px 6px; border-radius: 4px; font-size: 0.85rem;">${cfEscape(r.path)}</code></td>
+                <td style="padding: 12px 16px; font-family: monospace; font-size: 0.85rem; vertical-align: middle;">
+                    ${localUrl}
+                    <div id="cfr-test-result-${r.id}" style="margin-top: 4px; font-size: 0.75rem;"></div>
+                </td>
+                <td style="padding: 12px 16px; vertical-align: middle;">${statusToggle}</td>
+                <td style="padding: 12px 16px; vertical-align: middle;">
+                    <div style="display: flex; gap: 6px; justify-content: center;">
+                        ${testLocalBtn}
+                        ${testPublicBtn}
+                        ${editBtn}
+                        ${deleteBtn}
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    if (window.lucide) lucide.createIcons();
+}
+
+function cfrOpenRouteModal(id = null) {
+    const modal = document.getElementById('cfrRouteModal');
+    if (!modal) return;
+
+    const modalTitle = document.getElementById('cfrModalTitle');
+    const submitBtn = document.getElementById('cfrModalSubmitBtn');
+
+    // Reset inputs
+    document.getElementById('cfrRouteId').value = '';
+    document.getElementById('cfrInputName').value = '';
+    document.getElementById('cfrHostname').value = 'panel.arjtechbr.site';
+    document.getElementById('cfrPath').value = '/';
+    document.getElementById('cfrOrder').value = '99';
+    document.getElementById('cfrProtocol').value = 'http';
+    document.getElementById('cfrPort').value = '';
+    document.getElementById('cfrEnabled').checked = true;
+
+    if (id) {
+        // Edit Mode
+        if (modalTitle) modalTitle.textContent = '✏️ Editar Rota Proxy Reverso';
+        if (submitBtn) submitBtn.textContent = 'Salvar Rota';
+
+        const route = cfrRoutesListCached.find(r => r.id === id);
+        if (route) {
+            document.getElementById('cfrRouteId').value = route.id;
+            document.getElementById('cfrInputName').value = route.name;
+            document.getElementById('cfrHostname').value = route.hostname;
+            document.getElementById('cfrPath').value = route.path;
+            document.getElementById('cfrOrder').value = route.order;
+            document.getElementById('cfrProtocol').value = route.targetProtocol;
+            document.getElementById('cfrPort').value = route.targetPort;
+            document.getElementById('cfrEnabled').checked = !!route.enabled;
+        }
+    } else {
+        // Add Mode
+        if (modalTitle) modalTitle.textContent = '🚀 Adicionar Rota Proxy Reverso';
+        if (submitBtn) submitBtn.textContent = 'Adicionar Rota';
+        
+        let nextOrder = 1;
+        if (cfrRoutesListCached.length > 0) {
+            const maxOrder = Math.max(...cfrRoutesListCached.map(r => r.order || 0));
+            nextOrder = maxOrder + 1;
+        }
+        document.getElementById('cfrOrder').value = nextOrder;
+    }
+
+    cfrUpdateUrlPreview();
+    modal.classList.remove('hidden');
+}
+
+function cfrCloseRouteModal() {
+    const modal = document.getElementById('cfrRouteModal');
+    if (modal) modal.classList.add('hidden');
+}
+
+function cfrUpdateUrlPreview() {
+    const protocol = document.getElementById('cfrProtocol').value;
+    const port = document.getElementById('cfrPort').value || '80';
+    const path = document.getElementById('cfrPath').value || '/';
+    
+    const previewEl = document.getElementById('cfrUrlPreview');
+    if (previewEl) {
+        previewEl.value = `${protocol}://127.0.0.1:${port}${path}`;
+    }
+}
+
+async function cfrSubmitRoute(event) {
+    event.preventDefault();
+
+    const id = document.getElementById('cfrRouteId').value;
+    const payload = {
+        name: document.getElementById('cfrInputName').value.trim(),
+        hostname: document.getElementById('cfrHostname').value.trim(),
+        path: document.getElementById('cfrPath').value.trim(),
+        order: parseInt(document.getElementById('cfrOrder').value) || 99,
+        targetProtocol: document.getElementById('cfrProtocol').value,
+        targetHost: '127.0.0.1',
+        targetPort: parseInt(document.getElementById('cfrPort').value) || 80,
+        enabled: document.getElementById('cfrEnabled').checked
+    };
+
+    if (!payload.name) return showToast('Insira o nome do serviço.', 'warning');
+    if (!payload.hostname) return showToast('Insira o domínio público.', 'warning');
+    if (!payload.path) return showToast('Insira o caminho (path).', 'warning');
+    if (!payload.targetPort) return showToast('Insira a porta local alvo.', 'warning');
+
+    if (payload.hostname.includes(':')) {
+        return showToast('O domínio público não deve conter portas (:8080, etc).', 'warning');
+    }
+
+    const url = id ? `${API_BASE}/cloudflared/routes/${id}` : `${API_BASE}/cloudflared/routes`;
+    const method = id ? 'PUT' : 'POST';
+
+    try {
+        const res = await fetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || `HTTP ${res.status}`);
+        }
+
+        const data = await res.json();
+        if (data.success) {
+            showToast(id ? 'Rota atualizada com sucesso!' : 'Rota adicionada com sucesso!', 'success');
+            cfrCloseRouteModal();
+            cfrFetchRoutes();
+        } else {
+            throw new Error(data.error || 'Erro desconhecido ao salvar rota.');
+        }
+    } catch (err) {
+        console.error('[cfrSubmitRoute] Erro:', err);
+        showToast('Erro ao salvar rota: ' + err.message, 'error');
+    }
+}
+
+async function cfrDeleteRoute(id) {
+    if (!confirm('Deseja realmente excluir esta rota?')) return;
+
+    try {
+        const res = await fetch(`${API_BASE}/cloudflared/routes/${id}`, {
+            method: 'DELETE'
+        });
+
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || `HTTP ${res.status}`);
+        }
+
+        const data = await res.json();
+        if (data.success) {
+            showToast('Rota excluída com sucesso!', 'success');
+            cfrFetchRoutes();
+        } else {
+            throw new Error(data.error || 'Erro desconhecido ao excluir rota.');
+        }
+    } catch (err) {
+        console.error('[cfrDeleteRoute] Erro:', err);
+        showToast('Erro ao excluir rota: ' + err.message, 'error');
+    }
+}
+
+async function cfrToggleRouteEnabled(id, currentStatus) {
+    try {
+        const res = await fetch(`${API_BASE}/cloudflared/routes/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: !currentStatus })
+        });
+
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || `HTTP ${res.status}`);
+        }
+
+        const data = await res.json();
+        if (data.success) {
+            showToast(data.route.enabled ? 'Rota ativada!' : 'Rota desativada!', 'success');
+            cfrFetchRoutes();
+        } else {
+            throw new Error(data.error || 'Erro ao alterar status da rota.');
+        }
+    } catch (err) {
+        console.error('[cfrToggleRouteEnabled] Erro:', err);
+        showToast('Erro ao alterar status da rota: ' + err.message, 'error');
+        const chk = document.getElementById(`toggle-route-${id}`);
+        if (chk) chk.checked = currentStatus;
+    }
+}
+
+async function cfrMoveRouteUp(id) {
+    const idx = cfrRoutesListCached.findIndex(r => r.id === id);
+    if (idx <= 0) return;
+
+    const routes = [...cfrRoutesListCached];
+    const temp = routes[idx];
+    routes[idx] = routes[idx - 1];
+    routes[idx - 1] = temp;
+
+    const ids = routes.map(r => r.id);
+    await cfrSaveReorderedRoutes(ids);
+}
+
+async function cfrMoveRouteDown(id) {
+    const idx = cfrRoutesListCached.findIndex(r => r.id === id);
+    if (idx === -1 || idx >= cfrRoutesListCached.length - 1) return;
+
+    const routes = [...cfrRoutesListCached];
+    const temp = routes[idx];
+    routes[idx] = routes[idx + 1];
+    routes[idx + 1] = temp;
+
+    const ids = routes.map(r => r.id);
+    await cfrSaveReorderedRoutes(ids);
+}
+
+async function cfrSaveReorderedRoutes(ids) {
+    try {
+        const res = await fetch(`${API_BASE}/cloudflared/routes/reorder`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids })
+        });
+
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || `HTTP ${res.status}`);
+        }
+
+        const data = await res.json();
+        if (data.success) {
+            showToast('Ordem das rotas atualizada!', 'success');
+            cfrFetchRoutes();
+        } else {
+            throw new Error(data.error || 'Erro ao ordenar rotas.');
+        }
+    } catch (err) {
+        console.error('[cfrSaveReorderedRoutes] Erro:', err);
+        showToast('Erro ao reordenar rotas: ' + err.message, 'error');
+    }
+}
+
+async function cfrTestRoute(id, targetUrl) {
+    const btn = document.getElementById(`btn-test-local-${id}`);
+    const resultDiv = document.getElementById(`cfr-test-result-${id}`);
+    
+    let originalHtml = '';
+    if (btn) {
+        originalHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = `<i data-lucide="loader" class="spin" style="width: 12px; height: 12px;"></i>...`;
+        if (window.lucide) lucide.createIcons();
+    }
+
+    if (resultDiv) {
+        resultDiv.innerHTML = `<span style="color: var(--text-muted);">Testando...</span>`;
+    }
+
+    try {
+        const res = await fetch(`${API_BASE}/cloudflared/test`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: targetUrl })
+        });
+
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || `HTTP ${res.status}`);
+        }
+
+        const data = await res.json();
+        if (resultDiv) {
+            if (data.success) {
+                resultDiv.innerHTML = `<span style="color: var(--success); font-weight: bold;">● Local: Online</span> (${data.time || 'N/A'}) - HTTP ${data.code || '200'}`;
+            } else {
+                resultDiv.innerHTML = `<span style="color: var(--danger); font-weight: bold;">● Local: Offline</span> - ${data.error || 'Sem resposta'}`;
+            }
+        }
+    } catch (err) {
+        console.error('[cfrTestRoute] Erro:', err);
+        if (resultDiv) {
+            resultDiv.innerHTML = `<span style="color: var(--danger); font-weight: bold;">● Local: Erro</span> - ${err.message}`;
+        }
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+            if (window.lucide) lucide.createIcons();
+        }
+    }
+}
+
+async function cfrTestPublicUrl(id, publicUrl) {
+    const btn = document.getElementById(`btn-test-pub-${id}`);
+    const resultDiv = document.getElementById(`cfr-test-result-${id}`);
+    
+    let originalHtml = '';
+    if (btn) {
+        originalHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = `<i data-lucide="loader" class="spin" style="width: 12px; height: 12px;"></i>...`;
+        if (window.lucide) lucide.createIcons();
+    }
+
+    if (resultDiv) {
+        resultDiv.innerHTML = `<span style="color: var(--text-muted);">Testando Pública...</span>`;
+    }
+
+    try {
+        const res = await fetch(`${API_BASE}/cloudflared/test`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: publicUrl })
+        });
+
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || `HTTP ${res.status}`);
+        }
+
+        const data = await res.json();
+        if (resultDiv) {
+            if (data.success) {
+                resultDiv.innerHTML = `<span style="color: var(--success); font-weight: bold;">🌐 Pública: Online</span> (${data.time || 'N/A'}) - HTTP ${data.code || '200'}`;
+            } else {
+                resultDiv.innerHTML = `<span style="color: var(--danger); font-weight: bold;">🌐 Pública: Offline</span> - ${data.error || 'Sem resposta'}`;
+            }
+        }
+    } catch (err) {
+        console.error('[cfrTestPublicUrl] Erro:', err);
+        if (resultDiv) {
+            resultDiv.innerHTML = `<span style="color: var(--danger); font-weight: bold;">🌐 Pública: Erro</span> - ${err.message}`;
+        }
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+            if (window.lucide) lucide.createIcons();
+        }
+    }
+}
+
+async function cfrApplyConfigYml() {
+    try {
+        const res = await fetch(`${API_BASE}/cloudflared/generate-config`, {
+            method: 'POST'
+        });
+
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || `HTTP ${res.status}`);
+        }
+
+        const data = await res.json();
+        if (data.success) {
+            showToast('Ingress gerado e salvo em config.yml com sucesso!', 'success');
+            if (confirm('Configuração de Ingress aplicada com sucesso! Deseja validar o arquivo e reiniciar os túneis do Cloudflared para aplicar as novas regras agora?')) {
+                await cfrValidateConfig();
+                await cfrRestartCloudflared();
+            }
+        } else {
+            throw new Error(data.error || 'Erro ao gerar configuração.');
+        }
+    } catch (err) {
+        console.error('[cfrApplyConfigYml] Erro:', err);
+        showToast('Erro ao aplicar regras Ingress: ' + err.message, 'error');
+    }
+}
+
+async function cfrLoadConfigYml() {
+    try {
+        const res = await fetch(`${API_BASE}/cloudflared/config`);
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || `HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        if (data.success) {
+            const textarea = document.getElementById('cfrYamlContent');
+            if (textarea) textarea.value = data.config || '';
+
+            const select = document.getElementById('cfrBackupSelect');
+            if (select) {
+                select.innerHTML = '<option value="">-- Selecione um Backup --</option>';
+                if (data.backups && data.backups.length > 0) {
+                    data.backups.forEach(b => {
+                        const option = document.createElement('option');
+                        option.value = b.name;
+                        let dateFormatted = b.date || b.name;
+                        if (b.date && b.date.length >= 15) {
+                            const y = b.date.slice(0, 4);
+                            const m = b.date.slice(4, 6);
+                            const d = b.date.slice(6, 8);
+                            const h = b.date.slice(9, 11);
+                            const min = b.date.slice(11, 13);
+                            const s = b.date.slice(13, 15);
+                            dateFormatted = `${d}/${m}/${y} ${h}:${min}:${s}`;
+                        }
+                        option.textContent = `${b.name} (${dateFormatted})`;
+                        select.appendChild(option);
+                    });
+                }
+            }
+
+            const modal = document.getElementById('cfrYamlModal');
+            if (modal) modal.classList.remove('hidden');
+        } else {
+            throw new Error(data.error || 'Falha ao obter configuração.');
+        }
+    } catch (err) {
+        console.error('[cfrLoadConfigYml] Erro:', err);
+        showToast('Erro ao carregar arquivo de configuração: ' + err.message, 'error');
+    }
+}
+
+function cfrCloseYamlModal() {
+    const modal = document.getElementById('cfrYamlModal');
+    if (modal) modal.classList.add('hidden');
+}
+
+async function cfrSaveYamlText() {
+    const textarea = document.getElementById('cfrYamlContent');
+    if (!textarea) return;
+
+    const configText = textarea.value;
+
+    if (/\t/.test(configText)) {
+        return showToast('O arquivo YAML não pode conter caracteres de tabulação (Tab). Use apenas espaços.', 'warning');
+    }
+
+    try {
+        const res = await fetch(`${API_BASE}/cloudflared/config`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ configText })
+        });
+
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || `HTTP ${res.status}`);
+        }
+
+        const data = await res.json();
+        if (data.success) {
+            if (data.warning) {
+                showToast(data.warning, 'warning');
+                alert(data.warning);
+            } else {
+                showToast('Arquivo config.yml salvo com sucesso!', 'success');
+            }
+            cfrCloseYamlModal();
+            cfrFetchRoutes();
+        } else {
+            throw new Error(data.error || 'Falha ao salvar configuração.');
+        }
+    } catch (err) {
+        console.error('[cfrSaveYamlText] Erro:', err);
+        showToast('Erro ao salvar config.yml: ' + err.message, 'error');
+    }
+}
+
+async function cfrValidateConfig() {
+    return cfrValidateYamlText();
+}
+
+async function cfrValidateYamlText() {
+    try {
+        showToast('Validando regras de Ingress no Cloudflared...', 'info');
+        const res = await fetch(`${API_BASE}/cloudflared/validate`, {
+            method: 'POST'
+        });
+
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || `HTTP ${res.status}`);
+        }
+
+        const data = await res.json();
+        if (data.success) {
+            alert(`✓ Sucesso! A validação do Ingress passou sem erros:\n\n${data.output || 'OK'}`);
+            showToast('Ingress validado com sucesso!', 'success');
+        } else {
+            alert(`⚠️ Falha na validação do Ingress:\n\n${data.error || 'Erro'}\n\nRetorno:\n${data.output || 'Nenhum'}`);
+            showToast('Erro na validação do Ingress.', 'error');
+        }
+    } catch (err) {
+        console.error('[cfrValidateYamlText] Erro:', err);
+        showToast('Erro ao validar configuração: ' + err.message, 'error');
+    }
+}
+
+async function cfrRestoreBackup() {
+    const select = document.getElementById('cfrBackupSelect');
+    if (!select) return;
+
+    const backupName = select.value;
+    if (!backupName) return showToast('Selecione um backup para restaurar.', 'warning');
+
+    if (!confirm(`Deseja realmente restaurar o backup "${backupName}"? O arquivo config.yml atual será sobrescrito.`)) return;
+
+    try {
+        const res = await fetch(`${API_BASE}/cloudflared/restore`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ backupName })
+        });
+
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || `HTTP ${res.status}`);
+        }
+
+        const data = await res.json();
+        if (data.success) {
+            showToast('Backup restaurado com sucesso!', 'success');
+            cfrLoadConfigYml();
+        } else {
+            throw new Error(data.error || 'Erro ao restaurar backup.');
+        }
+    } catch (err) {
+        console.error('[cfrRestoreBackup] Erro:', err);
+        showToast('Erro ao restaurar backup: ' + err.message, 'error');
+    }
+}
+
+async function cfrBackupConfigManual() {
+    try {
+        const res = await fetch(`${API_BASE}/cloudflared/backup`, {
+            method: 'POST'
+        });
+
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || `HTTP ${res.status}`);
+        }
+
+        const data = await res.json();
+        if (data.success) {
+            showToast(`Backup manual criado: ${data.backup}`, 'success');
+            cfrLoadConfigYml();
+        } else {
+            throw new Error(data.error || 'Erro ao criar backup manual.');
+        }
+    } catch (err) {
+        console.error('[cfrBackupConfigManual] Erro:', err);
+        showToast('Erro ao criar backup: ' + err.message, 'error');
+    }
+}
+
+async function cfrRestartCloudflared() {
+    try {
+        showToast('Reiniciando túneis do Cloudflared...', 'info');
+        const res = await fetch(`${API_BASE}/cloudflared/restart`, {
+            method: 'POST'
+        });
+
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || `HTTP ${res.status}`);
+        }
+
+        const data = await res.json();
+        if (data.success) {
+            showToast(data.message || 'Túneis reiniciados!', 'success');
+        } else {
+            throw new Error(data.error || 'Erro ao reiniciar.');
+        }
+    } catch (err) {
+        console.error('[cfrRestartCloudflared] Erro:', err);
+        showToast('Erro ao reiniciar Cloudflared: ' + err.message, 'error');
+    }
+}
+
+async function cfrCreatePresetPma() {
+    try {
+        showToast('Criando presets do Proxy Reverso...', 'info');
+
+        const hasPma = cfrRoutesListCached.some(r => r.path === '/phpmyadmin/' || r.name.toLowerCase().includes('phpmyadmin'));
+        const hasMain = cfrRoutesListCached.some(r => r.path === '/');
+
+        let createdCount = 0;
+
+        if (!hasPma) {
+            const resPma = await fetch(`${API_BASE}/cloudflared/routes`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: 'phpMyAdmin',
+                    hostname: 'panel.arjtechbr.site',
+                    path: '/phpmyadmin/',
+                    order: 1,
+                    targetProtocol: 'http',
+                    targetHost: '127.0.0.1',
+                    targetPort: 8080,
+                    enabled: true
+                })
+            });
+            if (resPma.ok) createdCount++;
+        }
+
+        if (!hasMain) {
+            const resMain = await fetch(`${API_BASE}/cloudflared/routes`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: 'Painel Principal',
+                    hostname: 'panel.arjtechbr.site',
+                    path: '/',
+                    order: 2,
+                    targetProtocol: 'http',
+                    targetHost: '127.0.0.1',
+                    targetPort: 8088,
+                    enabled: true
+                })
+            });
+            if (resMain.ok) createdCount++;
+        }
+
+        if (createdCount > 0) {
+            showToast('Preset criado com sucesso!', 'success');
+            cfrFetchRoutes();
+        } else {
+            showToast('Os presets já existem na lista de rotas.', 'info');
+        }
+    } catch (err) {
+        console.error('[cfrCreatePresetPma] Erro:', err);
+        showToast('Erro ao criar presets: ' + err.message, 'error');
+    }
+}
+
+function cfrShowLogs() {
+    document.getElementById('cfLogModalTitle').textContent = `📜 Logs: Cloudflared Ingress`;
+    document.getElementById('cfLogsModal').classList.remove('hidden');
+    
+    if (cfLogInterval) {
+        clearInterval(cfLogInterval);
+        cfLogInterval = null;
+    }
+    if (window.cfrLogInterval) {
+        clearInterval(window.cfrLogInterval);
+        window.cfrLogInterval = null;
+    }
+
+    cfrLoadLogs();
+    window.cfrLogInterval = setInterval(cfrLoadLogs, 3000);
+}
+
+async function cfrLoadLogs() {
+    try {
+        const res = await fetch(`${API_BASE}/cloudflared/logs`);
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || `HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        const box = document.getElementById('cfLogsBody');
+        if (box) {
+            box.textContent = data.logs || 'Nenhum log de ingress disponível no momento.';
+            box.scrollTop = box.scrollHeight;
+        }
+    } catch (err) {
+        console.error('[cfrLoadLogs] Erro:', err);
+    }
+}
+
+// Expor no escopo global
+window.cfrFetchRoutes = cfrFetchRoutes;
+window.cfrRenderRoutes = cfrRenderRoutes;
+window.cfrOpenRouteModal = cfrOpenRouteModal;
+window.cfrCloseRouteModal = cfrCloseRouteModal;
+window.cfrSubmitRoute = cfrSubmitRoute;
+window.cfrDeleteRoute = cfrDeleteRoute;
+window.cfrToggleRouteEnabled = cfrToggleRouteEnabled;
+window.cfrMoveRouteUp = cfrMoveRouteUp;
+window.cfrMoveRouteDown = cfrMoveRouteDown;
+window.cfrSaveReorderedRoutes = cfrSaveReorderedRoutes;
+window.cfrUpdateUrlPreview = cfrUpdateUrlPreview;
+window.cfrApplyConfigYml = cfrApplyConfigYml;
+window.cfrLoadConfigYml = cfrLoadConfigYml;
+window.cfrCloseYamlModal = cfrCloseYamlModal;
+window.cfrSaveYamlText = cfrSaveYamlText;
+window.cfrValidateYamlText = cfrValidateYamlText;
+window.cfrRestoreBackup = cfrRestoreBackup;
+window.cfrBackupConfigManual = cfrBackupConfigManual;
+window.cfrValidateConfig = cfrValidateConfig;
+window.cfrRestartCloudflared = cfrRestartCloudflared;
+window.cfrCreatePresetPma = cfrCreatePresetPma;
+window.cfrTestRoute = cfrTestRoute;
+window.cfrTestPublicUrl = cfrTestPublicUrl;
+window.cfrShowLogs = cfrShowLogs;
+window.cfrLoadLogs = cfrLoadLogs;
 
 
 

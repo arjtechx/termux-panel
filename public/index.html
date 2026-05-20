@@ -1317,6 +1317,175 @@
                 <div class="hosting-grid" id="cfTunnelsGrid">
                     <div style="color:var(--text-muted); padding:20px;">Carregando túneis...</div>
                 </div>
+
+                <!-- =================================================== -->
+                <!-- SEÇÃO CLOUDFLARED / PROXY REVERSO (ROTA POR CAMINHO) -->
+                <!-- =================================================== -->
+                <div class="card" style="margin-top: 30px; padding: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid var(--border-color); padding-bottom: 12px; margin-bottom: 20px; flex-wrap: wrap; gap: 12px;">
+                        <div>
+                            <h2 style="margin: 0; display: flex; align-items: center; gap: 8px; font-size: 1.5rem; color: var(--text-color);">
+                                <i data-lucide="shuffle" style="color: var(--primary);"></i> Cloudflared / Proxy Reverso
+                            </h2>
+                            <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 4px;">Gerencie rotas baseadas em caminhos públicos (ingress rules) direcionadas a serviços locais.</p>
+                        </div>
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                            <button class="btn btn-secondary btn-sm" onclick="cfrLoadConfigYml()">
+                                <i data-lucide="file-text"></i> Editar config.yml
+                            </button>
+                            <button class="btn btn-secondary btn-sm" onclick="cfrValidateConfig()">
+                                <i data-lucide="check-square"></i> Validar Ingress
+                            </button>
+                            <button class="btn btn-secondary btn-sm" onclick="cfrRestartCloudflared()">
+                                <i data-lucide="refresh-cw"></i> Reiniciar Cloudflared
+                            </button>
+                            <button class="btn btn-secondary btn-sm" onclick="cfrShowLogs()">
+                                <i data-lucide="scroll-text"></i> Visualizar Logs
+                            </button>
+                            <button class="btn btn-success btn-sm" onclick="cfrCreatePresetPma()">
+                                <i data-lucide="sparkles"></i> Preset phpMyAdmin
+                            </button>
+                            <button class="btn btn-primary btn-sm" onclick="cfrOpenRouteModal()">
+                                <i data-lucide="plus-circle"></i> Adicionar Rota
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Lista de regras ativas -->
+                    <div style="overflow-x: auto; background: var(--bg-hover); border-radius: 8px; border: 1px solid var(--border-color);">
+                        <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem;">
+                            <thead>
+                                <tr style="background: rgba(0,0,0,0.05); border-bottom: 1px solid var(--border-color); color: var(--text-muted);">
+                                    <th style="padding: 12px 16px;">Ordem</th>
+                                    <th style="padding: 12px 16px;">Serviço</th>
+                                    <th style="padding: 12px 16px;">Domínio Público</th>
+                                    <th style="padding: 12px 16px;">Caminho (Path)</th>
+                                    <th style="padding: 12px 16px;">Destino Local</th>
+                                    <th style="padding: 12px 16px;">Status</th>
+                                    <th style="padding: 12px 16px; text-align: center; width: 320px;">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="cfrRoutesList">
+                                <tr>
+                                    <td colspan="7" style="padding: 20px; text-align: center; color: var(--text-muted);">Carregando rotas...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div style="display: flex; justify-content: flex-end; margin-top: 16px;">
+                        <button class="btn btn-success btn-md" onclick="cfrApplyConfigYml()" style="font-weight: 600;">
+                            <i data-lucide="check"></i> Salvar e Aplicar Ingress no Cloudflared
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- === MODAL: ADICIONAR / EDITAR ROTA DO PROXY === -->
+            <div id="cfrRouteModal" class="modal-overlay hidden">
+                <div class="modal-card">
+                    <div class="modal-header">
+                        <h2 id="cfrModalTitle">🚀 Adicionar Rota Proxy Reverso</h2>
+                        <button class="btn-icon-ghost" type="button" onclick="cfrCloseRouteModal()"><i data-lucide="x"></i></button>
+                    </div>
+                    <form onsubmit="cfrSubmitRoute(event)">
+                        <input type="hidden" id="cfrRouteId">
+                        <div class="form-stack">
+                            <div>
+                                <label class="form-label">Nome do Serviço</label>
+                                <input type="text" id="cfrInputName" placeholder="ex: phpMyAdmin, Painel, API" required style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
+                            </div>
+
+                            <div>
+                                <label class="form-label">Domínio / Host Público</label>
+                                <input type="text" id="cfrHostname" placeholder="ex: panel.arjtechbr.site" required style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
+                                <small style="color:var(--text-muted); font-size: 0.75rem;">Nota: A porta pública padrão gerenciada pela Cloudflare é 443 (HTTPS).</small>
+                            </div>
+
+                            <div style="display: flex; gap: 10px;">
+                                <div style="flex: 1;">
+                                    <label class="form-label">Caminho Público (Path)</label>
+                                    <input type="text" id="cfrPath" placeholder="ex: /phpmyadmin/ ou /" required style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);" onkeyup="cfrUpdateUrlPreview()">
+                                </div>
+                                <div style="flex: 1;">
+                                    <label class="form-label">Ordem / Prioridade</label>
+                                    <input type="number" id="cfrOrder" placeholder="ex: 1, 99" required style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
+                                </div>
+                            </div>
+
+                            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                                <div style="flex: 1; min-width: 100px;">
+                                    <label class="form-label">Protocolo Interno</label>
+                                    <select id="cfrProtocol" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);" onchange="cfrUpdateUrlPreview()">
+                                        <option value="http">http://</option>
+                                        <option value="https">https://</option>
+                                    </select>
+                                </div>
+                                <div style="flex: 2; min-width: 140px;">
+                                    <label class="form-label">Porta Interna Alvo</label>
+                                    <input type="number" id="cfrPort" placeholder="ex: 8080" required style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);" onkeyup="cfrUpdateUrlPreview()">
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="form-label">URL Interna Destino (Gerada automaticamente)</label>
+                                <input type="text" id="cfrUrlPreview" readonly style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-hover); color:var(--primary); font-family: monospace; font-weight: bold;">
+                            </div>
+
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <input type="checkbox" id="cfrEnabled" checked style="width: 16px; height: 16px;">
+                                <label for="cfrEnabled" style="font-weight: 600; cursor: pointer; color: var(--text-color);">Regra Ativa / Habilitada</label>
+                            </div>
+                        </div>
+
+                        <div class="modal-actions" style="margin-top:20px; display:flex; justify-content:flex-end; gap:10px;">
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="cfrCloseRouteModal()">Cancelar</button>
+                            <button type="submit" class="btn btn-success btn-sm" id="cfrModalSubmitBtn">Adicionar Rota</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- === MODAL: EDITOR MANUAL DO CONFIG.YML === -->
+            <div id="cfrYamlModal" class="modal-overlay hidden">
+                <div class="modal-card" style="max-width: 800px; width: 90%;">
+                    <div class="modal-header">
+                        <h2>⚙️ Editor Manual Avançado do config.yml</h2>
+                        <button class="btn-icon-ghost" type="button" onclick="cfrCloseYamlModal()"><i data-lucide="x"></i></button>
+                    </div>
+                    <div class="form-stack">
+                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;">
+                            <div style="display: flex; align-items: center; gap: 6px;">
+                                <label class="form-label" style="margin: 0; white-space: nowrap;">Backup:</label>
+                                <select id="cfrBackupSelect" style="padding: 6px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color); font-size: 0.85rem; min-width: 180px;">
+                                    <option value="">-- Selecione um Backup --</option>
+                                </select>
+                                <button class="btn btn-secondary btn-sm" onclick="cfrRestoreBackup()" style="padding: 5px 10px;">Restaurar</button>
+                            </div>
+                            <div>
+                                <button class="btn btn-secondary btn-sm" onclick="cfrBackupConfigManual()">Criar Backup Manual</button>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="form-label">Conteúdo do arquivo (~/.cloudflared/config.yml)</label>
+                            <textarea id="cfrYamlContent" rows="18" style="width: 100%; font-family: monospace; font-size: 0.9rem; padding: 12px; background: var(--bg-secondary); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 6px; line-height: 1.4; resize: vertical; tab-size: 2;"></textarea>
+                        </div>
+
+                        <div style="background: rgba(220, 53, 69, 0.1); border: 1px solid var(--danger); padding: 10px; border-radius: 6px; font-size: 0.8rem; display: flex; align-items: flex-start; gap: 8px;">
+                            <i data-lucide="alert-triangle" style="color: var(--danger); flex-shrink: 0; width: 16px; height: 16px; margin-top: 2px;"></i>
+                            <div>
+                                <strong style="color: var(--danger);">Cuidado:</strong> Modificar chaves privadas ou metadados de credenciais (tunnel/credentials-file) pode quebrar a inicialização do túnel. Certifique-se de validar antes de aplicar.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="modal-actions" style="margin-top:20px; display:flex; justify-content:flex-end; gap:10px;">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="cfrCloseYamlModal()">Cancelar</button>
+                        <button type="button" class="btn btn-info btn-sm" onclick="cfrValidateYamlText()">Validar Sintaxe</button>
+                        <button type="button" class="btn btn-success btn-sm" onclick="cfrSaveYamlText()">Salvar config.yml</button>
+                    </div>
+                </div>
             </div>
 
             <!-- === MODAL: CRIAR TÚNEL CLOUDFLARED === -->
@@ -1859,7 +2028,7 @@
 <div class="fm-toast-container" id="fm-toast-container"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.93"></script>
+<script src="filemanager.js?v=0.2.94"></script>
 <script src="app.js?v=4.5"></script>
 </body>
 </html>
