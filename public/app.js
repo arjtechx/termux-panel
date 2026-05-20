@@ -3204,3 +3204,124 @@ async function initFileBrowserShortcuts() {
         console.error('Falha ao carregar atalhos dinâmicos do FileBrowser:', e);
     }
 }
+
+// ============================================================
+//  TESTE DE VELOCIDADE (SPEEDTEST) - CLIENT LÓGICA
+// ============================================================
+function startSpeedTest() {
+    const btn = document.getElementById('btn-start-speedtest');
+    const statusText = document.getElementById('speedtest-status-text');
+    const pingVal = document.getElementById('speedtest-ping');
+    const downVal = document.getElementById('speedtest-download');
+    const upVal = document.getElementById('speedtest-upload');
+    const gaugeFill = document.getElementById('speedtest-gauge-fill');
+    const gaugeValue = document.getElementById('speedtest-gauge-value');
+    const gaugeUnit = document.getElementById('speedtest-gauge-unit');
+    const card = document.querySelector('.speedtest-card');
+
+    if (!btn || btn.disabled) return;
+
+    // Desativa botão e atualiza estado
+    btn.disabled = true;
+    btn.innerHTML = `<i data-lucide="loader-2" class="spin"></i> Testando...`;
+    if (window.lucide) lucide.createIcons();
+
+    card.classList.add('speedtest-running');
+    pingVal.innerHTML = `-- <small>ms</small>`;
+    downVal.innerHTML = `-- <small>Mbps</small>`;
+    upVal.innerHTML = `-- <small>Mbps</small>`;
+    
+    // Reseta gauge
+    gaugeFill.style.strokeDashoffset = '283';
+    gaugeValue.textContent = '0.0';
+    gaugeUnit.textContent = 'Mbps';
+
+    statusText.textContent = 'Conectando ao servidor de testes...';
+
+    // Cria EventSource
+    const eventSource = new EventSource('/api/speedtest');
+
+    eventSource.onmessage = function(event) {
+        try {
+            const data = JSON.parse(event.data);
+
+            if (data.stage === 'ping') {
+                if (data.status === 'running') {
+                    statusText.textContent = 'Medindo latência (Ping)...';
+                } else if (data.status === 'done') {
+                    pingVal.innerHTML = `${data.ping} <small>ms</small>`;
+                    statusText.textContent = 'Ping concluído! Iniciando download...';
+                }
+            }
+
+            if (data.stage === 'download') {
+                if (data.status === 'running') {
+                    statusText.textContent = `Testando Download... ${data.percent}%`;
+                    gaugeValue.textContent = data.speed.toFixed(1);
+                    gaugeUnit.textContent = 'Mbps';
+
+                    // Atualiza o gauge baseado no valor atual de download
+                    const maxGaugeSpeed = 100;
+                    const percentage = Math.min(100, (data.speed / maxGaugeSpeed) * 100);
+                    const offset = 283 - (283 * percentage) / 100;
+                    gaugeFill.style.strokeDashoffset = offset;
+                } else if (data.status === 'done') {
+                    downVal.innerHTML = `${data.speed} <small>Mbps</small>`;
+                    statusText.textContent = 'Download concluído! Iniciando upload...';
+                }
+            }
+
+            if (data.stage === 'upload') {
+                if (data.status === 'running') {
+                    statusText.textContent = `Testando Upload... ${data.percent}%`;
+                    gaugeValue.textContent = data.speed.toFixed(1);
+                    gaugeUnit.textContent = 'Mbps';
+
+                    // Atualiza o gauge baseado no valor atual de upload
+                    const maxGaugeSpeed = 100;
+                    const percentage = Math.min(100, (data.speed / maxGaugeSpeed) * 100);
+                    const offset = 283 - (283 * percentage) / 100;
+                    gaugeFill.style.strokeDashoffset = offset;
+                } else if (data.status === 'done') {
+                    upVal.innerHTML = `${data.speed} <small>Mbps</small>`;
+                }
+            }
+
+            if (data.stage === 'finished') {
+                statusText.textContent = 'Teste de conexão concluído com sucesso!';
+                gaugeValue.textContent = data.download.toFixed(1);
+                gaugeUnit.textContent = 'Mbps';
+
+                // Restaura o botão e remove classe de execução
+                btn.disabled = false;
+                btn.innerHTML = `<i data-lucide="gauge"></i> Iniciar Teste de Conexão`;
+                card.classList.remove('speedtest-running');
+                if (window.lucide) lucide.createIcons();
+
+                eventSource.close();
+            }
+
+            if (data.stage === 'error') {
+                throw new Error(data.message || 'Erro desconhecido');
+            }
+        } catch (e) {
+            console.error('Erro ao processar dados de speedtest:', e);
+            statusText.textContent = 'Falha durante o teste de conexão.';
+            btn.disabled = false;
+            btn.innerHTML = `<i data-lucide="gauge"></i> Iniciar Teste de Conexão`;
+            card.classList.remove('speedtest-running');
+            if (window.lucide) lucide.createIcons();
+            eventSource.close();
+        }
+    };
+
+    eventSource.onerror = function(err) {
+        console.error('Erro na conexão com SSE de speedtest:', err);
+        statusText.textContent = 'Erro ao conectar ao servidor de testes.';
+        btn.disabled = false;
+        btn.innerHTML = `<i data-lucide="gauge"></i> Iniciar Teste de Conexão`;
+        card.classList.remove('speedtest-running');
+        if (window.lucide) lucide.createIcons();
+        eventSource.close();
+    };
+}

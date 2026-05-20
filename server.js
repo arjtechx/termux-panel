@@ -147,7 +147,8 @@ app.use('/', systemRoutes);
 const updateRoutes = require('./src/routes/updateRoutes');
 app.use('/', updateRoutes);
 
-// --- Socket.io Terminal Logic ---
+const speedtestRoutes = require('./src/routes/speedtestRoutes');
+app.use('/api', speedtestRoutes);
 io.on('connection', (socket) => {
     let sshConn = new Client();
 
