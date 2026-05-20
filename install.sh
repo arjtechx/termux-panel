@@ -832,7 +832,7 @@ while true; do
             done
             sleep 1
             if [ -d "/data/data/com.termux" ]; then
-                NODE_MAX_OLD_SPACE_SIZE="${NODE_MAX_OLD_SPACE_SIZE:-512}"
+                NODE_MAX_OLD_SPACE_SIZE="${NODE_MAX_OLD_SPACE_SIZE:-2048}"
             else
                 NODE_MAX_OLD_SPACE_SIZE="${NODE_MAX_OLD_SPACE_SIZE:-1024}"
             fi
