@@ -325,7 +325,11 @@ if command -v su >/dev/null 2>&1 && su -c 'echo ok' >/dev/null 2>&1; then
 fi
 
 # Configuracao de memoria do Node (ajustavel por variavel de ambiente)
-NODE_MAX_OLD_SPACE_SIZE="${NODE_MAX_OLD_SPACE_SIZE:-256}"
+if [ -d "/data/data/com.termux" ]; then
+    NODE_MAX_OLD_SPACE_SIZE="${NODE_MAX_OLD_SPACE_SIZE:-512}"
+else
+    NODE_MAX_OLD_SPACE_SIZE="${NODE_MAX_OLD_SPACE_SIZE:-1024}"
+fi
 log "Node heap max-old-space-size: ${NODE_MAX_OLD_SPACE_SIZE}MB"
 # Loop de auto-restart
 while true; do
