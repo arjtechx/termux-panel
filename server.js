@@ -381,16 +381,51 @@ app.get('/api/status', async (req, res) => {
 
         // Rede — /proc/net/dev em Linux/WSL/Termux, netstat no macOS
         if (systemConfig.is_linux || systemConfig.is_wsl || systemConfig.is_termux) {
-            const netOut = await runCmd('cat /proc/net/dev');
-            // Tenta vários nomes de interface em ordem de prioridade
-            for (const iface of ['wlan0', 'eth0', 'ens3', 'ens33', 'enp0s3', 'wlp2s0', 'usb0']) {
-                const m = netOut.match(new RegExp(`\\s*${iface}[^:]*:\\s*(\\d+)(?:\\s+\\d+){7}\\s+(\\d+)`));
-                if (m) {
-                    status.totalDown = `${(parseInt(m[1]) / 1024 / 1024).toFixed(2)} MB`;
-                    status.totalUp   = `${(parseInt(m[2]) / 1024 / 1024).toFixed(2)} MB`;
-                    break;
+            let totalDown = 0;
+            let totalUp = 0;
+            
+            try {
+                const netOut = await runCmd('cat /proc/net/dev 2>/dev/null || echo ""');
+                // Tenta vários nomes de interface em ordem de prioridade
+                for (const iface of ['wlan0', 'eth0', 'ens3', 'ens33', 'enp0s3', 'wlp2s0', 'usb0']) {
+                    const m = netOut.match(new RegExp(`\\s*${iface}[^:]*:\\s*(\\d+)(?:\\s+\\d+){7}\\s+(\\d+)`));
+                    if (m) {
+                        totalDown = parseInt(m[1]) || 0;
+                        totalUp = parseInt(m[2]) || 0;
+                        break;
+                    }
                 }
+            } catch(_) {}
+
+            // Se for Termux e /proc/net/dev falhar (Android 10+ restringe) ou ler 0, tenta via ifconfig ou ip
+            if (systemConfig.is_termux && totalDown === 0 && totalUp === 0) {
+                try {
+                    const ifconfigOut = await runCmd('ifconfig wlan0 2>/dev/null || ifconfig 2>/dev/null || echo ""');
+                    let matchRx = ifconfigOut.match(/RX[^b]*bytes[:\s]+(\d+)/i);
+                    let matchTx = ifconfigOut.match(/TX[^b]*bytes[:\s]+(\d+)/i);
+                    if (matchRx && matchTx) {
+                        totalDown = parseInt(matchRx[1]) || 0;
+                        totalUp = parseInt(matchTx[1]) || 0;
+                    } else {
+                        // Tenta fallback com ip -s link
+                        const ipOut = await runCmd('ip -s link show wlan0 2>/dev/null || ip -s link 2>/dev/null || echo ""');
+                        // Exemplo de output do ip -s link:
+                        // RX: bytes  packets  errors  dropped overrun mcast
+                        // 14567809   12345
+                        // TX: bytes  packets  errors  dropped carrier collsns
+                        // 9876543    1234
+                        let rxMatches = ipOut.match(/RX:[^\n]*\n\s*(\d+)/i);
+                        let txMatches = ipOut.match(/TX:[^\n]*\n\s*(\d+)/i);
+                        if (rxMatches && txMatches) {
+                            totalDown = parseInt(rxMatches[1]) || 0;
+                            totalUp = parseInt(txMatches[1]) || 0;
+                        }
+                    }
+                } catch(_) {}
             }
+
+            status.totalDown = `${(totalDown / 1024 / 1024).toFixed(2)} MB`;
+            status.totalUp   = `${(totalUp / 1024 / 1024).toFixed(2)} MB`;
         } else if (systemConfig.is_macos) {
             const netOut = await runCmd("netstat -ib | grep -E '^en[0-9]' | head -1");
             if (netOut) {

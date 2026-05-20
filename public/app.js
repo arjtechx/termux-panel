@@ -347,6 +347,42 @@ function connectTerminal() {
     term.onData(data => socket.emit('terminal-input', data));
 }
 
+let tempUnit = 'C';
+let lastTemperatureStr = '--°C';
+
+function toggleTempUnit(e) {
+    if (e) {
+        e.stopPropagation();
+        e.preventDefault();
+    }
+    tempUnit = tempUnit === 'C' ? 'F' : 'C';
+    const btn = document.getElementById('temp-unit-btn');
+    if (btn) btn.textContent = '°' + tempUnit;
+    updateTemperatureDisplay();
+}
+
+function updateTemperatureDisplay() {
+    if (!el.temp) return;
+    if (lastTemperatureStr === '--°C' || lastTemperatureStr === 'N/A' || !lastTemperatureStr) {
+        el.temp.textContent = lastTemperatureStr || '--°C';
+        return;
+    }
+    
+    // Extract number from string like "45.0°C"
+    const val = parseFloat(lastTemperatureStr);
+    if (isNaN(val)) {
+        el.temp.textContent = lastTemperatureStr;
+        return;
+    }
+    
+    if (tempUnit === 'F') {
+        const f = (val * 9/5) + 32;
+        el.temp.textContent = `${f.toFixed(1)}°F`;
+    } else {
+        el.temp.textContent = `${val.toFixed(1)}°C`;
+    }
+}
+
 // ============================================================
 //  STATUS DO SISTEMA — alinhado com os campos reais da API
 // ============================================================
@@ -360,7 +396,10 @@ async function fetchStatus() {
     if (el.cpuDetails) el.cpuDetails.textContent = `${data.cpuCores || '--'} Núcleos | ${data.cpuSpeed || '--'}`;
     renderCpuVisual(data);
     if (el.ram)        el.ram.textContent        = data.ram        || '-- / --';
-    if (el.temp)       el.temp.textContent       = data.temperature || '--°C';
+    if (el.temp) {
+        lastTemperatureStr = data.temperature || '--°C';
+        updateTemperatureDisplay();
+    }
     if (el.netSpeed)   el.netSpeed.textContent   = `${data.totalDown || '--'} / ${data.totalUp || '--'}`;
 
     // Storage — campos: storageFree, storageTotal, storagePercent
@@ -3209,6 +3248,37 @@ async function initFileBrowserShortcuts() {
 //  TESTE DE VELOCIDADE (SPEEDTEST) - CLIENT LÓGICA
 // ============================================================
 let isSpeedtestRunning = false;
+let speedtestUnit = 'Mbps';
+
+function toggleSpeedtestUnit(e) {
+    if (e) {
+        e.stopPropagation();
+        e.preventDefault();
+    }
+    speedtestUnit = speedtestUnit === 'Mbps' ? 'KB/s' : 'Mbps';
+    const btn = document.getElementById('speedtest-unit-btn');
+    if (btn) btn.textContent = speedtestUnit;
+    
+    document.querySelectorAll('.speedtest-unit-label').forEach(el => {
+        el.textContent = speedtestUnit === 'Mbps' ? 'Mb' : 'KB';
+    });
+}
+
+function formatSpeed(mbps) {
+    if (speedtestUnit === 'KB/s') {
+        return (mbps * 125).toFixed(0);
+    }
+    return mbps.toFixed(1);
+}
+
+function updateNeedle(mbps) {
+    const needle = document.getElementById('speedtest-needle');
+    if (!needle) return;
+    let max = 500; // max scale 500 Mbps
+    let angle = -90 + (mbps / max) * 180;
+    if (angle > 90) angle = 90;
+    needle.style.transform = `rotate(${angle}deg)`;
+}
 
 function startSpeedTest() {
     if (isSpeedtestRunning) return;
@@ -3260,25 +3330,29 @@ function startSpeedTest() {
             if (data.stage === 'download') {
                 if (data.status === 'running') {
                     statusText.textContent = `Download... ${data.percent}%`;
-                    mainVal.textContent = `${data.speed.toFixed(1)} Mb`;
+                    mainVal.textContent = `${formatSpeed(data.speed)} ${speedtestUnit === 'Mbps' ? 'Mb' : 'KB'}`;
+                    updateNeedle(data.speed);
                 } else if (data.status === 'done') {
-                    if (downVal) downVal.textContent = Math.round(data.speed);
+                    if (downVal) downVal.textContent = formatSpeed(data.speed);
                     statusText.textContent = 'Upload...';
+                    updateNeedle(0);
                 }
             }
 
             if (data.stage === 'upload') {
                 if (data.status === 'running') {
                     statusText.textContent = `Upload... ${data.percent}%`;
-                    mainVal.textContent = `${data.speed.toFixed(1)} Mb`;
+                    mainVal.textContent = `${formatSpeed(data.speed)} ${speedtestUnit === 'Mbps' ? 'Mb' : 'KB'}`;
+                    updateNeedle(data.speed);
                 } else if (data.status === 'done') {
-                    if (upVal) upVal.textContent = Math.round(data.speed);
+                    if (upVal) upVal.textContent = formatSpeed(data.speed);
+                    updateNeedle(0);
                 }
             }
 
             if (data.stage === 'finished') {
-                statusText.textContent = 'Conclúido!';
-                mainVal.textContent = `${Math.round(data.download)} Mb`;
+                statusText.textContent = 'Concluído!';
+                mainVal.textContent = `${formatSpeed(data.download)} ${speedtestUnit === 'Mbps' ? 'Mb' : 'KB'}`;
                 
                 // Restaura estado
                 isSpeedtestRunning = false;
@@ -3290,6 +3364,7 @@ function startSpeedTest() {
                     iconContainer.innerHTML = `<i data-lucide="check-circle" style="color: var(--success); width: 16px; height: 16px;"></i>`;
                 }
                 if (window.lucide) lucide.createIcons();
+                updateNeedle(0);
 
                 eventSource.close();
             }
@@ -3311,6 +3386,7 @@ function startSpeedTest() {
                 iconContainer.innerHTML = `<i data-lucide="play" style="color: var(--primary); width: 16px; height: 16px;"></i>`;
             }
             if (window.lucide) lucide.createIcons();
+            updateNeedle(0);
             eventSource.close();
         }
     };
@@ -3329,6 +3405,7 @@ function startSpeedTest() {
             iconContainer.innerHTML = `<i data-lucide="play" style="color: var(--primary); width: 16px; height: 16px;"></i>`;
         }
         if (window.lucide) lucide.createIcons();
+        updateNeedle(0);
         eventSource.close();
     };
 }

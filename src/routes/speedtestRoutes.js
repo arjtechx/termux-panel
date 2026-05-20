@@ -63,7 +63,7 @@ function getWithRedirects(url, options, callback, onReqCreated, redirectCount = 
 // 2. Função auxiliar para medir velocidade de Download (Média ponderada em janela de 10 segundos)
 function runDownloadTest(onProgress) {
     return new Promise((resolve) => {
-        const url = 'https://speed.cloudflare.com/__down?bytes=100000000'; // 100MB
+        const url = 'https://proof.ovh.net/files/100Mb.dat'; // 100MB
         const startTime = Date.now();
         const durationLimit = 10000; // Janela estável de 10 segundos
         let bytesReceived = 0;
