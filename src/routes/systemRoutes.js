@@ -3,6 +3,7 @@ const router = express.Router();
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { spawn, exec } = require('child_process');
 const systemConfig = require('../utils/env');
 const { runCmd } = require('../utils/shell');
 
@@ -206,6 +207,238 @@ router.post('/api/system/settings/autostart-boot/toggle', (req, res) => {
         res.json({ success: true, active });
     } catch(err) {
         res.status(500).json({ error: err.message });
+    }
+});
+
+const BASE_DIR = path.join(__dirname, '..', '..');
+const MEMORY_CONFIG_FILE = path.join(BASE_DIR, 'config', 'memory.json');
+
+function isPidAlive(pid) {
+    if (!pid) return false;
+    try {
+        process.kill(pid, 0);
+        return true;
+    } catch (e) {
+        return e.code === 'EPERM';
+    }
+}
+
+function getMemoryConfig() {
+    try {
+        if (fs.existsSync(MEMORY_CONFIG_FILE)) {
+            return JSON.parse(fs.readFileSync(MEMORY_CONFIG_FILE, 'utf8'));
+        }
+    } catch(e) {}
+    return { mode: 'balanced' };
+}
+
+function setMemoryConfig(config) {
+    try {
+        const dir = path.dirname(MEMORY_CONFIG_FILE);
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+        fs.writeFileSync(MEMORY_CONFIG_FILE, JSON.stringify(config, null, 2));
+        return true;
+    } catch(e) {
+        return false;
+    }
+}
+
+router.get('/api/system/processes', async (req, res) => {
+    try {
+        const LOCK_DIR = path.join(os.homedir(), '.termux-panel-lock');
+        const PID_FILE = path.join(LOCK_DIR, 'panel.pid');
+        const START_PID_FILE = path.join(LOCK_DIR, 'start.pid');
+        const UPDATE_LOCK = path.join(LOCK_DIR, 'update.lock');
+
+        const panelPid = fs.existsSync(PID_FILE) ? parseInt(fs.readFileSync(PID_FILE, 'utf8').trim()) : null;
+        const startPid = fs.existsSync(START_PID_FILE) ? parseInt(fs.readFileSync(START_PID_FILE, 'utf8').trim()) : null;
+        const updatePid = fs.existsSync(UPDATE_LOCK) ? parseInt(fs.readFileSync(UPDATE_LOCK, 'utf8').trim()) : null;
+
+        const isPanelLockActive = isPidAlive(panelPid);
+        const isStartLockActive = isPidAlive(startPid);
+        const isUpdateLockActive = isPidAlive(updatePid);
+
+        // Carrega config de memória
+        const memConfig = getMemoryConfig();
+        const nodeMemoryMode = memConfig.mode || 'balanced';
+        let nodeMemoryMb = 256;
+        if (nodeMemoryMode === 'safe') nodeMemoryMb = 128;
+        else if (nodeMemoryMode === 'performance') nodeMemoryMb = 512;
+
+        // Porta
+        let currentPort = 8088;
+        if (fs.existsSync(SERVER_CONFIG_FILE)) {
+            try {
+                const srvCfg = JSON.parse(fs.readFileSync(SERVER_CONFIG_FILE, 'utf8'));
+                currentPort = srvCfg.port || 8088;
+            } catch(e) {}
+        }
+
+        // Verifica qual PID ocupa a porta
+        let portBusyPid = null;
+        try {
+            let ssOut = await runCmd(`ss -ltnp 2>/dev/null | grep ":${currentPort} " | sed -n 's/.*pid=\\([0-9]*\\).*/\\1/p' | head -n1`);
+            ssOut = ssOut.trim();
+            if (ssOut) portBusyPid = parseInt(ssOut);
+            
+            if (!portBusyPid) {
+                let lsofOut = await runCmd(`lsof -t -i:${currentPort} -sTCP:LISTEN 2>/dev/null | head -n1`);
+                lsofOut = lsofOut.trim();
+                if (lsofOut) portBusyPid = parseInt(lsofOut);
+            }
+            if (!portBusyPid) {
+                let fuserOut = await runCmd(`fuser ${currentPort}/tcp 2>/dev/null | awk '{print $1}' | head -n1`);
+                fuserOut = fuserOut.trim();
+                if (fuserOut) portBusyPid = parseInt(fuserOut);
+            }
+        } catch(e) {}
+
+        const portBusy = portBusyPid !== null;
+
+        // Processos ativos via ps
+        const startScripts = [];
+        const nodeServers = [];
+        const mariadbProcs = [];
+        const cloudflaredProcs = [];
+
+        try {
+            const psOutput = await runCmd('ps -ef');
+            const lines = psOutput.split('\n');
+            for (let i = 1; i < lines.length; i++) {
+                const line = lines[i].trim();
+                if (!line) continue;
+                const parts = line.split(/\s+/);
+                if (parts.length >= 8) {
+                    const pid = parseInt(parts[1]);
+                    const ppid = parseInt(parts[2]);
+                    const cmd = parts.slice(7).join(' ');
+
+                    if (cmd.includes('scripts/start.sh') || cmd.includes('bash scripts/start.sh')) {
+                        startScripts.push({ pid, ppid, cmd });
+                    } else if (cmd.includes('node') && (cmd.includes('server.js') || cmd.includes('desktop-server.js'))) {
+                        // Verifica se pertence ao termux-panel para evitar falsos positivos
+                        let isThisPanel = false;
+                        try {
+                            if (fs.existsSync(`/proc/${pid}/cwd`)) {
+                                const cwd = fs.readlinkSync(`/proc/${pid}/cwd`);
+                                if (cwd === BASE_DIR) isThisPanel = true;
+                            }
+                        } catch(e) {}
+                        if (isThisPanel || cmd.includes(BASE_DIR) || cmd.includes('termux-panel')) {
+                            nodeServers.push({ pid, ppid, cmd });
+                        }
+                    } else if (cmd.includes('mariadbd') || cmd.includes('mysqld')) {
+                        mariadbProcs.push({ pid, ppid, cmd });
+                    } else if (cmd.includes('cloudflared')) {
+                        cloudflaredProcs.push({ pid, ppid, cmd });
+                    }
+                }
+            }
+        } catch(e) {}
+
+        // Memória do sistema
+        const totalMem = os.totalmem();
+        const freeMem = os.freemem();
+        const usedMem = totalMem - freeMem;
+        const usagePercent = totalMem > 0 ? Math.round((usedMem / totalMem) * 100) : 0;
+        const memory = {
+            total: Math.round(totalMem / (1024 * 1024)), // MB
+            free: Math.round(freeMem / (1024 * 1024)), // MB
+            usagePercent
+        };
+
+        // Logs OOM do dmesg
+        let oomLog = '';
+        if (systemConfig.has_root) {
+            try {
+                oomLog = await runCmd('dmesg | grep -i -E "killed|oom|node" | tail -n 30', true);
+                if (!oomLog) oomLog = 'Nenhum registro de OOM encontrado no dmesg.';
+            } catch(e) {
+                oomLog = '[WARN] Não foi possível ler dmesg. Root indisponível ou negado.';
+            }
+        } else {
+            oomLog = '[WARN] Não foi possível ler dmesg. Root indisponível ou negado.';
+        }
+
+        res.json({
+            success: true,
+            panel: {
+                startScripts,
+                nodeServers,
+                port: currentPort,
+                portBusy,
+                portBusyPid,
+                pidFile: panelPid,
+                startPidFile: startPid,
+                nodeMemoryMb,
+                nodeMemoryMode
+            },
+            locks: {
+                startLock: isStartLockActive,
+                updateLock: isUpdateLockActive
+            },
+            services: {
+                mariadb: mariadbProcs,
+                cloudflared: cloudflaredProcs
+            },
+            memory,
+            oomLog
+        });
+    } catch(err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.post('/api/system/settings/memory', (req, res) => {
+    try {
+        const { mode } = req.body;
+        if (!['safe', 'balanced', 'performance'].includes(mode)) {
+            return res.status(400).json({ error: 'Modo de memória inválido. Deve ser: safe, balanced ou performance.' });
+        }
+        setMemoryConfig({ mode });
+        res.json({ success: true, message: 'Configuração de memória salva com sucesso. Um Reinício Seguro é necessário para aplicar.' });
+    } catch(err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.post('/api/system/stop', (req, res) => {
+    try {
+        res.json({ success: true, message: 'Painel parando...' });
+        
+        const stopScript = path.join(BASE_DIR, 'scripts', 'stop.sh');
+        const proc = spawn('bash', [stopScript], {
+            cwd: BASE_DIR,
+            detached: true,
+            stdio: 'ignore'
+        });
+        proc.unref();
+    } catch(err) {
+        if (!res.headersSent) {
+            res.status(500).json({ error: err.message });
+        }
+    }
+});
+
+router.post('/api/system/restart', (req, res) => {
+    try {
+        res.json({ success: true, message: 'Painel reiniciando de forma segura...' });
+        
+        const stopScript = path.join(BASE_DIR, 'scripts', 'stop.sh');
+        const startScript = path.join(BASE_DIR, 'scripts', 'start.sh');
+        
+        const proc = spawn('bash', ['-c', `bash "${stopScript}" && sleep 2 && bash "${startScript}"`], {
+            cwd: BASE_DIR,
+            detached: true,
+            stdio: 'ignore'
+        });
+        proc.unref();
+    } catch(err) {
+        if (!res.headersSent) {
+            res.status(500).json({ error: err.message });
+        }
     }
 });
 

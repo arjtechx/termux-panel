@@ -1,10 +1,9 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # =============================================================
-#  TERMUX cPANEL — Auto-Updater
-#  Baixa da última GitHub Release e aplica a atualização
+#  TERMUX cPANEL — Auto-Updater v4.0
+#  Baixa da última GitHub Release e aplica a atualização de forma segura
 # =============================================================
 
-# Silencia intromissões do Termius no terminal
 export _termius_integration_installed="yes"
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -12,16 +11,82 @@ PANEL_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
 CONFIG_FILE="$PANEL_DIR/config/update.json"
 PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 
+# Configuração de logs para logs/update.log
+mkdir -p "$PANEL_DIR/logs"
+UPDATE_LOG="$PANEL_DIR/logs/update.log"
+touch "$UPDATE_LOG" 2>/dev/null
+
+log_file() {
+  local level="$1"
+  local msg="$2"
+  local clean_msg="$(echo -e "$msg" | sed 's/\x1b\[[0-9;]*m//g')"
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $clean_msg" >> "$UPDATE_LOG" 2>/dev/null
+}
+
 GREEN="\033[0;32m"
 YELLOW="\033[1;33m"
 RED="\033[0;31m"
 BLUE="\033[0;34m"
 RESET="\033[0m"
 
-log()  { echo -e "${BLUE}[*]${RESET} $1"; }
-ok()   { echo -e "${GREEN}[+]${RESET} $1"; }
-warn() { echo -e "${YELLOW}[!]${RESET} $1"; }
-err()  { echo -e "${RED}[-]${RESET} $1"; }
+log()  { echo -e "${BLUE}[*]${RESET} $1"; log_file "INFO" "$1"; }
+ok()   { echo -e "${GREEN}[+]${RESET} $1"; log_file "OK" "$1"; }
+warn() { echo -e "${YELLOW}[!]${RESET} $1"; log_file "WARN" "$1"; }
+err()  { echo -e "${RED}[-]${RESET} $1"; log_file "ERRO" "$1"; }
+
+echo -e "${BLUE}============================================${RESET}"
+echo -e "${BLUE}   TERMUX cPANEL — Atualizando painel...   ${RESET}"
+echo -e "${BLUE}============================================${RESET}"
+echo ""
+
+# -----------------------------------------------------------------
+# LOCK DE ATUALIZAÇÃO EXCLUSIVO
+# -----------------------------------------------------------------
+LOCK_DIR="$HOME/.termux-panel-lock"
+UPDATE_LOCK="$LOCK_DIR/update.lock"
+mkdir -p "$LOCK_DIR"
+
+if [ -f "$UPDATE_LOCK" ]; then
+  OLD_UPDATE_PID="$(cat "$UPDATE_LOCK" 2>/dev/null)"
+  if [ -n "$OLD_UPDATE_PID" ] && kill -0 "$OLD_UPDATE_PID" 2>/dev/null; then
+    err "Atualização já está em andamento com PID $OLD_UPDATE_PID"
+    exit 1
+  else
+    log "Lock antigo de atualização encontrado. Removendo..."
+    rm -f "$UPDATE_LOCK"
+  fi
+fi
+
+echo "$$" > "$UPDATE_LOCK"
+
+cleanup_update_lock() {
+  rm -f "$UPDATE_LOCK"
+}
+trap cleanup_update_lock EXIT INT TERM
+
+# -----------------------------------------------------------------
+# PARAR PAINEL ANTES DA ATUALIZAÇÃO
+# -----------------------------------------------------------------
+log "Parando painel antes da atualização..."
+if [ -f "$PANEL_DIR/scripts/stop.sh" ]; then
+  bash "$PANEL_DIR/scripts/stop.sh" || true
+else
+  log "Usando stop fallback..."
+  for pid in $(ps -ef | grep -E "$PANEL_DIR/scripts/start.sh|bash scripts/start.sh|node .*server.js" | grep -v grep | awk '{print $2}'); do
+    kill "$pid" 2>/dev/null || true
+  done
+fi
+sleep 2
+
+RUNNING="$(ps -ef | grep -E "$PANEL_DIR/scripts/start.sh|node .*server.js" | grep -v grep || true)"
+if [ -n "$RUNNING" ]; then
+  warn "Ainda existem processos do painel rodando:"
+  echo "$RUNNING"
+  log "Tentando força final..."
+  for pid in $(echo "$RUNNING" | awk '{print $2}'); do
+    kill -9 "$pid" 2>/dev/null || true
+  done
+fi
 
 # Lê config de update
 GITHUB_REPO=""
@@ -29,11 +94,6 @@ if [ -f "$CONFIG_FILE" ]; then
     GITHUB_REPO=$(python3 -c "import json,sys; d=json.load(open('$CONFIG_FILE')); print(d.get('github_repo',''))" 2>/dev/null || \
                  node -e "try{const d=require('$CONFIG_FILE');console.log(d.github_repo||'')}catch(e){}" 2>/dev/null)
 fi
-
-echo -e "${BLUE}============================================${RESET}"
-echo -e "${BLUE}   TERMUX cPANEL — Atualizando painel...   ${RESET}"
-echo -e "${BLUE}============================================${RESET}"
-echo ""
 
 # -----------------------------------------------------------------
 # MÉTODO 1: GitHub Releases (se repositório configurado)
@@ -68,7 +128,6 @@ if [ -n "$GITHUB_REPO" ] && [ "$GITHUB_REPO" != "null" ] && [ "$GITHUB_REPO" != 
             ok "Extração básica concluída."
             log "Atualizando arquivos em: $PANEL_DIR"
 
-            # Copia recursivamente mantendo e atualizando os diretórios locais
             cp -rf "$TMP_EXTRACT/modules" "$PANEL_DIR/" 2>/dev/null || true
             cp -rf "$TMP_EXTRACT/public" "$PANEL_DIR/"
             cp -rf "$TMP_EXTRACT/scripts" "$PANEL_DIR/"
@@ -90,7 +149,6 @@ if [ -n "$GITHUB_REPO" ] && [ "$GITHUB_REPO" != "null" ] && [ "$GITHUB_REPO" != 
         rm -f "$TMP_TAR"
     else
         err "Falha no download de $DOWNLOAD_URL"
-        err "Verifique se o repositório está público e tem releases geradas."
         exit 1
     fi
 
@@ -107,7 +165,6 @@ elif git -C "$PANEL_DIR" rev-parse --is-inside-work-tree > /dev/null 2>&1; then
     git fetch origin
     if ! git pull --ff-only origin "$CURRENT_BRANCH"; then
         err "Atualizacao Git bloqueada por divergencia local."
-        err "Resolva as alteracoes locais ou atualize por release/tarball."
         exit 1
     fi
     ok "Codigo atualizado via git pull seguro."
@@ -139,7 +196,6 @@ else
         ok "Extraído do tarball local."
     else
         err "Nenhuma fonte de atualização disponível!"
-        err "Configure um repositório GitHub no painel ou coloque termux-panel-dist.tar.gz em ~/"
         exit 1
     fi
 fi
@@ -148,15 +204,12 @@ fi
 # PÓS-ATUALIZAÇÃO
 # -----------------------------------------------------------------
 cd "$PANEL_DIR"
-mkdir -p "$PANEL_DIR/logs"
 
-# Garante o arquivo de configuração my.cnf robusto para socket consistente
 log "Aplicando regras robustas do MariaDB (my.cnf) e permissões..."
 mkdir -p "$PREFIX/etc"
 mkdir -p "$PREFIX/var/run/mysqld"
 chmod 777 "$PREFIX/var/run/mysqld" 2>/dev/null || true
 
-# Define o caminho do banco de dados (MARIADB_DATA) padrão do Termux se não estiver setado
 MARIADB_DATA="${MARIADB_DATA:-$PREFIX/var/lib/mysql}"
 
 if [ ! -f "$PREFIX/etc/my.cnf" ]; then
@@ -176,92 +229,58 @@ EOF
     ok "my.cnf configurado com sucesso."
 fi
 
-# Garante permissões corretas para o usuário local no Termux
 current_user=$(whoami)
 mkdir -p "$PREFIX/var/run" "$PREFIX/var/log/nginx" "$PREFIX/var/lib/mysql" "$PREFIX/tmp" "$PREFIX/etc/nginx" "$PREFIX/etc/nginx/conf.d"
 chmod -R 777 "$PREFIX/var/run" "$PREFIX/var/log/nginx" "$PREFIX/var/lib/mysql" "$PREFIX/tmp" "$PREFIX/etc/nginx" "$PREFIX/etc/nginx/conf.d" 2>/dev/null || true
 chown -R "$current_user" "$PREFIX/var/run" "$PREFIX/var/log/nginx" "$PREFIX/var/lib/mysql" "$PREFIX/tmp" "$PREFIX/etc/nginx" "$PREFIX/etc/nginx/conf.d" 2>/dev/null || true
-# Remove arquivo PID órfão/travado que pode ter sido criado por root/su
 rm -f "$PREFIX/var/run/nginx.pid" 2>/dev/null || true
 
 log "Aplicando reparo base do NGINX/mime.types..."
 if [ -f "$SCRIPT_DIR/nginx-termux-repair.sh" ]; then
-    sh "$SCRIPT_DIR/nginx-termux-repair.sh" || warn "Reparo NGINX/mime.types falhou. Veja a saida acima."
-else
-    warn "Script de reparo NGINX nao encontrado: $SCRIPT_DIR/nginx-termux-repair.sh"
+    sh "$SCRIPT_DIR/nginx-termux-repair.sh" || warn "Reparo NGINX/mime.types falhou."
 fi
 
 log "Aplicando dependências Node.js..."
-# npm install --no-audit --no-fund  # Desativado para evitar reinstalação automática de dependências
 if [ -d "node_modules" ]; then
     ok "Dependências Node já presentes."
 else
-    warn "Diretório node_modules não encontrado. Instale manualmente se necessário."
+    warn "Diretório node_modules não encontrado. Executando npm install..."
+    npm install --no-audit --no-fund || true
 fi
 
-# Garante a existência do cloudflared atualizado no sistema
 function ensure_cloudflared_binary() {
     if command -v cloudflared >/dev/null 2>&1; then
         return 0
     fi
-
-    log "Aviso: 'cloudflared' não encontrado. Baixando binário oficial da Cloudflare para o túnel..."
-    
+    log "Aviso: 'cloudflared' não encontrado. Baixando binário oficial da Cloudflare..."
     local arch
     arch=$(uname -m)
     local download_url=""
-    
     case "$arch" in
-        x86_64)
-            download_url="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64"
-            ;;
-        aarch64)
-            download_url="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64"
-            ;;
-        armv7l|armhf)
-            download_url="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm"
-            ;;
-        i386|i686)
-            download_url="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-386"
-            ;;
-        *)
-            warn "Arquitetura '$arch' não suportada para download automatizado."
-            return 1
-            ;;
+        x86_64) download_url="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64" ;;
+        aarch64) download_url="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64" ;;
+        armv7l|armhf) download_url="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm" ;;
+        i386|i686) download_url="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-386" ;;
+        *) return 1 ;;
     esac
-
     local install_dest
     if echo "$PREFIX" | grep -q "com.termux"; then
         install_dest="$PREFIX/bin/cloudflared"
     else
         install_dest="/usr/local/bin/cloudflared"
     fi
-
-    log "Baixando binário oficial ($arch) de: $download_url"
-    local tmp_bin
-    tmp_bin=$(mktemp)
+    log "Baixando binário de: $download_url"
+    local tmp_bin=$(mktemp)
     if curl -L -s -S -o "$tmp_bin" "$download_url"; then
-        if echo "$PREFIX" | grep -q "com.termux"; then
-            cp "$tmp_bin" "$install_dest"
-            chmod +x "$install_dest"
-        else
-            if [ "$(id -u)" -eq 0 ]; then
-                cp "$tmp_bin" "$install_dest"
-                chmod +x "$install_dest"
-            else
-                sudo cp "$tmp_bin" "$install_dest"
-                sudo chmod +x "$install_dest"
-            fi
-        fi
+        cp "$tmp_bin" "$install_dest"
+        chmod +x "$install_dest"
         rm -f "$tmp_bin"
-        ok "Cloudflared instalado com sucesso em $install_dest."
+        ok "Cloudflared instalado com sucesso."
     else
         rm -f "$tmp_bin"
         warn "Falha ao baixar o cloudflared."
-        return 1
     fi
 }
-
 ensure_cloudflared_binary
 
 log "Aplicando configuração SSO do phpMyAdmin..."
@@ -270,7 +289,6 @@ if [ -f "$SCRIPT_DIR/setup-pma-sso.sh" ]; then
 fi
 
 log "Verificando e iniciando PHP-FPM..."
-mkdir -p "$PREFIX/var/run" "$PREFIX/tmp"
 PHPOUT=$(php-fpm --daemonize 2>&1)
 if [ $? -eq 0 ]; then
     ok "PHP-FPM iniciado."
@@ -286,40 +304,14 @@ elif echo "$NGOUT" | grep -qi "already in use\|already running"; then
     nginx -s reload 2>/dev/null && ok "NGINX recarregado." || ok "NGINX ativo."
 fi
 
+# Chmod nos scripts
+chmod +x "$PANEL_DIR"/scripts/*.sh 2>/dev/null || true
+chmod +x "$PANEL_DIR"/scripts/lib/*.sh 2>/dev/null || true
+
 ok "Painel atualizado com sucesso!"
-log "Encerrando para auto-restart..."
-sleep 2
-
-# Detecta a porta atual do painel de forma dinâmica
-PORT=8088
-SERVER_CONFIG_FILE="$PANEL_DIR/config/server.json"
-if [ -f "$SERVER_CONFIG_FILE" ]; then
-    PORT=$(python3 -c "import json; print(json.load(open('$SERVER_CONFIG_FILE')).get('port', 8088))" 2>/dev/null || \
-           node -e "try{const d=require('$SERVER_CONFIG_FILE');console.log(d.port||8088)}catch(e){console.log(8088)}" 2>/dev/null || \
-           echo 8088)
-fi
-
-# Mata o servidor para que o loop start.sh o reinicie
-OLDPID=$(lsof -t -i:$PORT 2>/dev/null)
-if [ -n "$OLDPID" ]; then
-    kill -9 "$OLDPID" 2>/dev/null
-else
-    for PID in $(pgrep -f 'node .*server\.js|node server\.js|node.*termux-panel/server\.js' 2>/dev/null); do
-        CWD="$(readlink "/proc/$PID/cwd" 2>/dev/null || true)"
-        CMDLINE="$(tr '\0' ' ' < "/proc/$PID/cmdline" 2>/dev/null || true)"
-        if [ "$CWD" != "$PANEL_DIR" ] && ! printf '%s' "$CMDLINE" | grep -F "$PANEL_DIR/server.js" >/dev/null 2>&1; then
-            continue
-        fi
-        kill -9 "$PID" 2>/dev/null || true
-    done
-fi
-
-# Se nao ha loop de auto-restart ativo, inicia pelo start.sh com lock anti-duplicidade
-sleep 2
-if ! lsof -t -i:$PORT > /dev/null 2>&1; then
-    nohup bash "$PANEL_DIR/scripts/start.sh" > "$PANEL_DIR/panel.log" 2>&1 &
-    PID_BG=$!
-    ok "Painel reiniciado em background. PID: $PID_BG"
-fi
+log "Iniciando painel atualizado..."
+nohup bash "$PANEL_DIR/scripts/start.sh" >/dev/null 2>&1 &
+PID_BG=$!
+ok "Painel reiniciado em background. PID: $PID_BG"
 
 exit 0

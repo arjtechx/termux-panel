@@ -1730,6 +1730,40 @@
                             <i data-lucide="lock"></i> Salvar Acesso
                         </button>
                     </div>
+
+                    <!-- Card de Controle de Processos & Memória -->
+                    <div class="card" style="display:flex; flex-direction:column; justify-content:space-between; height: 100%;">
+                        <div>
+                            <h3 class="card-title" style="margin-bottom:14px; display:flex; align-items:center;"><i data-lucide="cpu" style="color:var(--primary); margin-right:8px;"></i>Processos & Memória (Moto G52)</h3>
+                            <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px;">
+                                Gerencie a alocação de memória RAM para o Node.js e previna processos duplicados.
+                            </p>
+                            
+                            <!-- Seletor de Memória -->
+                            <div style="background:var(--surface2); border:1px solid var(--border); border-radius:6px; padding:10px; margin-bottom:12px;">
+                                <label class="form-label" style="font-size:0.8rem; font-weight:600; margin-bottom:6px; display:block;">Modo de Memória Node.js:</label>
+                                <select id="settings-memory-mode" style="width:100%; padding:8px 12px; font-size:0.875rem;" onchange="changeNodeMemoryMode()">
+                                    <option value="safe">Seguro (128 MB) - Menor consumo RAM</option>
+                                    <option value="balanced" selected>Balanceado (256 MB) - Recomendado</option>
+                                    <option value="performance">Desempenho (512 MB) - Testes/Alta carga</option>
+                                </select>
+                                <span id="memory-restart-badge" class="badge badge-warning hidden" style="margin-top:6px; display:inline-block; font-size:0.7rem;">⚠️ Requer Reinício Seguro</span>
+                            </div>
+
+                            <!-- Ações -->
+                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:12px;">
+                                <button class="btn btn-secondary btn-sm" onclick="diagnoseProcesses()">
+                                    <i data-lucide="refresh-cw"></i> Diagnosticar
+                                </button>
+                                <button class="btn btn-danger btn-sm" onclick="stopDuplicatePanel()">
+                                    <i data-lucide="trash-2"></i> Limpar Duplicados
+                                </button>
+                            </div>
+                        </div>
+                        <button class="btn btn-primary btn-block" onclick="safeRestartPanel()">
+                            <i data-lucide="power"></i> Reinício Seguro (Stop/Start)
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -1795,11 +1829,37 @@
     </div>
 </div>
 
+<!-- ============================================================
+     MODAL: DIAGNÓSTICO DE PROCESSOS E MEMÓRIA (v4.0)
+============================================================ -->
+<div id="processDiagnosticModal" class="modal hidden">
+    <div class="modal-box" style="max-width: 750px; width: 95%;">
+        <div class="modal-header">
+            <h3>🔍 Diagnóstico Completo de Processos</h3>
+            <button class="btn btn-secondary btn-sm" onclick="closeProcessDiagnosticModal()">✕</button>
+        </div>
+        <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:16px;">
+            Abaixo estão detalhados os processos em execução e os bloqueios de segurança do Termux Panel no seu dispositivo.
+        </p>
+        <div class="form-stack">
+            <div id="process-diagnostic-content" class="terminal-box" style="height:350px; overflow-y:auto; font-size:12px; font-family:monospace; white-space:pre-wrap; background:#0d1117; color:#c9d1d9; padding:16px; border-radius:6px; border: 1px solid var(--border);">
+                [Carregando diagnóstico...]
+            </div>
+        </div>
+        <div class="form-actions" style="margin-top:20px">
+            <button type="button" class="btn btn-primary" onclick="diagnoseProcesses()">
+                <i data-lucide="refresh-cw"></i> Atualizar Diagnóstico
+            </button>
+            <button type="button" class="btn btn-secondary" onclick="closeProcessDiagnosticModal()">Fechar</button>
+        </div>
+    </div>
+</div>
+
 <!-- Container de Notificações Toast Global -->
 <div class="fm-toast-container" id="fm-toast-container"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.92"></script>
+<script src="filemanager.js?v=0.2.93"></script>
 <script src="app.js?v=4.5"></script>
 </body>
 </html>

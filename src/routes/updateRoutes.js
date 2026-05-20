@@ -6,9 +6,33 @@ const { spawn, exec } = require('child_process');
 const axios = require('axios');
 const systemConfig = require('../utils/env');
 const { runCmd } = require('../utils/shell');
+const os = require('os');
 
 const BASE_DIR = path.join(__dirname, '..', '..');
 const UPDATE_SCRIPT = path.join(BASE_DIR, 'scripts', 'update.sh');
+const LOCK_DIR = path.join(os.homedir(), '.termux-panel-lock');
+const UPDATE_LOCK = path.join(LOCK_DIR, 'update.lock');
+
+function isPidAlive(pid) {
+    if (!pid) return false;
+    try {
+        process.kill(pid, 0);
+        return true;
+    } catch (e) {
+        return e.code === 'EPERM';
+    }
+}
+
+function isUpdateLocked() {
+    try {
+        if (!fs.existsSync(UPDATE_LOCK)) return false;
+        const pid = parseInt(fs.readFileSync(UPDATE_LOCK, 'utf8').trim());
+        if (!pid) return false;
+        return isPidAlive(pid);
+    } catch (e) {
+        return false;
+    }
+}
 
 function normalizeGithubRepo(repo) {
     const clean = String(repo || '')
@@ -34,6 +58,12 @@ router.get('/api/system/update/run', (req, res) => {
     res.flushHeaders();
 
     const send = (data) => res.write(`data: ${JSON.stringify({ line: data })}\n\n`);
+
+    if (isUpdateLocked()) {
+        send('[ERR] Atualização já está em andamento.');
+        send('__DONE__:1');
+        return res.end();
+    }
 
     const tag = req.query.tag || '';
     const args = [];
@@ -927,6 +957,20 @@ router.get('/api/update/install', async (req, res) => {
         res.write(`data: ${JSON.stringify({ line: `[${type}] ${message}` })}\n\n`);
     };
 
+    if (isUpdateLocked()) {
+        sendLog('ERR', 'Atualização já está em andamento.');
+        res.write(`data: ${JSON.stringify({ line: '__DONE__:1' })}\n\n`);
+        return res.end();
+    }
+
+    // Adquire lock
+    try {
+        if (!fs.existsSync(LOCK_DIR)) {
+            fs.mkdirSync(LOCK_DIR, { recursive: true });
+        }
+        fs.writeFileSync(UPDATE_LOCK, process.pid.toString());
+    } catch(e) {}
+
     const targetTag = normalizeReleaseTag(req.query.tag || 'latest');
     sendLog('INFO', `Verificando releases GitHub para tag: ${targetTag}...`);
 
@@ -1017,6 +1061,7 @@ router.get('/api/update/install', async (req, res) => {
             if (!tagArchiveUrl) {
                 sendLog('ERR', `Falha ao baixar o pacote: ${dlErr.message}`);
                 res.write(`data: ${JSON.stringify({ line: '__DONE__:1' })}\n\n`);
+                try { if (fs.existsSync(UPDATE_LOCK)) fs.unlinkSync(UPDATE_LOCK); } catch(e) {}
                 return res.end();
             }
 
@@ -1038,6 +1083,7 @@ router.get('/api/update/install', async (req, res) => {
             } catch (tagDlErr) {
                 sendLog('ERR', `Falha ao baixar release e tag: ${tagDlErr.message}`);
                 res.write(`data: ${JSON.stringify({ line: '__DONE__:1' })}\n\n`);
+                try { if (fs.existsSync(UPDATE_LOCK)) fs.unlinkSync(UPDATE_LOCK); } catch(e) {}
                 return res.end();
             }
         }
@@ -1058,6 +1104,7 @@ router.get('/api/update/install', async (req, res) => {
         } catch (extErr) {
             sendLog('ERR', `Falha ao extrair tarball: ${extErr.message}`);
             res.write(`data: ${JSON.stringify({ line: '__DONE__:1' })}\n\n`);
+            try { if (fs.existsSync(UPDATE_LOCK)) fs.unlinkSync(UPDATE_LOCK); } catch(e) {}
             return res.end();
         }
 
@@ -1075,6 +1122,7 @@ router.get('/api/update/install', async (req, res) => {
         } catch (copyErr) {
             sendLog('ERR', `Falha ao instalar arquivos: ${copyErr.message}`);
             res.write(`data: ${JSON.stringify({ line: '__DONE__:1' })}\n\n`);
+            try { if (fs.existsSync(UPDATE_LOCK)) fs.unlinkSync(UPDATE_LOCK); } catch(e) {}
             return res.end();
         }
 
@@ -1121,6 +1169,13 @@ router.get('/api/update/install', async (req, res) => {
 
         sendLog('OK', `Atualização concluída.`);
         res.write(`data: ${JSON.stringify({ line: '__DONE__:0' })}\n\n`);
+        
+        try {
+            if (fs.existsSync(UPDATE_LOCK)) {
+                fs.unlinkSync(UPDATE_LOCK);
+            }
+        } catch(e) {}
+        
         res.end();
 
         setTimeout(() => {
@@ -1165,12 +1220,22 @@ router.get('/api/update/install', async (req, res) => {
     } catch (err) {
         sendLog('ERR', `Erro geral durante atualização: ${err.message}`);
         res.write(`data: ${JSON.stringify({ line: '__DONE__:1' })}\n\n`);
+        
+        try {
+            if (fs.existsSync(UPDATE_LOCK)) {
+                fs.unlinkSync(UPDATE_LOCK);
+            }
+        } catch(e) {}
+        
         res.end();
     }
 });
 
 // POST /api/update/install
 router.post('/api/update/install', (req, res) => {
+    if (isUpdateLocked()) {
+        return res.status(400).json({ success: false, error: 'Atualização já está em andamento' });
+    }
     res.json({ success: true, message: 'Processo iniciado. Acompanhe via SSE GET.' });
 });
 
@@ -1185,10 +1250,31 @@ router.get('/api/update/rollback', async (req, res) => {
         res.write(`data: ${JSON.stringify({ line: `[${type}] ${message}` })}\n\n`);
     };
 
+    if (isUpdateLocked()) {
+        sendLog('ERR', 'Atualização já está em andamento.');
+        res.write(`data: ${JSON.stringify({ line: '__DONE__:1' })}\n\n`);
+        return res.end();
+    }
+
+    // Adquire lock
+    try {
+        if (!fs.existsSync(LOCK_DIR)) {
+            fs.mkdirSync(LOCK_DIR, { recursive: true });
+        }
+        fs.writeFileSync(UPDATE_LOCK, process.pid.toString());
+    } catch(e) {}
+
     const targetVersion = normalizeReleaseTag(req.query.version || '', '');
     if (!targetVersion) {
         sendLog('ERR', 'Versão para rollback não especificada.');
         res.write(`data: ${JSON.stringify({ line: '__DONE__:1' })}\n\n`);
+        
+        try {
+            if (fs.existsSync(UPDATE_LOCK)) {
+                fs.unlinkSync(UPDATE_LOCK);
+            }
+        } catch(e) {}
+        
         return res.end();
     }
 
@@ -1198,6 +1284,13 @@ router.get('/api/update/rollback', async (req, res) => {
     if (!fs.existsSync(backupDir)) {
         sendLog('ERR', `Nenhum backup encontrado para a versão: ${targetVersion}`);
         res.write(`data: ${JSON.stringify({ line: '__DONE__:1' })}\n\n`);
+        
+        try {
+            if (fs.existsSync(UPDATE_LOCK)) {
+                fs.unlinkSync(UPDATE_LOCK);
+            }
+        } catch(e) {}
+        
         return res.end();
     }
 
@@ -1215,6 +1308,13 @@ router.get('/api/update/rollback', async (req, res) => {
 
         sendLog('OK', `Rollback para a versão ${targetVersion} concluído com sucesso!`);
         res.write(`data: ${JSON.stringify({ line: '__DONE__:0' })}\n\n`);
+        
+        try {
+            if (fs.existsSync(UPDATE_LOCK)) {
+                fs.unlinkSync(UPDATE_LOCK);
+            }
+        } catch(e) {}
+        
         res.end();
 
         setTimeout(() => {
@@ -1225,12 +1325,22 @@ router.get('/api/update/rollback', async (req, res) => {
     } catch (err) {
         sendLog('ERR', `Erro durante o rollback: ${err.message}`);
         res.write(`data: ${JSON.stringify({ line: '__DONE__:1' })}\n\n`);
+        
+        try {
+            if (fs.existsSync(UPDATE_LOCK)) {
+                fs.unlinkSync(UPDATE_LOCK);
+            }
+        } catch(e) {}
+        
         res.end();
     }
 });
 
 // POST /api/update/rollback
 router.post('/api/update/rollback', (req, res) => {
+    if (isUpdateLocked()) {
+        return res.status(400).json({ success: false, error: 'Atualização já está em andamento' });
+    }
     res.json({ success: true, message: 'Rollback iniciado. Acompanhe via SSE GET.' });
 });
 

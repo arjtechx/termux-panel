@@ -523,6 +523,20 @@ function install_panel() {
     detect_os
 
     echo ""
+    log "Verificando processos antigos..."
+    if [ -f "scripts/stop.sh" ]; then
+      bash scripts/stop.sh || true
+    elif [ -f "$HOME/termux-panel/scripts/stop.sh" ]; then
+      bash "$HOME/termux-panel/scripts/stop.sh" || true
+    else
+      for pid in $(ps -ef 2>/dev/null | grep -E "scripts/start.sh|bash scripts/start.sh|node .*server.js" | grep -v grep | awk '{print $2}'); do
+        echo "[INFO] Encerrando processo antigo PID $pid"
+        kill -9 "$pid" 2>/dev/null || true
+      done
+    fi
+    sleep 2
+
+    echo ""
     log "Verificando instalação existente do MariaDB..."
     local mariadb_found
     mariadb_found=$(detect_mariadb)
@@ -681,11 +695,21 @@ function install_panel() {
         warn "Diretório node_modules não encontrado. Instale manualmente se necessário."
     fi
 
+    # Garante permissões de execução para scripts e subdiretórios
+    chmod +x scripts/*.sh 2>/dev/null || true
+    chmod +x scripts/lib/*.sh 2>/dev/null || true
+
     echo ""
     echo -e "${GREEN}════════════════════════════════════════${RESET}"
     ok "Instalação concluída com sucesso!"
     echo -e "${GREEN}════════════════════════════════════════${RESET}"
-    sleep 2
+    
+    ask "Deseja iniciar o painel agora?"
+    read -p "Iniciar painel? (S/n): " START_NOW
+    if [[ "${START_NOW,,}" != "n" ]]; then
+        log "Iniciando painel..."
+        bash scripts/start.sh
+    fi
 }
 
 function update_panel() {

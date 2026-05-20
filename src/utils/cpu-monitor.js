@@ -13,6 +13,44 @@ let lastCpuTimes = null;
 let cachedCpuName = null;
 let cachedCoreIds = null;
 
+// Silenciamento de logs repetitivos
+let lastCpuErrorLog = 0;
+
+function logCpuErrorOnce(message) {
+    const now = Date.now();
+    if (now - lastCpuErrorLog > 60000) {
+        console.warn(message);
+        lastCpuErrorLog = now;
+    }
+}
+
+// Medição da CPU do próprio processo Node.js
+let lastNodeCpuUsage = null;
+let lastNodeCpuTime = null;
+
+function getNodeCpuUsagePercent() {
+    const now = Date.now();
+    const currentUsage = process.cpuUsage();
+
+    if (!lastNodeCpuUsage || !lastNodeCpuTime) {
+        lastNodeCpuUsage = currentUsage;
+        lastNodeCpuTime = now;
+        return 0;
+    }
+
+    const userDiff = currentUsage.user - lastNodeCpuUsage.user;
+    const sysDiff = currentUsage.system - lastNodeCpuUsage.system;
+    const timeDiff = (now - lastNodeCpuTime) * 1000; // Milissegundos para microssegundos
+
+    lastNodeCpuUsage = currentUsage;
+    lastNodeCpuTime = now;
+
+    if (timeDiff <= 0) return 0;
+
+    const percent = ((userDiff + sysDiff) / timeDiff) * 100;
+    return Number(Math.min(100, Math.max(0, percent)).toFixed(2));
+}
+
 function readText(filePath) {
     return fs.readFileSync(filePath, 'utf8');
 }
@@ -32,7 +70,11 @@ function readTextFileSafe(filePath) {
         if (!content || !content.trim()) return null;
         return content;
     } catch (error) {
-        console.error(`[CPU] Falha lendo ${filePath}:`, error.message);
+        if (error.code === 'EACCES') {
+            logCpuErrorOnce(`[CPU] Sem permissão (EACCES) para ler ${filePath}. Usando fallback silencioso.`);
+        } else {
+            logCpuErrorOnce(`[CPU] Falha lendo ${filePath}: ${error.message}`);
+        }
         return null;
     }
 }
@@ -47,7 +89,8 @@ function execSafe(command, timeout = 3000) {
         if (!output || !output.trim()) return null;
         return output;
     } catch (error) {
-        console.error(`[CPU] Falha comando ${command}:`, error.message);
+        // Não loga erros normais de comando indisponível se estivermos silenciosos
+        logCpuErrorOnce(`[CPU] Comando '${command}' indisponível ou falhou.`);
         return null;
     }
 }
@@ -227,7 +270,7 @@ function readFrequency(coreId) {
         return { formatted: `${ghz.toFixed(2)} GHz` };
     }
 
-    return { formatted: 'freq. indisponivel' };
+    return { formatted: 'N/A' };
 }
 
 function readCpuName() {
@@ -256,12 +299,16 @@ function readCpuName() {
 
     cachedCpuName = os.arch() === 'arm64' || os.arch() === 'aarch64'
         ? 'AArch64 Processor'
-        : 'CPU Android nao identificado';
+        : 'CPU Android';
     return cachedCpuName;
 }
 
 function getLoadAverageSafe() {
-    const raw = readTextFileSafe(PROC_LOADAVG);
+    let raw = readTextFileSafe(PROC_LOADAVG);
+    if (!raw && cpuUseRoot) {
+        raw = execSafe("su -c 'cat /proc/loadavg'");
+    }
+
     if (raw) {
         const parts = raw.trim().split(/\s+/);
         return {
@@ -283,14 +330,37 @@ function getLoadAverageSafe() {
             formatted: `${avg[0].toFixed(2)} / ${avg[1].toFixed(2)} / ${avg[2].toFixed(2)}`
         };
     } catch (_) {
-        return null;
+        return {
+            source: 'indisponivel',
+            load1: 0,
+            load5: 0,
+            load15: 0,
+            formatted: 'N/A'
+        };
     }
 }
 
 function readCpuUsageFromTopSafe() {
-    const output = execSafe('top -bn1 | head -20');
+    const commands = [
+        'top -b -n 1 | head -20',
+        'toybox top -b -n 1 | head -20',
+        'top -bn1 | head -20'
+    ];
+
+    let output = null;
+    let method = 'top';
+
+    for (const cmd of commands) {
+        output = execSafe(cmd);
+        if (output) {
+            method = cmd.includes('toybox') ? 'toybox top' : 'top';
+            break;
+        }
+    }
+
     if (!output) return null;
 
+    // Parse Android top format 1: "CPU: 10% usr 5% sys"
     let match = output.match(/CPU:\s*([\d.]+)%\s*usr\s*([\d.]+)%\s*sys/i);
     if (match) {
         const usr = Number(match[1]) || 0;
@@ -298,25 +368,68 @@ function readCpuUsageFromTopSafe() {
         const total = Math.min(100, Math.max(0, usr + sys));
         return {
             success: true,
-            method: 'top',
+            method,
             cpuTotalPercent: Number(total.toFixed(1)),
             cpuTotal: `${total.toFixed(1)}%`
         };
     }
 
+    // Parse standard toybox top format 2: "10%usr  5%sys"
+    match = output.match(/([\d.]+)%usr\s*([\d.]+)%sys/i);
+    if (match) {
+        const usr = Number(match[1]) || 0;
+        const sys = Number(match[2]) || 0;
+        const total = Math.min(100, Math.max(0, usr + sys));
+        return {
+            success: true,
+            method,
+            cpuTotalPercent: Number(total.toFixed(1)),
+            cpuTotal: `${total.toFixed(1)}%`
+        };
+    }
+
+    // Parse standard top format 3: "5.0 us, 3.0 sy, 92.0 id"
     match = output.match(/([\d.]+)\s*us,\s*([\d.]+)\s*sy.*?([\d.]+)\s*id/i);
     if (match) {
         const idle = Number(match[3]) || 0;
         const total = Math.min(100, Math.max(0, 100 - idle));
         return {
             success: true,
-            method: 'top',
+            method,
+            cpuTotalPercent: Number(total.toFixed(1)),
+            cpuTotal: `${total.toFixed(1)}%`
+        };
+    }
+
+    // CPU usage line in Linux: "%Cpu(s): 10.0 us,  2.0 sy"
+    match = output.match(/%Cpu\(s\):\s*([\d.]+)\s*us,\s*([\d.]+)\s*sy/i);
+    if (match) {
+        const usr = Number(match[1]) || 0;
+        const sys = Number(match[2]) || 0;
+        const total = Math.min(100, Math.max(0, usr + sys));
+        return {
+            success: true,
+            method,
             cpuTotalPercent: Number(total.toFixed(1)),
             cpuTotal: `${total.toFixed(1)}%`
         };
     }
 
     return null;
+}
+
+function readCpuUsageFromPsSafe() {
+    const output = execSafe('ps -A -o pid,ppid,pcpu,pmem,comm 2>/dev/null | head -20') ||
+                   execSafe('ps -ef 2>/dev/null | head -20');
+    if (!output) return null;
+
+    // Se suportou o comando de leitura, retorna indicativo do ps
+    return {
+        success: true,
+        method: 'ps',
+        cpuTotalPercent: 0,
+        cpuTotal: 'Limitada (Android)'
+    };
 }
 
 function setCpuRootMode(enabled) {
@@ -338,8 +451,11 @@ function getCpuStats() {
     const coresCount = coreIds.length || 0;
     const loadAverage = getLoadAverageSafe();
     const onlineSet = readOnlineSet();
+    const nodeCpuUsagePercent = getNodeCpuUsagePercent();
 
+    // Roda medição principal da CPU
     const statResult = readProcStatSafe();
+
     if (statResult.success && statResult.cpus.length > 0) {
         const current = statResult.cpus;
 
@@ -366,6 +482,7 @@ function getCpuStats() {
                         frequency: readFrequency(cpu.id)
                     })),
                 loadAverage,
+                nodeCpuUsagePercent,
                 status: cpuUseRoot ? 'Coletando primeira leitura com root' : 'Coletando primeira leitura'
             };
         }
@@ -387,7 +504,7 @@ function getCpuStats() {
                     usagePercent: Number(usagePercent.toFixed(1)),
                     usage: online ? `${usagePercent.toFixed(1)}%` : 'offline',
                     online,
-                    frequency: online ? readFrequency(cpu.id) : { formatted: 'freq. indisponivel' }
+                    frequency: online ? readFrequency(cpu.id) : { formatted: 'N/A' }
                 };
             });
 
@@ -403,13 +520,29 @@ function getCpuStats() {
             coresCount,
             cores,
             loadAverage,
+            nodeCpuUsagePercent,
             status: cpuUseRoot ? 'Monitorando CPU com root' : 'Monitorando CPU'
         };
     }
 
+    // FALLBACK LAYER 1: top
     const topUsage = readCpuUsageFromTopSafe();
     if (topUsage) {
         lastCpuTimes = null;
+
+        // Popula cores com frequências e status mesmo no modo fallback
+        const cores = coreIds.map(coreId => {
+            const online = isCoreOnline(coreId, onlineSet);
+            return {
+                id: coreId,
+                label: coreId.toUpperCase().replace('CPU', 'CPU '),
+                usagePercent: 0,
+                usage: online ? 'N/A' : 'offline',
+                online,
+                frequency: online ? readFrequency(coreId) : { formatted: 'N/A' }
+            };
+        });
+
         return {
             success: true,
             partial: true,
@@ -417,31 +550,80 @@ function getCpuStats() {
             mode: 'top_fallback',
             method: topUsage.method,
             cpuName,
-            cpuTotal: topUsage.cpuTotal,
+            cpuTotal: topUsage.cpuTotal === 'Android' ? 'Limitada (Android)' : topUsage.cpuTotal,
             cpuTotalPercent: topUsage.cpuTotalPercent,
             coresCount,
-            cores: [],
+            cores,
             loadAverage,
-            status: 'Monitorando CPU via top',
+            nodeCpuUsagePercent,
+            status: 'CPU estimada via top (leitura proc/stat bloqueada pelo Android)',
             error: statResult.error || 'PROC_STAT_UNAVAILABLE'
         };
     }
 
+    // FALLBACK LAYER 2: ps
+    const psUsage = readCpuUsageFromPsSafe();
+    if (psUsage) {
+        lastCpuTimes = null;
+
+        const cores = coreIds.map(coreId => {
+            const online = isCoreOnline(coreId, onlineSet);
+            return {
+                id: coreId,
+                label: coreId.toUpperCase().replace('CPU', 'CPU '),
+                usagePercent: 0,
+                usage: online ? 'N/A' : 'offline',
+                online,
+                frequency: online ? readFrequency(coreId) : { formatted: 'N/A' }
+            };
+        });
+
+        return {
+            success: true,
+            partial: true,
+            root: cpuUseRoot,
+            mode: 'ps_fallback',
+            method: psUsage.method,
+            cpuName,
+            cpuTotal: 'Limitada (Android)',
+            cpuTotalPercent: 0,
+            coresCount,
+            cores,
+            loadAverage,
+            nodeCpuUsagePercent,
+            status: 'Processos estimados via ps (leitura proc/stat bloqueada pelo Android)',
+            error: statResult.error || 'PROC_STAT_UNAVAILABLE'
+        };
+    }
+
+    // FALLBACK LAYER 3: process.cpuUsage() + frequências locais
     lastCpuTimes = null;
+    const cores = coreIds.map(coreId => {
+        const online = isCoreOnline(coreId, onlineSet);
+        return {
+            id: coreId,
+            label: coreId.toUpperCase().replace('CPU', 'CPU '),
+            usagePercent: 0,
+            usage: online ? 'N/A' : 'offline',
+            online,
+            frequency: online ? readFrequency(coreId) : { formatted: 'N/A' }
+        };
+    });
+
     return {
         success: true,
         partial: true,
         root: cpuUseRoot,
-        mode: 'loadavg_fallback',
+        mode: 'limited',
+        method: 'process.cpuUsage',
         cpuName,
-        cpuTotal: '--%',
+        cpuTotal: 'Limitada (Android)',
         cpuTotalPercent: 0,
         coresCount,
-        cores: [],
-        loadAverage,
-        status: cpuUseRoot
-            ? 'Root ativo, mas /proc/stat indisponivel. Usando carga media.'
-            : 'Modo parcial - usando carga media',
+        cores,
+        loadAverage: { source: 'indisponivel', load1: 0, load5: 0, load15: 0, formatted: 'N/A' },
+        nodeCpuUsagePercent,
+        status: 'CPU total indisponível: leitura bloqueada pelo Android.',
         error: statResult.error || 'PROC_STAT_UNAVAILABLE'
     };
 }

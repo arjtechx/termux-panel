@@ -2347,6 +2347,20 @@ async function loadSettings() {
                 btnBoot.innerHTML = 'Ativar';
             }
         }
+
+        // Carrega modo de memória
+        try {
+            const procRes = await safeFetch(`${API_BASE}/system/processes`);
+            if (procRes?.success && procRes.panel) {
+                const memSelect = document.getElementById('settings-memory-mode');
+                if (memSelect) {
+                    memSelect.value = procRes.panel.nodeMemoryMode || 'balanced';
+                }
+            }
+        } catch(e) {
+            console.error('Falha ao carregar processos/memória:', e);
+        }
+
         if (window.lucide) lucide.createIcons();
     }
 }
@@ -3943,5 +3957,196 @@ function toggleAllMonitorCards() {
 window.initMonitorCards = initMonitorCards;
 window.toggleMonitorCard = toggleMonitorCard;
 window.toggleAllMonitorCards = toggleAllMonitorCards;
+
+// ============================================================
+//  CONTROLE DE PROCESSOS E MEMÓRIA (MOTO G52 + ROOT)
+// ============================================================
+async function changeNodeMemoryMode() {
+    const select = document.getElementById('settings-memory-mode');
+    const badge = document.getElementById('memory-restart-badge');
+    if (!select) return;
+    const mode = select.value;
+    
+    try {
+        const response = await fetch(`${API_BASE}/system/settings/memory`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode })
+        });
+        const res = await response.json();
+        if (res.success) {
+            showToast(res.message || 'Configuração de memória alterada. Reinicie para aplicar.', 'success');
+            if (badge) badge.classList.remove('hidden');
+        } else {
+            showToast(res.error || 'Falha ao alterar configuração de memória', 'error');
+        }
+    } catch(err) {
+        showToast('Erro ao alterar configuração de memória', 'error');
+        console.error(err);
+    }
+}
+
+async function diagnoseProcesses() {
+    const modal = document.getElementById('processDiagnosticModal');
+    const content = document.getElementById('process-diagnostic-content');
+    if (modal) modal.classList.remove('hidden');
+    if (content) content.innerHTML = '[Carregando diagnóstico...]';
+
+    try {
+        const response = await fetch(`${API_BASE}/system/processes`);
+        const res = await response.json();
+        if (res.success) {
+            let output = '';
+            output += `=== DADOS DO PAINEL ===\n`;
+            output += `Porta configurada: ${res.panel.port}\n`;
+            output += `Porta ocupada? ${res.panel.portBusy ? 'SIM (PID: ' + res.panel.portBusyPid + ')' : 'NÃO'}\n`;
+            output += `Lock do Node ativo? ${res.panel.pidFile ? 'SIM (PID no arquivo: ' + res.panel.pidFile + ')' : 'NÃO'}\n`;
+            output += `Lock do Loop (start.sh) ativo? ${res.panel.startPidFile ? 'SIM (PID no arquivo: ' + res.panel.startPidFile + ')' : 'NÃO'}\n`;
+            output += `Modo de memória Node.js: ${res.panel.nodeMemoryMode} (${res.panel.nodeMemoryMb} MB)\n\n`;
+
+            output += `=== PROCESSOS DO PAINEL ===\n`;
+            output += `Processos de start.sh ativos: ${res.panel.startScripts.length}\n`;
+            res.panel.startScripts.forEach(proc => {
+                output += `  - PID: ${proc.pid} | PPID: ${proc.ppid} | Comando: ${proc.cmd}\n`;
+            });
+            output += `Processos do Node.js server.js ativos: ${res.panel.nodeServers.length}\n`;
+            res.panel.nodeServers.forEach(proc => {
+                output += `  - PID: ${proc.pid} | PPID: ${proc.ppid} | Comando: ${proc.cmd}\n`;
+            });
+            output += `\n`;
+
+            output += `=== SERVIÇOS DO SISTEMA ===\n`;
+            output += `Lock de atualização ativo? ${res.locks.updateLock ? 'SIM' : 'NÃO'}\n`;
+            output += `Lock de start.sh ativo? ${res.locks.startLock ? 'SIM' : 'NÃO'}\n`;
+            output += `Processos MariaDB ativos: ${res.services.mariadb.length}\n`;
+            res.services.mariadb.forEach(proc => {
+                output += `  - PID: ${proc.pid} | Comando: ${proc.cmd}\n`;
+            });
+            output += `Processos Cloudflared ativos: ${res.services.cloudflared.length}\n`;
+            res.services.cloudflared.forEach(proc => {
+                output += `  - PID: ${proc.pid} | Comando: ${proc.cmd}\n`;
+            });
+            output += `\n`;
+
+            output += `=== MEMÓRIA RAM DO SISTEMA ===\n`;
+            output += `Total: ${res.memory.total} MB | Livre: ${res.memory.free} MB | Uso: ${res.memory.usagePercent}%\n\n`;
+
+            output += `=== REGISTROS OOM/KILL DO KERNEL (dmesg) ===\n`;
+            output += `${res.oomLog}\n`;
+
+            if (content) content.textContent = output;
+        } else {
+            if (content) content.textContent = 'Erro ao obter dados de diagnóstico: ' + (res.error || 'Erro desconhecido');
+        }
+    } catch(err) {
+        if (content) content.textContent = 'Erro ao realizar requisição de diagnóstico: ' + err.message;
+        console.error(err);
+    }
+}
+
+function closeProcessDiagnosticModal() {
+    const modal = document.getElementById('processDiagnosticModal');
+    if (modal) modal.classList.add('hidden');
+}
+
+async function stopDuplicatePanel() {
+    if (!confirm('Deseja realmente parar processos duplicados do painel? Todos os processos antigos serão encerrados e limpos de forma segura.')) {
+        return;
+    }
+    try {
+        const response = await fetch(`${API_BASE}/system/stop`, { method: 'POST' });
+        const res = await response.json();
+        if (res.success) {
+            showToast('Processo de parada segura disparado. O painel será encerrado em instantes.', 'success');
+        } else {
+            showToast(res.error || 'Falha ao solicitar parada de duplicados', 'error');
+        }
+    } catch(err) {
+        showToast('Erro ao solicitar parada de duplicados', 'error');
+        console.error(err);
+    }
+}
+
+async function safeRestartPanel() {
+    if (!confirm('Deseja realizar o Reinício Seguro? O painel irá parar todos os seus processos e reiniciará limpo em até 5 segundos. Esta página tentará reconectar automaticamente.')) {
+        return;
+    }
+    
+    // Mostra tela/loader de carregamento/reinício
+    const overlay = document.createElement('div');
+    overlay.style.position = 'fixed';
+    overlay.style.top = '0';
+    overlay.style.left = '0';
+    overlay.style.width = '100vw';
+    overlay.style.height = '100vh';
+    overlay.style.background = 'rgba(0,0,0,0.85)';
+    overlay.style.color = '#fff';
+    overlay.style.display = 'flex';
+    overlay.style.flexDirection = 'column';
+    overlay.style.justifyContent = 'center';
+    overlay.style.alignItems = 'center';
+    overlay.style.zIndex = '999999';
+    overlay.innerHTML = `
+        <div style="font-size:2rem; margin-bottom:15px; animation: spin 2s linear infinite;">🔄</div>
+        <div style="font-size:1.2rem; font-weight:bold; margin-bottom:10px;">Executando Reinício Seguro...</div>
+        <div style="font-size:0.9rem; color:#aaa;" id="restart-status">Enviando sinal de reinício...</div>
+    `;
+    document.body.appendChild(overlay);
+
+    try {
+        const response = await fetch(`${API_BASE}/system/restart`, { method: 'POST' });
+        const res = await response.json();
+        if (!res.success) {
+            showToast(res.error || 'Erro ao enviar sinal de reinício', 'error');
+            document.body.removeChild(overlay);
+            return;
+        }
+
+        let attempts = 0;
+        const maxAttempts = 30;
+        document.getElementById('restart-status').textContent = 'Aguardando painel desligar e subir novamente (isso leva ~5 segundos)...';
+
+        // Intervalo para verificar quando a porta voltar a responder
+        const interval = setInterval(async () => {
+            attempts++;
+            if (attempts > maxAttempts) {
+                clearInterval(interval);
+                document.getElementById('restart-status').innerHTML = '❌ O servidor está demorando muito para responder.<br>Por favor, verifique no Termux manualmente ou recarregue a página.';
+                const closeBtn = document.createElement('button');
+                closeBtn.className = 'btn btn-secondary btn-sm';
+                closeBtn.style.marginTop = '15px';
+                closeBtn.textContent = 'Fechar Aviso';
+                closeBtn.onclick = () => document.body.removeChild(overlay);
+                overlay.appendChild(closeBtn);
+                return;
+            }
+            try {
+                const check = await fetch(`${API_BASE}/system/settings`, { method: 'GET', signal: AbortSignal.timeout(1000) });
+                if (check.ok) {
+                    clearInterval(interval);
+                    document.getElementById('restart-status').textContent = '✅ Painel reconectado! Recarregando página...';
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 1000);
+                }
+            } catch(e) {
+                // Servidor fora do ar, aguardando subir
+            }
+        }, 1500);
+
+    } catch(err) {
+        showToast('Erro ao reiniciar o painel', 'error');
+        document.body.removeChild(overlay);
+        console.error(err);
+    }
+}
+
+// Expor no escopo global
+window.changeNodeMemoryMode = changeNodeMemoryMode;
+window.diagnoseProcesses = diagnoseProcesses;
+window.closeProcessDiagnosticModal = closeProcessDiagnosticModal;
+window.stopDuplicatePanel = stopDuplicatePanel;
+window.safeRestartPanel = safeRestartPanel;
+
 
 

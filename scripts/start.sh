@@ -1,8 +1,7 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # =============================================================
-#  TERMUX cPANEL — Start Script com Auto-Restart v3.0
+#  TERMUX cPANEL — Start Script com Auto-Restart v4.0
 #  Compatível: Termux sem root, com root, Linux Padrão
-#  SEM: sudo, systemctl, service, pkg autoremove, ufw
 # =============================================================
 
 export _termius_integration_installed="yes"
@@ -10,9 +9,67 @@ export _termius_integration_installed="yes"
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PANEL_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
 PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
-RUNTIME_DIR="$PANEL_DIR/.runtime"
-START_LOCK_DIR="$RUNTIME_DIR/start.lock"
-START_LOCK_PID="$START_LOCK_DIR/pid"
+
+# Carrega biblioteca de gerenciamento de processos
+if [ -f "$PANEL_DIR/scripts/lib/process-manager.sh" ]; then
+  . "$PANEL_DIR/scripts/lib/process-manager.sh"
+else
+  echo "[ERRO] Biblioteca process-manager.sh não encontrada!"
+  exit 1
+fi
+
+# Configuração de logs para logs/start.log
+mkdir -p "$PANEL_DIR/logs"
+START_LOG="$PANEL_DIR/logs/start.log"
+touch "$START_LOG" 2>/dev/null
+
+log_file() {
+  local level="$1"
+  local msg="$2"
+  local clean_msg="$(echo -e "$msg" | sed 's/\x1b\[[0-9;]*m//g')"
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $clean_msg" >> "$START_LOG" 2>/dev/null
+}
+
+GREEN="\033[0;32m"
+YELLOW="\033[1;33m"
+RED="\033[0;31m"
+BLUE="\033[0;34m"
+RESET="\033[0m"
+
+log()  { echo -e "${BLUE}[*]${RESET} $1"; log_file "INFO" "$1"; }
+ok()   { echo -e "${GREEN}[+]${RESET} $1"; log_file "OK" "$1"; }
+warn() { echo -e "${YELLOW}[!]${RESET} $1"; log_file "WARN" "$1"; }
+err()  { echo -e "${RED}[-]${RESET} $1"; log_file "ERRO" "$1"; }
+
+echo ""
+echo -e "${BLUE}============================================${RESET}"
+echo -e "${BLUE}   TERMUX cPANEL — Iniciando serviços...   ${RESET}"
+echo -e "${BLUE}============================================${RESET}"
+log "Diretório: $PANEL_DIR"
+echo ""
+
+# ---------------------------------------------------------
+# LOCK GLOBAL start.sh
+# ---------------------------------------------------------
+if [ -f "$START_PID_FILE" ]; then
+  OLD_START_PID="$(cat "$START_PID_FILE" 2>/dev/null)"
+  if [ -n "$OLD_START_PID" ] && kill -0 "$OLD_START_PID" 2>/dev/null; then
+    warn "Já existe um start.sh rodando com PID $OLD_START_PID"
+    log "Use scripts/stop.sh ou o botão Reinício Seguro."
+    exit 0
+  else
+    log "Lock antigo de start.sh encontrado. Removendo..."
+    rm -f "$START_PID_FILE"
+  fi
+fi
+
+echo "$$" > "$START_PID_FILE"
+
+cleanup_start_lock() {
+  log "Limpando lock do start.sh..."
+  rm -f "$START_PID_FILE"
+}
+trap cleanup_start_lock EXIT INT TERM
 
 # Lê configuração do sistema salvas pelo instalador (Root Strategy)
 SYSTEM_CONFIG="$PANEL_DIR/config/system.json"
@@ -30,57 +87,7 @@ if [ "$HAS_ROOT_CONFIG" = "true" ] && command -v su >/dev/null 2>&1; then
     fi
 fi
 
-GREEN="\033[0;32m"
-YELLOW="\033[1;33m"
-RED="\033[0;31m"
-BLUE="\033[0;34m"
-CYAN="\033[0;36m"
-RESET="\033[0m"
-
-log()  { echo -e "${BLUE}[*]${RESET} $1"; }
-ok()   { echo -e "${GREEN}[+]${RESET} $1"; }
-warn() { echo -e "${YELLOW}[!]${RESET} $1"; }
-err()  { echo -e "${RED}[-]${RESET} $1"; }
-
-echo ""
-echo -e "${BLUE}============================================${RESET}"
-echo -e "${BLUE}   TERMUX cPANEL — Iniciando serviços...   ${RESET}"
-echo -e "${BLUE}============================================${RESET}"
-log "Diretório: $PANEL_DIR"
-echo ""
-
-mkdir -p "$PANEL_DIR/logs"
-mkdir -p "$RUNTIME_DIR"
-
-cleanup_lock() {
-    if [ -f "$START_LOCK_PID" ]; then
-        CURRENT_LOCK_PID="$(cat "$START_LOCK_PID" 2>/dev/null || true)"
-        if [ "$CURRENT_LOCK_PID" = "$$" ]; then
-            rm -rf "$START_LOCK_DIR"
-        fi
-    fi
-}
-trap cleanup_lock EXIT INT TERM
-
-# Garante que exista apenas um loop start.sh cuidando do painel.
-if ! mkdir "$START_LOCK_DIR" 2>/dev/null; then
-    OLD_START_PID="$(cat "$START_LOCK_PID" 2>/dev/null || true)"
-    if [ -n "$OLD_START_PID" ] && kill -0 "$OLD_START_PID" 2>/dev/null; then
-        warn "Loop start.sh anterior detectado (PID: $OLD_START_PID). Encerrando duplicado..."
-        kill "$OLD_START_PID" 2>/dev/null || true
-        sleep 1
-        kill -9 "$OLD_START_PID" 2>/dev/null || true
-    fi
-    rm -rf "$START_LOCK_DIR"
-    mkdir "$START_LOCK_DIR" 2>/dev/null || {
-        err "Não foi possível criar lock de inicialização."
-        exit 1
-    }
-fi
-echo "$$" > "$START_LOCK_PID"
-
 cleanup_termux_api_duplicates() {
-    # termux-battery-status pode travar e acumular subprocessos se chamado em paralelo.
     PIDS="$(pgrep -f 'termux-battery-status|termux-api BatteryStatus' 2>/dev/null | sort -n)"
     KEEP="$(printf '%s\n' "$PIDS" | tail -n 1)"
     for PID in $PIDS; do
@@ -90,32 +97,11 @@ cleanup_termux_api_duplicates() {
     done
 }
 
-cleanup_panel_duplicates() {
-    CURRENT_PID="${1:-}"
-    PIDS="$(pgrep -f 'node .*server\.js|node server\.js|node.*termux-panel/server\.js' 2>/dev/null | sort -n)"
-    KEEP_PID="$(printf '%s\n' "$PIDS" | tail -n 1)"
-    for PID in $PIDS; do
-        [ -z "$PID" ] && continue
-        [ "$PID" = "$CURRENT_PID" ] && continue
-        [ "$PID" = "$KEEP_PID" ] && continue
-        CWD="$(readlink "/proc/$PID/cwd" 2>/dev/null || true)"
-        CMDLINE="$(tr '\0' ' ' < "/proc/$PID/cmdline" 2>/dev/null || true)"
-        if [ "$CWD" != "$PANEL_DIR" ] && ! printf '%s' "$CMDLINE" | grep -F "$PANEL_DIR/server.js" >/dev/null 2>&1; then
-            continue
-        fi
-        log "Encerrando instÃ¢ncia duplicada do painel (PID: $PID)..."
-        kill "$PID" 2>/dev/null || true
-        sleep 1
-        kill -9 "$PID" 2>/dev/null || true
-    done
-}
-
 cleanup_termux_api_duplicates
 
 # Verifica server.js
 if [ ! -f "$PANEL_DIR/server.js" ]; then
     err "server.js não encontrado em: $PANEL_DIR"
-    err "Extraia corretamente: tar -xzvf termux-panel-dist.tar.gz -C ~/"
     exit 1
 fi
 
@@ -141,20 +127,19 @@ MYSQL_DATA_DIR="$PREFIX/var/lib/mysql"
 log "Verificando PHP-FPM..."
 mkdir -p "$PREFIX/var/run" "$PREFIX/tmp"
 
-    # Garante que PHP-FPM escute via TCP 127.0.0.1:9000 para estabilidade
-    fpm_conf=""
-    for f in "$PREFIX/etc/php-fpm.d/www.conf" "$PREFIX/etc/php-fpm.conf"; do
-        if [ -f "$f" ]; then
-            fpm_conf="$f"
-            break
-        fi
-    done
-    if [ -n "$fpm_conf" ]; then
-        if grep -q "listen =.*\.sock" "$fpm_conf" 2>/dev/null || ! grep -q "listen = 127.0.0.1:9070" "$fpm_conf" 2>/dev/null; then
-            sed -i 's|^listen =.*|listen = 127.0.0.1:9070|' "$fpm_conf" 2>/dev/null || true
-        fi
+fpm_conf=""
+for f in "$PREFIX/etc/php-fpm.d/www.conf" "$PREFIX/etc/php-fpm.conf"; do
+    if [ -f "$f" ]; then
+        fpm_conf="$f"
+        break
     fi
-    if command -v php-fpm >/dev/null 2>&1; then
+done
+if [ -n "$fpm_conf" ]; then
+    if grep -q "listen =.*\.sock" "$fpm_conf" 2>/dev/null || ! grep -q "listen = 127.0.0.1:9070" "$fpm_conf" 2>/dev/null; then
+        sed -i 's|^listen =.*|listen = 127.0.0.1:9070|' "$fpm_conf" 2>/dev/null || true
+    fi
+fi
+if command -v php-fpm >/dev/null 2>&1; then
     if [ "$USE_SU" = "true" ]; then
         PHPOUT=$(su -c "php-fpm --daemonize" 2>&1)
     else
@@ -179,7 +164,6 @@ mariadb_is_running() {
     if mysql -u "$DB_USER" ${DB_PASS:+-p"$DB_PASS"} -e "SELECT 1" >/dev/null 2>&1; then
         return 0
     fi
-    # Fallback: tenta root sem senha (instalação nova)
     if mysql -u root -e "SELECT 1" >/dev/null 2>&1; then
         return 0
     fi
@@ -187,7 +171,6 @@ mariadb_is_running() {
 }
 
 start_mariadb_daemon() {
-    # Inicializa estrutura se necessário
     if [ ! -d "$MYSQL_DATA_DIR/mysql" ]; then
         warn "Banco de dados não inicializado. Inicializando..."
         if [ "$USE_SU" = "true" ]; then
@@ -208,7 +191,6 @@ start_mariadb_daemon() {
         fi
     fi
 
-    # Inicia o daemon — SEM systemctl, SEM service
     if [ "$USE_SU" = "true" ]; then
         if command -v mariadbd-safe >/dev/null 2>&1; then
             su -c "mariadbd-safe --datadir=\"$MYSQL_DATA_DIR\" >/dev/null 2>&1 &"
@@ -218,9 +200,6 @@ start_mariadb_daemon() {
             su -c "mariadbd --datadir=\"$MYSQL_DATA_DIR\" --user=root >/dev/null 2>&1 &"
         elif command -v mysqld >/dev/null 2>&1; then
             su -c "mysqld --datadir=\"$MYSQL_DATA_DIR\" --user=root >/dev/null 2>&1 &"
-        else
-            err "Nenhum daemon MariaDB/MySQL encontrado!"
-            return 1
         fi
     else
         if command -v mariadbd-safe >/dev/null 2>&1; then
@@ -231,13 +210,9 @@ start_mariadb_daemon() {
             mariadbd --datadir="$MYSQL_DATA_DIR" --user="$(whoami)" >/dev/null 2>&1 &
         elif command -v mysqld >/dev/null 2>&1; then
             mysqld --datadir="$MYSQL_DATA_DIR" --user="$(whoami)" >/dev/null 2>&1 &
-        else
-            err "Nenhum daemon MariaDB/MySQL encontrado!"
-            return 1
         fi
     fi
 
-    # Aguarda resposta (até 20s)
     local tries=0
     while [ $tries -lt 10 ]; do
         sleep 2
@@ -265,14 +240,13 @@ log "Verificando NGINX..."
 if command -v nginx >/dev/null 2>&1; then
     if [ -f "$PANEL_DIR/scripts/nginx-termux-repair.sh" ]; then
         sh "$PANEL_DIR/scripts/nginx-termux-repair.sh" >"$PREFIX/tmp/termux-panel-nginx-repair.log" 2>&1 || \
-            warn "Reparo NGINX/mime.types falhou. Veja $PREFIX/tmp/termux-panel-nginx-repair.log"
+            warn "Reparo NGINX/mime.types falhou."
     fi
 
-    log "Aplicando SSO do phpMyAdmin..."
     if [ -f "$PANEL_DIR/scripts/setup-pma-sso.sh" ]; then
         bash "$PANEL_DIR/scripts/setup-pma-sso.sh" >/dev/null 2>&1 && \
             ok "SSO do phpMyAdmin configurado." || \
-            warn "SSO do phpMyAdmin nao foi configurado. Rode scripts/health-check.sh para detalhes."
+            warn "SSO do phpMyAdmin nao foi configurado."
     fi
 
     if [ "$USE_SU" = "true" ]; then
@@ -311,56 +285,102 @@ if [ -f "$SERVER_CONFIG_FILE" ]; then
            echo 8088)
 fi
 
-# Mata instância anterior na porta
-OLDPID=$(lsof -t -i:$PORT 2>/dev/null)
-if [ -n "$OLDPID" ]; then
-    log "Encerrando instância anterior (PID: $OLDPID)..."
-    kill -9 "$OLDPID" 2>/dev/null
-    sleep 1
-else
-    fuser -k $PORT/tcp >/dev/null 2>&1 || true
-fi
-cleanup_panel_duplicates
-sleep 1
+PANEL_PORT="${PANEL_PORT:-$PORT}"
 
-ok "Auto-restart ativado — painel reinicia se cair."
-log "Acesse: http://0.0.0.0:${PORT}"
-echo ""
+# Verifica se a porta está ocupada
+PORT_PID="$(check_panel_port "$PANEL_PORT")"
+if [ -n "$PORT_PID" ]; then
+  CMD="$(ps -p "$PORT_PID" -o args= 2>/dev/null)"
+  if echo "$CMD" | grep -q "$PANEL_DIR/server.js"; then
+    log "Porta $PANEL_PORT ocupada por painel antigo PID $PORT_PID. Encerrando..."
+    kill_pid_gracefully "$PORT_PID"
+  else
+    err "Porta $PANEL_PORT está ocupada por outro processo:"
+    echo "$CMD"
+    err "Altere PANEL_PORT ou pare o processo manualmente."
+    exit 1
+  fi
+fi
+
+# Carrega configuração de memória (Seguro / Balanceado / Desempenho)
+MEMORY_CONFIG="$PANEL_DIR/config/memory.json"
+NODE_MEMORY_MODE="balanced"
+if [ -f "$MEMORY_CONFIG" ]; then
+  NODE_MEMORY_MODE=$(python3 -c "import json; print(json.load(open('$MEMORY_CONFIG')).get('mode', 'balanced'))" 2>/dev/null || \
+                     node -e "try{const d=require('$MEMORY_CONFIG');console.log(d.mode||'balanced')}catch(e){console.log('balanced')}" 2>/dev/null || \
+                     echo "balanced")
+fi
+
+case "$NODE_MEMORY_MODE" in
+  safe)
+    NODE_MAX_OLD_SPACE_SIZE=128
+    ;;
+  performance)
+    NODE_MAX_OLD_SPACE_SIZE=512
+    ;;
+  balanced|"")
+    NODE_MAX_OLD_SPACE_SIZE="${NODE_MAX_OLD_SPACE_SIZE:-256}"
+    ;;
+esac
+
+log "Memória Node configurada: ${NODE_MAX_OLD_SPACE_SIZE} MB"
+log "Modo de memória: ${NODE_MEMORY_MODE}"
 
 # Root: aplica prioridade (se disponível)
-if command -v su >/dev/null 2>&1 && su -c 'echo ok' >/dev/null 2>&1; then
+if [ "$USE_SU" = "true" ]; then
     log "Root detectado! Aplicando prioridades VIP..."
     bash "$PANEL_DIR/scripts/prioritize.sh" >/dev/null 2>&1 &
 fi
 
-# Configuracao de memoria do Node (ajustavel por variavel de ambiente)
-if [ -d "/data/data/com.termux" ]; then
-    NODE_MAX_OLD_SPACE_SIZE="${NODE_MAX_OLD_SPACE_SIZE:-128}"
-else
-    NODE_MAX_OLD_SPACE_SIZE="${NODE_MAX_OLD_SPACE_SIZE:-1024}"
-fi
-log "Node heap max-old-space-size: ${NODE_MAX_OLD_SPACE_SIZE}MB"
-# Loop de auto-restart
+ok "Auto-restart ativo — limite de 5 quedas por minuto."
+log "Acesse: http://0.0.0.0:${PANEL_PORT}"
+echo ""
+
+# Loop de auto-restart com limites de tentativas
+RESTART_COUNT=0
+RESTART_WINDOW_START=$(date +%s)
+
 while true; do
-    # Verifica se ainda é o dono do lock antes de prosseguir
-    if [ -f "$START_LOCK_PID" ]; then
-        CURRENT_LOCK_PID="$(cat "$START_LOCK_PID" 2>/dev/null || true)"
-        if [ "$CURRENT_LOCK_PID" != "$$" ]; then
-            warn "Outro loop start.sh assumiu o controle (PID: $CURRENT_LOCK_PID). Encerrando este loop (PID: $$)..."
-            exit 0
-        fi
-    fi
-    cleanup_termux_api_duplicates
-    cleanup_panel_duplicates
-    node --max-old-space-size="$NODE_MAX_OLD_SPACE_SIZE" "$PANEL_DIR/server.js"
-    EXIT_CODE=$?
-    if [ "$EXIT_CODE" -eq 137 ]; then
-        warn "Servidor encerrado (codigo 137: possivel falta de memoria/OOM)."
-    elif [ "$EXIT_CODE" -eq 143 ]; then
-        warn "Servidor encerrado por sinal TERM (codigo 143)."
-    else
-        warn "Servidor encerrado (codigo $EXIT_CODE)."
-    fi
-    warn "Reiniciando em 3s..."
-    sleep 3
+  EXISTING_NODE="$(find_panel_node_processes)"
+  if [ -n "$EXISTING_NODE" ]; then
+    warn "Já existe node server.js rodando PID $EXISTING_NODE"
+    exit 0
+  fi
+
+  node --max-old-space-size="$NODE_MAX_OLD_SPACE_SIZE" "$PANEL_DIR/server.js" &
+  NODE_PID=$!
+  echo "$NODE_PID" > "$PID_FILE"
+  
+  wait "$NODE_PID"
+  EXIT_CODE=$?
+  
+  if [ "$EXIT_CODE" = "143" ]; then
+    ok "Servidor encerrado por SIGTERM/código 143. Parada controlada."
+  elif [ "$EXIT_CODE" = "137" ]; then
+    err "Servidor encerrado por SIGKILL/código 137. Possível OOM Killer/falta de memória."
+  elif [ "$EXIT_CODE" != "0" ]; then
+    warn "Servidor saiu com código $EXIT_CODE."
+  fi
+  
+  NOW=$(date +%s)
+  if [ $((NOW - RESTART_WINDOW_START)) -gt 60 ]; then
+    RESTART_COUNT=0
+    RESTART_WINDOW_START=$NOW
+  fi
+  
+  RESTART_COUNT=$((RESTART_COUNT + 1))
+  if [ "$RESTART_COUNT" -ge 5 ]; then
+    err "O servidor caiu 5 vezes em menos de 60 segundos. Abortando auto-restart."
+    rm -f "$PID_FILE"
+    exit 1
+  fi
+  
+  if [ "$EXIT_CODE" = "143" ]; then
+    log "Encerramento controlado. Não reiniciando."
+    rm -f "$PID_FILE"
+    exit 0
+  fi
+  
+  warn "Reiniciando em 5s..."
+  sleep 5
 done
