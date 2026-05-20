@@ -43,15 +43,44 @@ function parseCpuLine(line) {
 }
 
 function readCpuSnapshot() {
-    const raw = readText(PROC_STAT);
+    try {
+        if (fs.existsSync(PROC_STAT)) {
+            const raw = readText(PROC_STAT);
+            const snapshot = {};
+            raw.split('\n').forEach(line => {
+                const parsed = parseCpuLine(line);
+                if (parsed) snapshot[parsed.id] = parsed;
+            });
+            if (snapshot.cpu) return snapshot;
+        }
+    } catch (_) {}
+
+    // Fallback usando modulo OS nativo do Node
+    const cpus = os.cpus();
+    if (!cpus || cpus.length === 0) throw new Error("Nao foi possivel ler dados da CPU");
+
     const snapshot = {};
-    raw.split('\n').forEach(line => {
-        const parsed = parseCpuLine(line);
-        if (parsed) snapshot[parsed.id] = parsed;
+    let totalUser = 0, totalNice = 0, totalSys = 0, totalIdle = 0, totalIrq = 0;
+
+    cpus.forEach((core, index) => {
+        const t = core.times;
+        const idle = t.idle;
+        const total = t.user + t.nice + t.sys + t.idle + t.irq;
+        snapshot[`cpu${index}`] = { id: `cpu${index}`, idle, total };
+
+        totalUser += t.user;
+        totalNice += t.nice;
+        totalSys += t.sys;
+        totalIdle += t.idle;
+        totalIrq += t.irq;
     });
-    if (!snapshot.cpu) {
-        throw new Error('/proc/stat nao contem linha cpu.');
-    }
+
+    snapshot['cpu'] = {
+        id: 'cpu',
+        idle: totalIdle,
+        total: totalUser + totalNice + totalSys + totalIdle + totalIrq
+    };
+
     return snapshot;
 }
 
@@ -81,51 +110,71 @@ function parseOnlineCpuList(value) {
 
 function getCoreIds() {
     if (cachedCoreIds) return cachedCoreIds;
-
     try {
-        cachedCoreIds = fs.readdirSync(SYS_CPU_DIR)
-            .filter(name => /^cpu\d+$/.test(name))
-            .sort((a, b) => Number(a.slice(3)) - Number(b.slice(3)));
-    } catch (_) {
-        cachedCoreIds = Array.from({ length: os.cpus().length || 1 }, (_, index) => `cpu${index}`);
-    }
+        if (fs.existsSync(SYS_CPU_DIR)) {
+            cachedCoreIds = fs.readdirSync(SYS_CPU_DIR)
+                .filter(name => /^cpu\d+$/.test(name))
+                .sort((a, b) => Number(a.slice(3)) - Number(b.slice(3)));
+            if (cachedCoreIds.length > 0) return cachedCoreIds;
+        }
+    } catch (_) {}
 
-    if (cachedCoreIds.length === 0) cachedCoreIds = ['cpu0'];
+    cachedCoreIds = Array.from({ length: os.cpus().length || 1 }, (_, index) => `cpu${index}`);
     return cachedCoreIds;
 }
 
 function isCoreOnline(coreId, onlineSet) {
     if (onlineSet) return onlineSet.has(coreId);
-    const onlinePath = path.join(SYS_CPU_DIR, coreId, 'online');
-    const raw = safeReadText(onlinePath).trim();
-    return raw === '' || raw === '1';
+    try {
+        const onlinePath = path.join(SYS_CPU_DIR, coreId, 'online');
+        if (fs.existsSync(onlinePath)) {
+            const raw = safeReadText(onlinePath).trim();
+            return raw === '' || raw === '1';
+        }
+    } catch (_) {}
+    return true;
 }
 
 function readOnlineSet() {
-    const raw = safeReadText(path.join(SYS_CPU_DIR, 'online'));
-    return raw ? parseOnlineCpuList(raw) : null;
+    try {
+        const p = path.join(SYS_CPU_DIR, 'online');
+        if (fs.existsSync(p)) {
+            const raw = safeReadText(p);
+            if (raw) return parseOnlineCpuList(raw);
+        }
+    } catch (_) {}
+    return null;
 }
 
 function readFrequency(coreId) {
-    const cpufreqDir = path.join(SYS_CPU_DIR, coreId, 'cpufreq');
-    const candidates = [
-        path.join(cpufreqDir, 'scaling_cur_freq'),
-        path.join(cpufreqDir, 'cpuinfo_cur_freq')
-    ];
-
-    for (const candidate of candidates) {
-        const raw = safeReadText(candidate).trim();
-        const khz = Number.parseInt(raw, 10);
-        if (Number.isInteger(khz) && khz > 0) {
-            const mhz = Math.round(khz / 1000);
-            const ghz = Number((khz / 1000000).toFixed(2));
-            return {
-                khz,
-                mhz,
-                ghz,
-                formatted: `${ghz.toFixed(2)} GHz`
-            };
+    try {
+        const cpufreqDir = path.join(SYS_CPU_DIR, coreId, 'cpufreq');
+        if (fs.existsSync(cpufreqDir)) {
+            const candidates = [
+                path.join(cpufreqDir, 'scaling_cur_freq'),
+                path.join(cpufreqDir, 'cpuinfo_cur_freq')
+            ];
+            for (const candidate of candidates) {
+                if (fs.existsSync(candidate)) {
+                    const raw = safeReadText(candidate).trim();
+                    const khz = Number.parseInt(raw, 10);
+                    if (Number.isInteger(khz) && khz > 0) {
+                        const mhz = Math.round(khz / 1000);
+                        const ghz = Number((khz / 1000000).toFixed(2));
+                        return { khz, mhz, ghz, formatted: `${ghz.toFixed(2)} GHz` };
+                    }
+                }
+            }
         }
+    } catch (_) {}
+
+    // Fallback para Node OS
+    const cpus = os.cpus();
+    const index = Number.parseInt(coreId.slice(3), 10);
+    if (cpus[index] && cpus[index].speed) {
+        const mhz = cpus[index].speed;
+        const ghz = Number((mhz / 1000).toFixed(2));
+        return { khz: mhz * 1000, mhz, ghz, formatted: `${ghz.toFixed(2)} GHz` };
     }
 
     return { formatted: 'freq. indisponivel' };
@@ -133,28 +182,28 @@ function readFrequency(coreId) {
 
 function readCpuName() {
     if (cachedCpuName) return cachedCpuName;
-
     try {
-        const raw = readText(PROC_CPUINFO);
-        const lines = raw.split('\n');
-        const keys = [
-            'Hardware',
-            'model name',
-            'Processor',
-            'cpu model',
-            'chipset',
-            'machine'
-        ];
-
-        for (const key of keys) {
-            const line = lines.find(item => item.toLowerCase().startsWith(key.toLowerCase()));
-            const value = line && line.split(':').slice(1).join(':').trim();
-            if (value && !/^0x/i.test(value)) {
-                cachedCpuName = value;
-                return cachedCpuName;
+        if (fs.existsSync(PROC_CPUINFO)) {
+            const raw = readText(PROC_CPUINFO);
+            const lines = raw.split('\n');
+            const keys = ['Hardware', 'model name', 'Processor', 'cpu model', 'chipset', 'machine'];
+            for (const key of keys) {
+                const line = lines.find(item => item.toLowerCase().startsWith(key.toLowerCase()));
+                const value = line && line.split(':').slice(1).join(':').trim();
+                if (value && !/^0x/i.test(value)) {
+                    cachedCpuName = value;
+                    return cachedCpuName;
+                }
             }
         }
     } catch (_) {}
+
+    // Fallback Node OS
+    const cpus = os.cpus();
+    if (cpus && cpus.length > 0 && cpus[0].model) {
+        cachedCpuName = cpus[0].model;
+        return cachedCpuName;
+    }
 
     const arch = os.arch();
     if (arch === 'arm64' || arch === 'aarch64') {
