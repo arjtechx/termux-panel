@@ -42,6 +42,16 @@ function isPortListening(port) {
     });
 }
 
+function isNginxAlreadyUsingPort(port) {
+    return new Promise((resolve) => {
+        exec('ss -tulpn 2>/dev/null || netstat -tulpn 2>/dev/null', (err, stdout) => {
+            if (err || !stdout) return resolve(false);
+            const portPattern = new RegExp(`:${port}(\\b|\\s)`);
+            resolve(stdout.split('\n').some(line => portPattern.test(line) && /nginx/i.test(line)));
+        });
+    });
+}
+
 function ensureHostingLogFile(filePath) {
     const dir = path.dirname(filePath);
     if (!fs.existsSync(dir)) {
@@ -174,11 +184,11 @@ router.post('/', async (req, res) => {
         parsedListenPort = validatePort(listenPort, 'Porta publica');
         parsedTargetPort = targetPort ? validatePort(targetPort, 'Porta interna') : null;
 
-        if (await isPortListening(parsedListenPort)) {
+        if (await isPortListening(parsedListenPort) && !await isNginxAlreadyUsingPort(parsedListenPort)) {
             return res.status(400).json({ error: `A porta pública ${parsedListenPort} já está em uso por outro serviço.` });
         }
         
-        if (parsedTargetPort && (type === 'node' || type === 'python' || type === 'proxy')) {
+        if (parsedTargetPort && (type === 'node' || type === 'python')) {
             if (await isPortListening(parsedTargetPort)) {
                 return res.status(400).json({ error: `A porta interna ${parsedTargetPort} já está em uso por outra aplicação.` });
             }

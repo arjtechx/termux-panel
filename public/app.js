@@ -2066,8 +2066,10 @@ async function safeFetch(url, method = 'GET', body = null, timeoutMs = 8000) {
         if (body) opts.body = JSON.stringify(body);
         const res = await fetch(url, opts);
         clearTimeout(timer);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return await res.json();
+        const text = await res.text();
+        const data = text ? JSON.parse(text) : {};
+        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+        return data;
     } catch(e) {
         console.error(`[safeFetch] ${url}:`, e.message);
         return null;
