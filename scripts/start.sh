@@ -52,6 +52,16 @@ echo ""
 mkdir -p "$PANEL_DIR/logs"
 mkdir -p "$RUNTIME_DIR"
 
+cleanup_lock() {
+    if [ -f "$START_LOCK_PID" ]; then
+        CURRENT_LOCK_PID="$(cat "$START_LOCK_PID" 2>/dev/null || true)"
+        if [ "$CURRENT_LOCK_PID" = "$$" ]; then
+            rm -rf "$START_LOCK_DIR"
+        fi
+    fi
+}
+trap cleanup_lock EXIT INT TERM
+
 # Garante que exista apenas um loop start.sh cuidando do painel.
 if ! mkdir "$START_LOCK_DIR" 2>/dev/null; then
     OLD_START_PID="$(cat "$START_LOCK_PID" 2>/dev/null || true)"
@@ -63,12 +73,11 @@ if ! mkdir "$START_LOCK_DIR" 2>/dev/null; then
     fi
     rm -rf "$START_LOCK_DIR"
     mkdir "$START_LOCK_DIR" 2>/dev/null || {
-        err "NÃ£o foi possÃ­vel criar lock de inicializaÃ§Ã£o."
+        err "Não foi possível criar lock de inicialização."
         exit 1
     }
 fi
 echo "$$" > "$START_LOCK_PID"
-trap 'rm -rf "$START_LOCK_DIR"' EXIT INT TERM
 
 cleanup_termux_api_duplicates() {
     # termux-battery-status pode travar e acumular subprocessos se chamado em paralelo.
@@ -333,6 +342,14 @@ fi
 log "Node heap max-old-space-size: ${NODE_MAX_OLD_SPACE_SIZE}MB"
 # Loop de auto-restart
 while true; do
+    # Verifica se ainda é o dono do lock antes de prosseguir
+    if [ -f "$START_LOCK_PID" ]; then
+        CURRENT_LOCK_PID="$(cat "$START_LOCK_PID" 2>/dev/null || true)"
+        if [ "$CURRENT_LOCK_PID" != "$$" ]; then
+            warn "Outro loop start.sh assumiu o controle (PID: $CURRENT_LOCK_PID). Encerrando este loop (PID: $$)..."
+            exit 0
+        fi
+    fi
     cleanup_termux_api_duplicates
     cleanup_panel_duplicates
     node --max-old-space-size="$NODE_MAX_OLD_SPACE_SIZE" "$PANEL_DIR/server.js"
