@@ -84,7 +84,11 @@ async function runBootSequence() {
         // Inicia polling após o boot
         checkNetworkAccess();
         updateNetworkStatus();
+        updateCpuStatus();
         setInterval(updateNetworkStatus, 1000);
+        setInterval(updateCpuStatus, 1000);
+        updateTemperatureHistory();
+        setInterval(updateTemperatureHistory, 30000);
         setInterval(fetchStatus,    5000);
         setInterval(fetchApps,     15000);
         setInterval(fetchProcesses, 10000);
@@ -116,6 +120,12 @@ function initElements() {
         cpuCoreGrid: document.getElementById('cpu-core-grid'),
         cpuChartLine: document.getElementById('cpu-chart-line'),
         cpuChartArea: document.getElementById('cpu-chart-area'),
+        cpuName: document.getElementById('cpu-name'),
+        cpuTotal: document.getElementById('cpu-total'),
+        cpuTotalPercent: document.getElementById('cpu-total-percent'),
+        cpuCoresCount: document.getElementById('cpu-cores-count'),
+        cpuCoresList: document.getElementById('cpu-cores-list'),
+        cpuStatus: document.getElementById('cpu-status'),
         ram:        document.getElementById('stat-ram'),
         temp:       document.getElementById('stat-temperature'),
         storage:    document.getElementById('stat-storage'),
@@ -362,6 +372,7 @@ function toggleTempUnit(e) {
     const btn = document.getElementById('temp-unit-btn');
     if (btn) btn.textContent = '°' + tempUnit;
     updateTemperatureDisplay();
+    renderTempChart();
 }
 
 function updateTemperatureDisplay() {
@@ -453,6 +464,57 @@ async function fetchStatus() {
     if (el.storage && data.storageTotal) {
         el.storage.textContent = `${data.storageFree || '--'} livre de ${data.storageTotal}`;
     }
+}
+
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, char => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+    }[char]));
+}
+
+async function updateCpuStatus() {
+    const data = await safeFetch(`${API_BASE}/cpu/status`, 'GET', null, 2500);
+    if (!data || !data.success) {
+        if (el.cpuStatus) el.cpuStatus.textContent = data?.error || 'Erro ao ler CPU';
+        if (el.cpuCoresList) el.cpuCoresList.innerHTML = '<div class="cpu-core-row muted">Erro ao ler CPU</div>';
+        return;
+    }
+
+    const total = data.cpuTotal || '--%';
+    if (el.cpu) el.cpu.textContent = total;
+    if (el.cpuTotal) el.cpuTotal.textContent = total;
+    if (el.cpuTotalPercent) el.cpuTotalPercent.textContent = total;
+    if (el.cpuName) el.cpuName.textContent = data.cpuName || 'CPU Android nao identificado';
+    if (el.cpuCoresCount) el.cpuCoresCount.textContent = data.coresCount ?? '--';
+    if (el.cpuStatus) el.cpuStatus.textContent = data.status || 'Monitorando CPU';
+    if (el.cpuDetails) el.cpuDetails.textContent = `${data.coresCount || '--'} Nucleos | ${total}`;
+
+    renderCpuCoreList(data.cores || []);
+    renderCpuVisual({ cpu: total, cpuCores: data.coresCount || 1 });
+}
+
+function renderCpuCoreList(cores) {
+    if (!el.cpuCoresList) return;
+    if (!cores.length) {
+        el.cpuCoresList.innerHTML = '<div class="cpu-core-row muted">Calculando...</div>';
+        return;
+    }
+
+    el.cpuCoresList.innerHTML = cores.map(core => {
+        const usage = core.online ? (core.usage || 'Calculando...') : 'offline';
+        const freq = core.online ? (core.frequency?.formatted || 'freq. indisponivel') : 'freq. indisponivel';
+        return `
+            <div class="cpu-core-row${core.online ? '' : ' offline'}">
+                <span>${escapeHtml(core.label)}</span>
+                <strong>${escapeHtml(usage)}</strong>
+                <em>${escapeHtml(freq)}</em>
+            </div>
+        `;
+    }).join('');
 }
 
 function parsePercent(value) {
@@ -3560,7 +3622,58 @@ async function toggleRootMode(e) {
     }
 }
 
+let tempHistory = [];
+
+async function updateTemperatureHistory() {
+    try {
+        const response = await fetch("/api/temperature/history");
+        const data = await response.json();
+        if (data.success && Array.isArray(data.history)) {
+            tempHistory = data.history.map(item => item.temperature);
+            renderTempChart();
+        }
+    } catch (err) {
+        console.error("Erro ao carregar historico de temperatura:", err);
+    }
+}
+
+function renderTempChart() {
+    const lineEl = document.getElementById('temp-chart-line');
+    const areaEl = document.getElementById('temp-chart-area');
+    if (!lineEl || !areaEl || tempHistory.length === 0) return;
+
+    const width = 160;
+    const height = 40;
+
+    const values = tempHistory.map(val => {
+        if (tempUnit === 'F') {
+            return (val * 9/5) + 32;
+        }
+        return val;
+    });
+
+    const minVal = Math.min(...values) - 1.5;
+    const maxVal = Math.max(...values) + 1.5;
+    const delta = maxVal - minVal || 1;
+
+    const step = width / (values.length - 1 || 1);
+
+    const points = values.map((value, index) => {
+        const x = index * step;
+        const y = height - ((value - minVal) / delta) * (height - 6) - 3;
+        return [x, y];
+    });
+
+    const linePath = points.map(([x, y], index) => `${index ? 'L' : 'M'} ${x.toFixed(2)} ${y.toFixed(2)}`).join(' ');
+    const areaPath = `${linePath} L ${width} ${height} L 0 ${height} Z`;
+
+    lineEl.setAttribute('d', linePath);
+    areaEl.setAttribute('d', areaPath);
+}
+
 // Expor funcoes para escopo global (window)
 window.toggleRootMode = toggleRootMode;
 window.checkNetworkAccess = checkNetworkAccess;
 window.updateNetworkStatus = updateNetworkStatus;
+window.updateTemperatureHistory = updateTemperatureHistory;
+window.renderTempChart = renderTempChart;

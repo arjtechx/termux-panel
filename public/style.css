@@ -165,9 +165,122 @@ body {
     filter: drop-shadow(0 4px 8px var(--primary-glow));
 }
 
+.cpu-monitor-card {
+    min-width: 0;
+}
+
+.cpu-monitor-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.cpu-monitor-head .card-label {
+    margin-bottom: 0;
+}
+
+.cpu-monitor-head strong {
+    font-size: 1.55rem;
+    line-height: 1;
+    color: var(--primary);
+    white-space: nowrap;
+}
+
+.cpu-monitor-summary {
+    display: grid;
+    grid-template-columns: minmax(0, 1.5fr) minmax(74px, 0.55fr) minmax(62px, 0.45fr);
+    gap: 10px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+}
+
+.cpu-monitor-summary div {
+    min-width: 0;
+}
+
+.cpu-monitor-summary span {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.cpu-monitor-summary strong {
+    display: block;
+    color: var(--text);
+    font-size: 0.82rem;
+    font-weight: 700;
+    line-height: 1.25;
+    letter-spacing: 0;
+    overflow-wrap: anywhere;
+}
+
+.cpu-cores-list {
+    display: grid;
+    gap: 5px;
+    max-height: 188px;
+    margin-top: 12px;
+    padding-right: 3px;
+    overflow-y: auto;
+}
+
+.cpu-core-row {
+    display: grid;
+    grid-template-columns: minmax(54px, 0.8fr) minmax(72px, 0.8fr) minmax(96px, 1fr);
+    align-items: center;
+    gap: 8px;
+    min-height: 28px;
+    padding: 5px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface2);
+    color: var(--text);
+    font-size: 0.78rem;
+}
+
+.cpu-core-row strong,
+.cpu-core-row em {
+    font-size: 0.78rem;
+    font-style: normal;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: 0;
+    color: var(--text);
+}
+
+.cpu-core-row em {
+    color: var(--text-muted);
+    text-align: right;
+}
+
+.cpu-core-row.offline,
+.cpu-core-row.muted {
+    color: var(--text-muted);
+}
+
+.cpu-monitor-status {
+    margin-top: 10px;
+}
+
 @media (max-width: 560px) {
     .cpu-visual {
         grid-template-columns: 1fr;
+    }
+
+    .cpu-monitor-summary {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .cpu-monitor-summary div:first-child {
+        grid-column: 1 / -1;
+    }
+
+    .cpu-core-row {
+        grid-template-columns: minmax(50px, 0.7fr) minmax(70px, 0.8fr) minmax(86px, 1fr);
     }
 }
 

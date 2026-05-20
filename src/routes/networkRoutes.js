@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const networkMonitor = require('../utils/network-monitor');
+const temperatureLogger = require('../utils/temperature-logger');
 
 router.get('/api/network/status', (req, res) => {
   try {
@@ -66,6 +67,22 @@ router.get('/api/network/test', (req, res) => {
     root,
     message: "Não foi possível ler a rede nem sem root nem com root"
   });
+});
+
+router.get('/api/temperature/history', (req, res) => {
+  try {
+    const history = temperatureLogger.getHistory();
+    res.json({
+      success: true,
+      history
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: "Erro ao ler historico de temperaturas",
+      details: error.message
+    });
+  }
 });
 
 module.exports = router;

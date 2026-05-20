@@ -152,6 +152,19 @@ app.use('/', networkRoutes);
 
 const speedtestRoutes = require('./src/routes/speedtestRoutes');
 app.use('/api', speedtestRoutes);
+
+const cpuMonitor = require('./src/utils/cpu-monitor');
+app.get('/api/cpu/status', (req, res) => {
+    try {
+        res.json(cpuMonitor.getCpuStatus());
+    } catch (err) {
+        res.status(500).json({
+            success: false,
+            error: 'Erro ao ler CPU',
+            details: err.message
+        });
+    }
+});
 io.on('connection', (socket) => {
     let sshConn = new Client();
 
@@ -606,3 +619,15 @@ server.once('listening', () => {
 });
 
 server.listen(PORT, '0.0.0.0');
+
+// Inicializar registro de temperaturas (a cada 1 hora)
+try {
+    const temperatureLogger = require('./src/utils/temperature-logger');
+    temperatureLogger.logTemperature(); // Executa imediatamente no boot
+    setInterval(() => {
+        temperatureLogger.logTemperature();
+    }, 60 * 60 * 1000); // Executa a cada 1 hora
+    console.log('[OK] Servico de historico de temperatura inicializado.');
+} catch (tempErr) {
+    console.error('[ERR] Falha ao inicializar servico de temperatura:', tempErr.message);
+}
