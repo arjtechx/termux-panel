@@ -387,7 +387,8 @@ app.get('/api/status', async (req, res) => {
             try {
                 const netOut = await runCmd('cat /proc/net/dev 2>/dev/null || echo ""');
                 // Tenta vários nomes de interface em ordem de prioridade
-                for (const iface of ['wlan0', 'eth0', 'ens3', 'ens33', 'enp0s3', 'wlp2s0', 'usb0']) {
+                let forceRoot = false; // Flag to force root usage for network stats
+
                     const m = netOut.match(new RegExp(`\\s*${iface}[^:]*:\\s*(\\d+)(?:\\s+\\d+){7}\\s+(\\d+)`));
                     if (m) {
                         totalDown = parseInt(m[1]) || 0;
@@ -409,7 +410,8 @@ app.get('/api/status', async (req, res) => {
                     if (rxMatches && txMatches) {
                         totalDown = parseInt(rxMatches[1]) || 0;
                         totalUp = parseInt(txMatches[1]) || 0;
-                    } else if (systemConfig.has_root) {
+                    } else if (systemConfig.has_root || forceRoot) { // fallback to ifconfig when root available or forced
+
                         // If ip parsing fails and we have root, fallback to ifconfig as last resort
                         const ifconfigOut = await runCmd('ifconfig wlan0 2> /dev/null || ifconfig 2> /dev/null || echo ""');
                         let matchRx = ifconfigOut.match(/RX[^b]*bytes[:\s]+(\d+)/i);
@@ -436,18 +438,6 @@ app.get('/api/status', async (req, res) => {
         }
 
         res.json(status);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-app.get('/api/apps', async (req, res) => {
-    try {
-        const apps = JSON.parse(fs.readFileSync(APPS_FILE, 'utf8'));
-        const enhancedApps = await Promise.all(apps.map(async (app) => {
-            app.status = await checkPortStatus(app.port);
-            return app;
-        }));
         res.json(enhancedApps);
     } catch (err) {
         res.status(500).json({ error: err.message });
