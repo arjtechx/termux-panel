@@ -274,12 +274,21 @@ function generateConfigYmlFromRoutes() {
 
     yaml += `  - service: http_status:404\n`;
 
-    makeBackup(configYmlPath);
+    let current = '';
+    if (fs.existsSync(configYmlPath)) {
+        try {
+            current = fs.readFileSync(configYmlPath, 'utf8');
+        } catch {}
+    }
+    const changed = current !== yaml;
 
-    fs.mkdirSync(path.dirname(configYmlPath), { recursive: true });
-    fs.writeFileSync(configYmlPath, yaml, 'utf8');
+    if (changed) {
+        makeBackup(configYmlPath);
+        fs.mkdirSync(path.dirname(configYmlPath), { recursive: true });
+        fs.writeFileSync(configYmlPath, yaml, 'utf8');
+    }
 
-    return { success: true, path: configYmlPath, content: yaml };
+    return { success: true, path: configYmlPath, content: yaml, changed };
 }
 
 function ensureDnsRoutesForEnabledHostnames() {

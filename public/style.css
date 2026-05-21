@@ -1905,12 +1905,12 @@ body[data-theme="light"] .gaming-terminal {
     border: 1px solid var(--border);
     background: var(--surface2);
     color: var(--text-muted);
-    border-radius: 6px;
-    width: 24px;
-    height: 24px;
+    border-radius: 999px;
+    width: 28px;
+    height: 28px;
     cursor: pointer;
-    font-size: 14px;
-    font-weight: 700;
+    font-size: 13px;
+    font-weight: 600;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -1923,6 +1923,39 @@ body[data-theme="light"] .gaming-terminal {
     background: var(--border);
     color: var(--text);
 }
+
+.card-toggle-btn i {
+    width: 14px;
+    height: 14px;
+}
+
+.card-toggle-btn.is-expanded {
+    border-color: rgba(99, 102, 241, 0.45);
+    background: rgba(99, 102, 241, 0.1);
+    color: var(--primary);
+}
+
+.speedtest-mode-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text-muted);
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.speedtest-mode-btn.active {
+    color: var(--text);
+    border-color: rgba(99, 102, 241, 0.45);
+    background: rgba(99, 102, 241, 0.12);
+}
+
+.speedtest-mode-btn i { width: 12px; height: 12px; }
 
 .monitor-card-expanded {
     margin-top: 12px;

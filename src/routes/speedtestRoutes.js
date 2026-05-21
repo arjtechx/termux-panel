@@ -61,11 +61,11 @@ function getWithRedirects(url, options, callback, onReqCreated, redirectCount = 
 }
 
 // 2. Função auxiliar para medir velocidade de Download (Média ponderada em janela de 10 segundos)
-function runDownloadTest(onProgress) {
+function runDownloadTest(onProgress, profile = {}) {
     return new Promise((resolve) => {
-        const url = 'https://proof.ovh.net/files/100Mb.dat'; // 100MB
+        const url = profile.downloadUrl || 'https://proof.ovh.net/files/100Mb.dat';
         const startTime = Date.now();
-        const durationLimit = 10000; // Janela estável de 10 segundos
+        const durationLimit = profile.durationLimit || 10000;
         let bytesReceived = 0;
         let isDone = false;
         let currentReq = null;
@@ -127,14 +127,14 @@ function runDownloadTest(onProgress) {
 }
 
 // 3. Função auxiliar para medir velocidade de Upload (Loop de escrita em janela de 10 segundos)
-function runUploadTest(onProgress) {
+function runUploadTest(onProgress, profile = {}) {
     return new Promise((resolve) => {
         const url = 'https://speed.cloudflare.com/__up';
-        const targetUploadSize = 100 * 1024 * 1024; // Alvo de até 100MB
+        const targetUploadSize = profile.uploadSize || (100 * 1024 * 1024);
         const bufferChunkSize = 2 * 1024 * 1024; // Buffer físico de 2MB em memória (baixo consumo)
         const buffer = crypto.randomBytes(bufferChunkSize);
         const startTime = Date.now();
-        const durationLimit = 10000; // Janela estável de 10 segundos
+        const durationLimit = profile.durationLimit || 10000;
         let bytesWritten = 0;
         let isDone = false;
 
@@ -245,6 +245,19 @@ router.get('/speedtest', (req, res) => {
     // Orquestra a execução assíncrona sequencialmente
     (async () => {
         try {
+            const mode = String(req.query.mode || 'fast').toLowerCase();
+            const profile = mode === 'slow'
+                ? {
+                    durationLimit: 15000,
+                    downloadUrl: 'https://proof.ovh.net/files/1Gb.dat',
+                    uploadSize: 180 * 1024 * 1024
+                }
+                : {
+                    durationLimit: 7000,
+                    downloadUrl: 'https://proof.ovh.net/files/100Mb.dat',
+                    uploadSize: 80 * 1024 * 1024
+                };
+
             // Fase 1: Latência (Ping)
             send({ stage: 'ping', status: 'running' });
             const ping = await measurePing();
@@ -262,7 +275,7 @@ router.get('/speedtest', (req, res) => {
                     percent: progress.percent,
                     speed: progress.speedMbps
                 });
-            });
+            }, profile);
             send({ stage: 'download', status: 'done', speed: downloadSpeed });
 
             await new Promise(resolve => setTimeout(resolve, 500));
@@ -276,7 +289,7 @@ router.get('/speedtest', (req, res) => {
                     percent: progress.percent,
                     speed: progress.speedMbps
                 });
-            });
+            }, profile);
             send({ stage: 'upload', status: 'done', speed: uploadSpeed });
 
             // Finalizado

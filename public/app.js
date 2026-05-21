@@ -2865,6 +2865,7 @@ function closeHostingLogsModal() {
 //  NOVO CLOUDFLARED MANAGER (TERMUX NATIVE API)
 // ============================================================
 let cfTunnels = [];
+let cfProxyRoutes = [];
 let cfLogInterval = null;
 let cfSelectedTunnelId = null;
 let cfSelectedYamlTunnelId = null;
@@ -2932,22 +2933,57 @@ async function cfCreateTunnel(e) {
 
 async function cfFetchTunnels() {
     try {
-        const res = await fetch(`${API_BASE}/tunnels`);
-        const data = await res.json();
-        if (data.success) {
-            cfTunnels = data.tunnels;
-            
-            // Calculate and update top metrics
-            let total = cfTunnels.length;
-            let online = cfTunnels.filter(t => t.running).length;
-            let activeConns = cfTunnels.reduce((acc, t) => acc + (t.connections || 0), 0);
-            
-            document.getElementById('cfMetricTotal').textContent = total;
-            document.getElementById('cfMetricOnline').textContent = online;
-            document.getElementById('cfMetricConnections').textContent = activeConns;
-            
-            cfRenderTunnels();
+        const [tunnelsRes, routesRes] = await Promise.all([
+            fetch(`${API_BASE}/tunnels`).catch(() => null),
+            fetch(`${API_BASE}/cloudflared/routes`).catch(() => null)
+        ]);
+
+        let managerTunnels = [];
+        if (tunnelsRes && tunnelsRes.ok) {
+            const tData = await tunnelsRes.json();
+            if (tData.success && Array.isArray(tData.tunnels)) managerTunnels = tData.tunnels;
         }
+
+        let proxyRoutes = [];
+        if (routesRes && routesRes.ok) {
+            const rData = await routesRes.json();
+            if (rData.success && Array.isArray(rData.routes)) proxyRoutes = rData.routes;
+        }
+
+        cfProxyRoutes = proxyRoutes;
+        const proxyAsCards = proxyRoutes.map(r => ({
+            id: `proxy:${r.id}`,
+            routeId: r.id,
+            isProxyRoute: true,
+            name: r.name || 'Rota Proxy',
+            domain: r.hostname || '',
+            path: r.path || '/',
+            type: 'proxy_route',
+            running: r.enabled !== false,
+            enabled: r.enabled !== false,
+            proto: r.targetProtocol || 'http',
+            localHost: r.targetHost || '127.0.0.1',
+            localPort: String(r.targetPort || 80),
+            autoStart: false,
+            crashCount: 0,
+            connections: 0,
+            cpu: 0,
+            ram: 0,
+            uptime: 0
+        }));
+
+        cfTunnels = [...managerTunnels, ...proxyAsCards];
+        
+        // Calculate and update top metrics from both modes
+        let total = cfTunnels.length;
+        let online = cfTunnels.filter(t => t.running).length;
+        let activeConns = managerTunnels.reduce((acc, t) => acc + (t.connections || 0), 0);
+        
+        document.getElementById('cfMetricTotal').textContent = total;
+        document.getElementById('cfMetricOnline').textContent = online;
+        document.getElementById('cfMetricConnections').textContent = activeConns;
+        
+        cfRenderTunnels();
     } catch (e) {
         console.error('Erro ao buscar túneis:', e);
     }
@@ -2969,6 +3005,9 @@ function cfSetTunnelBusy(id, action) {
 }
 
 function cfRenderTunnelActionButton(t) {
+    if (t.isProxyRoute) {
+        return `<button class="btn btn-sm btn-secondary" onclick="cfrOpenRouteModal('${t.routeId}')"><i data-lucide="edit-3"></i> Editar Rota</button>`;
+    }
     const action = cfTunnelActionBusy[t.id];
     if (action === 'start') return `<button class="btn btn-sm btn-warning btn-loading" disabled><span class="mini-spinner"></span> Iniciando...</button>`;
     if (action === 'pause') return `<button class="btn btn-sm btn-warning btn-loading" disabled><span class="mini-spinner"></span> Pausando...</button>`;
@@ -3005,11 +3044,12 @@ function cfFilterTunnels() {
         let typeBadge = '';
         if (t.type === 'token') typeBadge = '<span class="badge badge-info">Token</span>';
         else if (t.type === 'classic_custom') typeBadge = '<span class="badge badge-primary">YAML Ingress</span>';
+        else if (t.type === 'proxy_route') typeBadge = '<span class="badge badge-warning">Proxy Reverso</span>';
         else typeBadge = '<span class="badge badge-secondary">Quick</span>';
 
         const btnAction = cfRenderTunnelActionButton(t);
 
-        const restartBtn = isRunning && !cfIsTunnelBusy(t.id)
+        const restartBtn = isRunning && !cfIsTunnelBusy(t.id) && !t.isProxyRoute
             ? `<button class="btn btn-sm btn-warning" onclick="cfRestartTunnel('${t.id}')" title="Reiniciar Túnel"><i data-lucide="rotate-cw"></i></button>`
             : '';
 
@@ -3017,12 +3057,12 @@ function cfFilterTunnels() {
             ? `<button class="btn btn-sm btn-secondary" onclick="cfShowYamlModal('${t.id}')" title="Configurar YAML"><i data-lucide="file-code"></i> YAML</button>`
             : '';
 
-        const qrBtn = (t.domain && isRunning)
+        const qrBtn = (t.domain && isRunning && !t.isProxyRoute)
             ? `<button class="btn btn-sm btn-secondary" onclick="cfShowQrModal('${cfEscape(t.domain)}')" title="Visualizar QR Code"><i data-lucide="qr-code"></i></button>`
             : '';
 
         // Native Uptime, CPU, RAM metrics card
-        const metricsHtml = isRunning
+        const metricsHtml = (isRunning && !t.isProxyRoute)
             ? `
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px 12px; margin-top:12px; font-size:0.8rem; background:var(--bg-lighter); padding:8px; border-radius:6px; color:var(--text-color);">
                 <div><strong>CPU:</strong> ${t.cpu || 0}%</div>
@@ -3063,15 +3103,15 @@ function cfFilterTunnels() {
                     ${restartBtn}
                     ${yamlBtn}
                     ${qrBtn}
-                    <button class="btn btn-sm btn-secondary" onclick="cfShowEditModal('${t.id}')" title="Editar Túnel">
+                    ${t.isProxyRoute ? '' : `<button class="btn btn-sm btn-secondary" onclick="cfShowEditModal('${t.id}')" title="Editar Túnel">
                         <i data-lucide="edit-3"></i>
-                    </button>
-                    <button class="btn btn-sm btn-secondary" onclick="cfShowLogsModal('${t.id}', '${cfEscape(t.name)}')">
+                    </button>`}
+                    ${t.isProxyRoute ? '' : `<button class="btn btn-sm btn-secondary" onclick="cfShowLogsModal('${t.id}', '${cfEscape(t.name)}')">
                         <i data-lucide="scroll-text"></i> Logs
-                    </button>
-                    <button class="btn btn-sm btn-danger" onclick="cfDeleteTunnel('${t.id}')">
+                    </button>`}
+                    ${t.isProxyRoute ? '' : `<button class="btn btn-sm btn-danger" onclick="cfDeleteTunnel('${t.id}')">
                         <i data-lucide="trash-2"></i>
-                    </button>
+                    </button>`}
                 </div>
             </div>
         `;
@@ -3640,6 +3680,20 @@ async function initFileBrowserShortcuts() {
 // ============================================================
 let isSpeedtestRunning = false;
 let speedtestUnit = 'Mbps';
+let speedtestMode = 'fast';
+
+function setSpeedtestMode(e, mode) {
+    if (e) {
+        e.stopPropagation();
+        e.preventDefault();
+    }
+    if (isSpeedtestRunning) return;
+    speedtestMode = mode === 'slow' ? 'slow' : 'fast';
+    const fastBtn = document.getElementById('speedtest-mode-fast');
+    const slowBtn = document.getElementById('speedtest-mode-slow');
+    if (fastBtn) fastBtn.classList.toggle('active', speedtestMode === 'fast');
+    if (slowBtn) slowBtn.classList.toggle('active', speedtestMode === 'slow');
+}
 
 function toggleSpeedtestUnit(e) {
     if (e) {
@@ -3665,7 +3719,7 @@ function formatSpeed(mbps) {
 function updateNeedle(mbps) {
     const needle = document.getElementById('speedtest-needle');
     if (!needle) return;
-    let max = 500; // max scale 500 Mbps
+    let max = speedtestMode === 'slow' ? 300 : 700;
     let angle = -90 + (mbps / max) * 180;
     if (angle > 90) angle = 90;
     needle.style.transform = `rotate(${angle}deg)`;
@@ -3711,7 +3765,7 @@ function startSpeedTest() {
     if (upValCompact) upValCompact.textContent = '--';
 
     // Cria EventSource
-    const eventSource = new EventSource('/api/speedtest');
+    const eventSource = new EventSource(`/api/speedtest?mode=${encodeURIComponent(speedtestMode)}`);
 
     eventSource.onmessage = function(event) {
         try {
@@ -4012,7 +4066,10 @@ function initMonitorCards() {
         // Set correct icon indicator on the toggle button
         const toggleBtn = card.querySelector('.card-toggle-btn');
         if (toggleBtn) {
-            toggleBtn.textContent = savedState === 'compact' ? '⌄' : '⌃';
+            toggleBtn.innerHTML = savedState === 'compact'
+                ? '<i data-lucide="chevron-down"></i>'
+                : '<i data-lucide="chevron-up"></i>';
+            toggleBtn.classList.toggle('is-expanded', savedState !== 'compact');
             
             // Add click listener to toggle btn
             toggleBtn.addEventListener('click', (e) => {
@@ -4022,6 +4079,7 @@ function initMonitorCards() {
             });
         }
     });
+    if (window.lucide) lucide.createIcons();
 }
 
 function toggleMonitorCard(cardName) {
@@ -4036,10 +4094,14 @@ function toggleMonitorCard(cardName) {
 
     const toggleBtn = card.querySelector('.card-toggle-btn');
     if (toggleBtn) {
-        toggleBtn.textContent = nextState === 'compact' ? '⌄' : '⌃';
+        toggleBtn.innerHTML = nextState === 'compact'
+            ? '<i data-lucide="chevron-down"></i>'
+            : '<i data-lucide="chevron-up"></i>';
+        toggleBtn.classList.toggle('is-expanded', nextState !== 'compact');
     }
 
     localStorage.setItem(`monitor-card-state-${cardName}`, nextState);
+    if (window.lucide) lucide.createIcons();
 }
 
 function toggleAllMonitorCards() {
@@ -4066,11 +4128,15 @@ function toggleAllMonitorCards() {
 
         const toggleBtn = card.querySelector('.card-toggle-btn');
         if (toggleBtn) {
-            toggleBtn.textContent = targetState === 'compact' ? '⌄' : '⌃';
+            toggleBtn.innerHTML = targetState === 'compact'
+                ? '<i data-lucide="chevron-down"></i>'
+                : '<i data-lucide="chevron-up"></i>';
+            toggleBtn.classList.toggle('is-expanded', targetState !== 'compact');
         }
 
         localStorage.setItem(`monitor-card-state-${cardName}`, targetState);
     });
+    if (window.lucide) lucide.createIcons();
 }
 
 window.initMonitorCards = initMonitorCards;
@@ -4730,12 +4796,15 @@ async function cfrApplyConfigYml() {
             throw new Error(`Validação falhou:\n${valData.error || valData.output}`);
         }
 
-        // 4. Reiniciar processo cloudflared
-        await fetch(`${API_BASE}/cloudflared/process/stop`, { method: 'POST' }).catch(() => {});
-        await new Promise(r => setTimeout(r, 1000));
-        await fetch(`${API_BASE}/cloudflared/process/start`, { method: 'POST' }).catch(() => {});
-
-        showToast('Ingress configurado, validado e túnel iniciado! Aguardando 4 segundos para testes de rota...', 'success');
+        // 4. Reiniciar somente quando houver mudança real no config.yml
+        if (genData.changed) {
+            await fetch(`${API_BASE}/cloudflared/process/stop`, { method: 'POST' }).catch(() => {});
+            await new Promise(r => setTimeout(r, 1000));
+            await fetch(`${API_BASE}/cloudflared/process/start`, { method: 'POST' }).catch(() => {});
+            showToast('Ingress atualizado e túnel reiniciado! Aguardando testes de rota...', 'success');
+        } else {
+            showToast('Nenhuma alteração real no ingress. Sem reinício global.', 'info');
+        }
         
         // Atualiza UI de status
         setTimeout(cfrCheckStatus, 1500);
