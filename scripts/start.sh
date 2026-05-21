@@ -336,6 +336,42 @@ ok "Auto-restart ativo — limite de 5 quedas por minuto."
 log "Acesse: http://0.0.0.0:${PANEL_PORT}"
 echo ""
 
+# Cloudflared sidecar: reinicia junto com o painel para aplicar regras novas
+restart_cloudflared_with_panel() {
+  local cf_config="$HOME/.cloudflared/config.yml"
+  local cf_log="$PANEL_DIR/logs/cloudflared.log"
+
+  if ! command -v cloudflared >/dev/null 2>&1; then
+    warn "cloudflared não encontrado no PATH. Pulando auto-start do túnel."
+    return 0
+  fi
+
+  if [ ! -f "$cf_config" ]; then
+    warn "config.yml do cloudflared não encontrado em $cf_config. Pulando auto-start do túnel."
+    return 0
+  fi
+
+  if ! grep -qi "^ingress:" "$cf_config" 2>/dev/null; then
+    warn "config.yml sem bloco ingress. Pulando auto-start do cloudflared."
+    return 0
+  fi
+
+  log "Reiniciando processo cloudflared para aplicar regras atuais..."
+  pkill -x cloudflared 2>/dev/null || true
+  sleep 1
+
+  nohup cloudflared --config "$cf_config" tunnel run >>"$cf_log" 2>&1 &
+  sleep 2
+
+  if pgrep -x cloudflared >/dev/null 2>&1; then
+    ok "Cloudflared iniciado junto com o painel."
+  else
+    warn "Cloudflared não iniciou automaticamente. Verifique logs/cloudflared.log."
+  fi
+}
+
+restart_cloudflared_with_panel
+
 # Loop de auto-restart com limites de tentativas
 RESTART_COUNT=0
 RESTART_WINDOW_START=$(date +%s)

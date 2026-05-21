@@ -8,6 +8,7 @@ const { execSync, exec, spawn } = require('child_process');
 
 const PANEL_DIR = path.resolve(__dirname, '..', '..');
 const ROUTES_JSON_FILE = path.join(PANEL_DIR, 'data', 'cloudflared-routes.json');
+let processOperationInProgress = false;
 
 function getCloudflaredBinaryPath() {
     const termuxBinary = '/data/data/com.termux/files/usr/bin/cloudflared';
@@ -77,6 +78,17 @@ function getCloudflaredPids() {
 
 function isCloudflaredRunning() {
     return getCloudflaredPids().length > 0;
+}
+
+async function waitUntilCloudflaredStops(maxAttempts = 8, delayMs = 500) {
+    for (let i = 0; i < maxAttempts; i++) {
+        const pids = getCloudflaredPids();
+        if (pids.length === 0) {
+            return { stopped: true, attempts: i + 1, pids: [] };
+        }
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+    return { stopped: false, attempts: maxAttempts, pids: getCloudflaredPids() };
 }
 
 async function stopCloudflaredProcesses() {
@@ -719,9 +731,18 @@ module.exports = function createCloudflaredRoutes() {
     });
 
     router.post('/cloudflared/process/start', async (req, res) => {
+        if (processOperationInProgress) {
+            return res.status(409).json({ success: false, error: 'Outra operação do Cloudflared está em andamento. Aguarde alguns segundos.' });
+        }
+        processOperationInProgress = true;
         try {
             const homeDir = process.env.HOME || os.homedir() || '/data/data/com.termux/files/home';
             const configYmlPath = path.join(homeDir, '.cloudflared', 'config.yml');
+
+            if (isCloudflaredRunning()) {
+                await stopCloudflaredProcesses();
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
 
             // 1. Gerar config.yml a partir das rotas salvas
             const genResult = generateConfigYmlFromRoutes();
@@ -780,15 +801,31 @@ module.exports = function createCloudflaredRoutes() {
             }
         } catch (err) {
             res.status(500).json({ success: false, error: err.message });
+        } finally {
+            processOperationInProgress = false;
         }
     });
 
     router.post('/cloudflared/process/stop', async (req, res) => {
+        if (processOperationInProgress) {
+            return res.status(409).json({ success: false, error: 'Outra operação do Cloudflared está em andamento. Aguarde alguns segundos.' });
+        }
+        processOperationInProgress = true;
         try {
             await stopCloudflaredProcesses();
-            res.json({ success: true, message: 'Processo parado com segurança.' });
+            const waitResult = await waitUntilCloudflaredStops(8, 500);
+            if (!waitResult.stopped) {
+                return res.status(500).json({
+                    success: false,
+                    error: 'Ainda existem processos cloudflared ativos após stop.',
+                    pids: waitResult.pids
+                });
+            }
+            res.json({ success: true, message: 'Processo parado com segurança.', pids: [] });
         } catch (err) {
             res.status(500).json({ success: false, error: err.message });
+        } finally {
+            processOperationInProgress = false;
         }
     });
 
@@ -925,8 +962,12 @@ module.exports = function createCloudflaredRoutes() {
     });
 
     router.post('/cloudflared/restart', async (req, res) => {
+        if (processOperationInProgress) {
+            return res.status(409).json({ success: false, error: 'Outra operação do Cloudflared está em andamento. Aguarde alguns segundos.' });
+        }
+        processOperationInProgress = true;
         try {
-            processManager.killAllZombies();
+            await stopCloudflaredProcesses();
             await new Promise(r => setTimeout(r, 1500));
             const tunnels = manager.getTunnels();
             tunnels.forEach(t => {
@@ -939,6 +980,8 @@ module.exports = function createCloudflaredRoutes() {
             res.json({ success: true, message: 'Processos de túneis reiniciados com sucesso!' });
         } catch (err) {
             res.status(500).json({ success: false, error: err.message });
+        } finally {
+            processOperationInProgress = false;
         }
     });
 

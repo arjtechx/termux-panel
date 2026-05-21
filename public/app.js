@@ -9,6 +9,7 @@ let socket = null;
 let currentDir = '/';
 let currentFiles = [];
 let bootCompleted = false;
+let cfrProcessActionBusy = false;
 let cpuRootEnabled = localStorage.getItem('cpu-root-enabled') === 'true';
 const CPU_HISTORY_LIMIT = 28;
 const cpuHistory = [];
@@ -4668,6 +4669,10 @@ async function cfrTestPublicUrl(id, publicUrl) {
 }
 
 async function cfrApplyConfigYml() {
+    if (cfrProcessActionBusy) {
+        return showToast('Já existe uma operação de túnel em andamento. Aguarde finalizar.', 'warning');
+    }
+    cfrProcessActionBusy = true;
     const btn = document.querySelector('button[onclick="cfrApplyConfigYml()"]');
     let originalHtml = '';
     if (btn) {
@@ -4723,6 +4728,7 @@ async function cfrApplyConfigYml() {
         console.error('[cfrApplyConfigYml] Erro:', err);
         showToast('Erro ao aplicar regras Ingress: ' + err.message, 'error');
     } finally {
+        cfrProcessActionBusy = false;
         if (btn) {
             btn.innerHTML = originalHtml || '<i data-lucide="check"></i> Salvar e Aplicar Ingress no Cloudflared';
             btn.disabled = false;
@@ -5110,7 +5116,47 @@ async function cfrTestAllRules() {
     }
 }
 
+function cfrSetProcessButtonsBusy(activeAction, busy) {
+    const startBtn = document.getElementById('cfrStartBtn');
+    const stopBtn = document.getElementById('cfrStopBtn');
+    const restartBtn = document.getElementById('cfrRestartBtn');
+    const buttons = [startBtn, stopBtn, restartBtn].filter(Boolean);
+    const symbols = { start: '◌', stop: '↻', restart: '⟳' };
+    const labels = { start: 'Iniciando...', stop: 'Parando...', restart: 'Reiniciando...' };
+
+    if (busy) {
+        buttons.forEach((btn) => {
+            if (!btn.dataset.originalHtml) btn.dataset.originalHtml = btn.innerHTML;
+            if (!btn.dataset.originalClass) btn.dataset.originalClass = btn.className;
+            btn.disabled = true;
+            if (btn === startBtn && activeAction === 'start') {
+                btn.className = 'btn btn-warning btn-sm';
+                btn.innerHTML = `${symbols.start} ${labels.start}`;
+            } else if (btn === stopBtn && activeAction === 'stop') {
+                btn.className = 'btn btn-warning btn-sm';
+                btn.innerHTML = `${symbols.stop} ${labels.stop}`;
+            } else if (btn === restartBtn && activeAction === 'restart') {
+                btn.className = 'btn btn-warning btn-sm';
+                btn.innerHTML = `${symbols.restart} ${labels.restart}`;
+            }
+        });
+        return;
+    }
+
+    buttons.forEach((btn) => {
+        btn.disabled = false;
+        if (btn.dataset.originalClass) btn.className = btn.dataset.originalClass;
+        if (btn.dataset.originalHtml) btn.innerHTML = btn.dataset.originalHtml;
+    });
+    if (window.lucide) lucide.createIcons();
+}
+
 async function cfrStartProcess() {
+    if (cfrProcessActionBusy) {
+        return showToast('Já existe uma operação de túnel em andamento. Aguarde finalizar.', 'warning');
+    }
+    cfrProcessActionBusy = true;
+    cfrSetProcessButtonsBusy('start', true);
     try {
         showToast('Iniciando processo do Cloudflared...', 'info');
         const res = await fetch(`${API_BASE}/cloudflared/process/start`, { method: 'POST' });
@@ -5123,10 +5169,18 @@ async function cfrStartProcess() {
         }
     } catch (err) {
         showToast('Erro: ' + err.message, 'error');
+    } finally {
+        cfrProcessActionBusy = false;
+        cfrSetProcessButtonsBusy('start', false);
     }
 }
 
 async function cfrStopProcess() {
+    if (cfrProcessActionBusy) {
+        return showToast('Já existe uma operação de túnel em andamento. Aguarde finalizar.', 'warning');
+    }
+    cfrProcessActionBusy = true;
+    cfrSetProcessButtonsBusy('stop', true);
     try {
         showToast('Parando Cloudflared...', 'info');
         const res = await fetch(`${API_BASE}/cloudflared/process/stop`, { method: 'POST' });
@@ -5139,10 +5193,18 @@ async function cfrStopProcess() {
         }
     } catch (err) {
         showToast('Erro: ' + err.message, 'error');
+    } finally {
+        cfrProcessActionBusy = false;
+        cfrSetProcessButtonsBusy('stop', false);
     }
 }
 
 async function cfrRestartProcess() {
+    if (cfrProcessActionBusy) {
+        return showToast('Já existe uma operação de túnel em andamento. Aguarde finalizar.', 'warning');
+    }
+    cfrProcessActionBusy = true;
+    cfrSetProcessButtonsBusy('restart', true);
     try {
         showToast('Reiniciando Cloudflared...', 'info');
         await fetch(`${API_BASE}/cloudflared/process/stop`, { method: 'POST' }).catch(() => {});
@@ -5152,6 +5214,9 @@ async function cfrRestartProcess() {
         setTimeout(cfrCheckStatus, 1000);
     } catch (err) {
         showToast('Erro: ' + err.message, 'error');
+    } finally {
+        cfrProcessActionBusy = false;
+        cfrSetProcessButtonsBusy('restart', false);
     }
 }
 
