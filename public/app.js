@@ -4698,18 +4698,26 @@ async function cfrApplyConfigYml() {
         await new Promise(r => setTimeout(r, 1000));
         await fetch(`${API_BASE}/cloudflared/process/start`, { method: 'POST' }).catch(() => {});
 
-        showToast('Ingress configurado, validado e túnel reiniciado com sucesso!', 'success');
+        showToast('Ingress configurado, validado e túnel iniciado! Aguardando 4 segundos para testes de rota...', 'success');
         
         // Atualiza UI de status
-        cfrCheckStatus();
+        setTimeout(cfrCheckStatus, 1500);
 
-        // Faz um pequeno teste público se tiver rota
-        setTimeout(() => {
-            const hasPma = cfrRoutesListCached.find(r => r.path === '/phpmyadmin/');
-            if (hasPma) {
-                cfrTestPublicUrl(null, `https://${hasPma.hostname}${hasPma.path}`, null);
+        // Aguarda 4 segundos para testar as rotas
+        setTimeout(async () => {
+            const activeRoutes = cfrRoutesListCached.filter(r => r.enabled);
+            for (const r of activeRoutes) {
+                const localUrl = `${r.targetProtocol}://${r.targetHost}:${r.targetPort}${r.path}`;
+                const publicUrl = `https://${r.hostname}${r.path}`;
+                
+                // Test local connection
+                await cfrTestRoute(r.id, localUrl);
+                // Test public connection
+                await cfrTestPublicUrl(r.id, publicUrl);
             }
-        }, 3000);
+            // Run status check again to update the final warning/success display
+            cfrCheckStatus();
+        }, 4000);
 
     } catch (err) {
         console.error('[cfrApplyConfigYml] Erro:', err);
@@ -5025,16 +5033,80 @@ async function cfrCheckStatus() {
     if (!statusText) return;
     try {
         const res = await fetch(`${API_BASE}/cloudflared/process/status`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         if (data.success) {
             if (data.isRunning) {
-                statusText.innerHTML = `<span style="color: var(--success); font-weight: bold;">Rodando</span> - O processo do Cloudflared está ativo no sistema.`;
+                const connStatus = data.connected 
+                    ? `<span style="color: var(--success); font-weight: bold;">● Rodando &amp; Conectado</span>` 
+                    : `<span style="color: var(--warning); font-weight: bold;">● Rodando (Não Conectado)</span>`;
+                
+                let details = `<div style="margin-top: 8px; font-size: 0.8rem; line-height: 1.4;">`;
+                details += `<strong>Status:</strong> ${connStatus}<br>`;
+                if (data.pids && data.pids.length > 0) {
+                    details += `<strong>PIDs Ativos:</strong> ${data.pids.join(', ')}<br>`;
+                }
+                if (data.binaryPath) {
+                    details += `<strong>Binário:</strong> <code style="background: var(--bg-hover); padding: 1px 4px; border-radius: 3px;">${data.binaryPath}</code><br>`;
+                }
+                if (data.configPath) {
+                    details += `<strong>Configuração:</strong> <code style="background: var(--bg-hover); padding: 1px 4px; border-radius: 3px;">${data.configPath}</code><br>`;
+                }
+                if (data.warning) {
+                    details += `<div style="margin-top: 6px; padding: 6px 10px; background: rgba(255, 193, 7, 0.15); border-left: 3px solid #ffc107; border-radius: 4px; color: #e0a800; font-weight: 500;">⚠️ ${data.warning}</div>`;
+                }
+                details += `</div>`;
+                statusText.innerHTML = details;
             } else {
-                statusText.innerHTML = `<span style="color: var(--danger); font-weight: bold;">Parado</span> - Nenhum processo Cloudflared detectado.`;
+                let details = `<div style="margin-top: 8px; font-size: 0.8rem; line-height: 1.4;">`;
+                details += `<span style="color: var(--danger); font-weight: bold;">● Parado</span> - Nenhum processo Cloudflared ativo no sistema.<br>`;
+                if (data.warning) {
+                    details += `<div style="margin-top: 6px; padding: 6px 10px; background: rgba(220, 53, 69, 0.1); border-left: 3px solid var(--danger); border-radius: 4px; color: var(--danger); font-weight: 500;">⚠️ ${data.warning}</div>`;
+                }
+                details += `</div>`;
+                statusText.innerHTML = details;
             }
+        } else {
+            statusText.innerHTML = `<span style="color: var(--danger); font-weight: bold;">❌ Erro</span> - ${data.error || 'Falha ao processar status.'}`;
         }
     } catch (e) {
-        statusText.innerHTML = `<span style="color: var(--warning); font-weight: bold;">Desconhecido</span> - Erro ao verificar status.`;
+        statusText.innerHTML = `<span style="color: var(--warning); font-weight: bold;">⚠️ Desconhecido</span> - Erro de comunicação com o painel: ${e.message}`;
+    }
+}
+
+async function cfrTestAllRules() {
+    try {
+        showToast('Testando regras de Ingress no Cloudflared...', 'info');
+        const res = await fetch(`${API_BASE}/cloudflared/test-rules`, {
+            method: 'POST'
+        });
+
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || `HTTP ${res.status}`);
+        }
+
+        const data = await res.json();
+        if (data.success && data.results) {
+            let msg = `🔍 RESULTADO DO TESTE DE REGRAS INGRESS:\n\n`;
+            data.results.forEach(r => {
+                msg += `URL pública: ${r.url}\n`;
+                if (r.success) {
+                    msg += `➔ ✅ SUCESSO: ${r.output || 'Regra correspondente encontrada.'}\n`;
+                } else {
+                    msg += `➔ ❌ FALHA: ${r.error || ''}\n`;
+                    if (r.output) msg += `   Log: ${r.output.trim()}\n`;
+                }
+                msg += `\n`;
+            });
+            alert(msg);
+            showToast('Teste de regras concluído!', 'success');
+        } else {
+            showToast('Erro ao testar regras: ' + (data.error || 'Erro desconhecido'), 'error');
+        }
+    } catch (err) {
+        console.error('[cfrTestAllRules] Erro:', err);
+        showToast('Erro ao testar regras: ' + err.message, 'error');
     }
 }
 
@@ -5117,6 +5189,7 @@ window.cfrTestRoute = cfrTestRoute;
 window.cfrTestPublicUrl = cfrTestPublicUrl;
 window.cfrShowLogs = cfrShowLogs;
 window.cfrLoadLogs = cfrLoadLogs;
+window.cfrTestAllRules = cfrTestAllRules;
 
 // Controle de Processo
 window.cfrCheckStatus = cfrCheckStatus;

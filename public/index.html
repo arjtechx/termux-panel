@@ -1365,8 +1365,14 @@
                             <button class="btn btn-secondary btn-sm" onclick="cfrValidateConfig()">
                                 <i data-lucide="check-square"></i> Validar Ingress
                             </button>
+                            <button class="btn btn-secondary btn-sm" onclick="cfrTestAllRules()">
+                                <i data-lucide="shield-check"></i> Testar Regras
+                            </button>
                             <button class="btn btn-secondary btn-sm" onclick="cfrShowLogs()">
                                 <i data-lucide="scroll-text"></i> Visualizar Logs
+                            </button>
+                            <button class="btn btn-secondary btn-sm" onclick="cfrCheckStatus()">
+                                <i data-lucide="activity"></i> Status do Túnel
                             </button>
                             <button class="btn btn-success btn-sm" onclick="cfrCreatePresetPma()">
                                 <i data-lucide="sparkles"></i> Preset phpMyAdmin
@@ -2054,7 +2060,7 @@
 <div class="fm-toast-container" id="fm-toast-container"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.97"></script>
+<script src="filemanager.js?v=0.2.98"></script>
 <script src="app.js?v=4.5"></script>
 </body>
 </html>

@@ -135,9 +135,9 @@ function startTunnelProcess(id, options = {}) {
         args.push('run', '--token', token);
     } else if (quickUrl) {
         args.push('--url', quickUrl);
-    } else if (configPath && tunnelName) {
+    } else if (configPath) {
         // Advanced Custom YAML Tunnel
-        args.push('--config', configPath, 'run', tunnelName);
+        args.push('--config', configPath, 'run');
     } else {
         return { success: false, error: 'Configurações de início incompletas.' };
     }
@@ -328,8 +328,9 @@ async function getTunnelStatus(id) {
  */
 function killAllZombies() {
     try {
-        // pkill exits with code 1 if no matching process — not an error for us
-        execSync('pkill -9 cloudflared || true');
+        // Use exact executable name matches to avoid killing node/panel
+        execSync('pkill -x cloudflared || true');
+        execSync('killall cloudflared || true');
     } catch { /* Ignore: pkill not found on some systems (Windows) */ }
     
     // Clear internal state regardless of kill outcome

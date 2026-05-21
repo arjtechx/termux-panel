@@ -4,10 +4,111 @@ const processManager = require('./process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { execSync, exec } = require('child_process');
+const { execSync, exec, spawn } = require('child_process');
 
 const PANEL_DIR = path.resolve(__dirname, '..', '..');
 const ROUTES_JSON_FILE = path.join(PANEL_DIR, 'data', 'cloudflared-routes.json');
+
+function getCloudflaredBinaryPath() {
+    const termuxBinary = '/data/data/com.termux/files/usr/bin/cloudflared';
+    if (fs.existsSync(termuxBinary)) {
+        return termuxBinary;
+    }
+    
+    if (process.env.PREFIX) {
+        const prefixBinary = path.join(process.env.PREFIX, 'bin', 'cloudflared');
+        if (fs.existsSync(prefixBinary)) {
+            return prefixBinary;
+        }
+    }
+    
+    const homeDir = process.env.HOME || os.homedir() || '/data/data/com.termux/files/home';
+    const localBinary = path.join(homeDir, '.cloudflared', process.platform === 'win32' ? 'cloudflared.exe' : 'cloudflared');
+    if (fs.existsSync(localBinary)) {
+        return localBinary;
+    }
+    
+    return 'cloudflared';
+}
+
+function getCloudflaredPids() {
+    const pids = [];
+    if (process.platform === 'win32') {
+        try {
+            const stdout = execSync('tasklist', { encoding: 'utf8' });
+            // basic check on Windows just to avoid errors on dev
+            if (stdout.toLowerCase().includes('cloudflared')) {
+                pids.push(9999); // dummy PID for windows dev env
+            }
+        } catch {}
+        return pids;
+    }
+    
+    try {
+        const files = fs.readdirSync('/proc');
+        for (const file of files) {
+            if (/^\d+$/.test(file)) {
+                try {
+                    const comm = fs.readFileSync(`/proc/${file}/comm`, 'utf8').trim();
+                    if (comm === 'cloudflared') {
+                        pids.push(parseInt(file));
+                    }
+                } catch (e) {
+                    // Ignore processes we can't read (permission denied or exited)
+                }
+            }
+        }
+    } catch (e) {
+        // Fallback: ps -A and filter line-by-line using exact binary match
+        try {
+            const lines = execSync('ps -A', { encoding: 'utf8' }).split('\n');
+            for (const line of lines) {
+                if (line.includes('cloudflared') && !line.includes('grep') && !line.includes('node')) {
+                    const match = line.trim().match(/^(\d+)/);
+                    if (match) {
+                        pids.push(parseInt(match[1]));
+                    }
+                }
+            }
+        } catch (err) {}
+    }
+    return pids;
+}
+
+function isCloudflaredRunning() {
+    return getCloudflaredPids().length > 0;
+}
+
+async function stopCloudflaredProcesses() {
+    const pids = getCloudflaredPids();
+    if (pids.length === 0) {
+        try { execSync('pkill -x cloudflared || true'); } catch (e) {}
+        try { execSync('killall cloudflared || true'); } catch (e) {}
+        return;
+    }
+
+    // 1. Send SIGTERM
+    pids.forEach(pid => {
+        try {
+            process.kill(pid, 'SIGTERM');
+        } catch (e) {}
+    });
+
+    // 2. Wait 1 second
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    // 3. If still alive, send SIGKILL to these PIDs only
+    pids.forEach(pid => {
+        try {
+            process.kill(pid, 0); // check if alive
+            process.kill(pid, 'SIGKILL');
+        } catch (e) {}
+    });
+
+    // 4. Final Fallback
+    try { execSync('pkill -x cloudflared || true'); } catch (e) {}
+    try { execSync('killall cloudflared || true'); } catch (e) {}
+}
 
 function readRoutesJson() {
     try {
@@ -113,7 +214,20 @@ function generateConfigYmlFromRoutes() {
     const meta = getTunnelMetadata();
     const routes = readRoutesJson();
 
-    const activeRoutes = routes.filter(r => r.enabled);
+    const enabledRoutes = routes.filter(r => r.enabled);
+
+    // Dedup '/' rules per hostname
+    const seenHostnames = new Set();
+    const activeRoutes = [];
+    enabledRoutes.forEach(r => {
+        if (!r.path || r.path === '/') {
+            if (seenHostnames.has(r.hostname)) {
+                return; // skip duplicate root path
+            }
+            seenHostnames.add(r.hostname);
+        }
+        activeRoutes.push(r);
+    });
 
     activeRoutes.sort((a, b) => {
         const aHasPath = a.path && a.path !== '/';
@@ -202,7 +316,7 @@ async function testUrl(targetUrl) {
 }
 
 module.exports = function createCloudflaredRoutes() {
-    const router = Router = express.Router();
+    const router = express.Router();
 
     // List Tunnels
     router.get('/tunnels', async (req, res) => {
@@ -395,10 +509,12 @@ module.exports = function createCloudflaredRoutes() {
             const newPath = req.body.path || '/';
             const newHostname = req.body.hostname || 'panel.arjtechbr.site';
 
-            if (newPath === '/') {
-                const dup = routes.find(r => r.hostname === newHostname && r.path === '/');
-                if (dup) {
-                    return res.status(400).json({ success: false, error: `Já existe uma regra catch-all (/) para o domínio ${newHostname}. Remova ou desative a existente primeiro.` });
+            const duplicate = routes.find(r => r.hostname === newHostname && r.path === newPath);
+            if (duplicate) {
+                if (newPath === '/') {
+                    return res.status(400).json({ success: false, error: "Já existe uma rota raiz para este domínio." });
+                } else {
+                    return res.status(400).json({ success: false, error: `Já existe uma rota configurada para o domínio ${newHostname} com o caminho ${newPath}.` });
                 }
             }
 
@@ -430,10 +546,12 @@ module.exports = function createCloudflaredRoutes() {
             const newHostname = req.body.hostname !== undefined ? req.body.hostname : routes[idx].hostname;
             const newPath = req.body.path !== undefined ? req.body.path : routes[idx].path;
 
-            if (newPath === '/') {
-                const dup = routes.find(r => r.id !== req.params.id && r.hostname === newHostname && r.path === '/');
-                if (dup) {
-                    return res.status(400).json({ success: false, error: `Já existe uma regra catch-all (/) para o domínio ${newHostname}.` });
+            const duplicate = routes.find(r => r.id !== req.params.id && r.hostname === newHostname && r.path === newPath);
+            if (duplicate) {
+                if (newPath === '/') {
+                    return res.status(400).json({ success: false, error: "Já existe uma rota raiz para este domínio." });
+                } else {
+                    return res.status(400).json({ success: false, error: `Já existe uma rota configurada para o domínio ${newHostname} com o caminho ${newPath}.` });
                 }
             }
 
@@ -497,49 +615,132 @@ module.exports = function createCloudflaredRoutes() {
 
     router.get('/cloudflared/process/status', (req, res) => {
         try {
-            const { execSync } = require('child_process');
-            let isRunning = false;
-            try {
-                const pids = execSync('pgrep -f cloudflared', { encoding: 'utf8' }).trim();
-                isRunning = pids.length > 0;
-            } catch (e) {
-                isRunning = false;
+            const pids = getCloudflaredPids();
+            const binaryPath = getCloudflaredBinaryPath();
+            const homeDir = process.env.HOME || os.homedir() || '/data/data/com.termux/files/home';
+            const configPath = path.join(homeDir, '.cloudflared', 'config.yml');
+            
+            // Read last logs
+            const logPath = path.join(PANEL_DIR, 'logs', 'cloudflared.log');
+            let lastLogLines = '';
+            let connected = false;
+            let warning = null;
+            
+            if (fs.existsSync(logPath)) {
+                try {
+                    const content = fs.readFileSync(logPath, 'utf8');
+                    const lines = content.split('\n');
+                    lastLogLines = lines.slice(-20).join('\n');
+                    
+                    const recentContent = lines.slice(-50).join('\n');
+                    if (recentContent.includes('Registered tunnel connection') || 
+                        recentContent.includes('Connection established') || 
+                        recentContent.includes('Registered at')) {
+                        connected = true;
+                    }
+
+                    // Check for key messages/errors in logs
+                    if (recentContent.includes('Cannot determine default configuration path')) {
+                        warning = "Erro: Cannot determine default configuration path. Caminho de config inválido.";
+                    } else if (recentContent.includes('Failed to read configuration file')) {
+                        warning = "Erro: Falha ao ler arquivo de configuração config.yml.";
+                    } else if (recentContent.includes('Unable to reach the origin service')) {
+                        warning = "Erro: Unable to reach the origin service. O serviço local (127.0.0.1) está inacessível.";
+                    } else if (recentContent.includes('1033') || recentContent.includes('530')) {
+                        warning = "Erro 1033 / HTTP 530 detectado nos logs.";
+                    }
+                } catch (e) {}
             }
-            res.json({ success: true, isRunning });
+            
+            if (pids.length > 0) {
+                if (!connected && !warning) {
+                    warning = "O Cloudflared está rodando, mas ainda não conectou na rede da Cloudflare.";
+                }
+            } else {
+                warning = "O Cloudflared está parado. Clique em Iniciar Túnel.";
+            }
+            
+            res.json({
+                success: true,
+                running: pids.length > 0,
+                isRunning: pids.length > 0,
+                pids,
+                binaryPath,
+                configPath,
+                lastLogLines,
+                connected,
+                warning
+            });
         } catch (err) {
             res.status(500).json({ success: false, error: err.message });
         }
     });
 
-    router.post('/cloudflared/process/start', (req, res) => {
+    router.post('/cloudflared/process/start', async (req, res) => {
         try {
-            const { tunnelId } = getTunnelMetadata();
-            if (!tunnelId || tunnelId === 'SEU_TUNNEL_ID_OU_NOME') {
-                return res.status(400).json({ success: false, error: 'Tunnel ID não encontrado. Crie um túnel ou edite o config.yml.' });
-            }
-            const { spawn } = require('child_process');
             const homeDir = process.env.HOME || os.homedir() || '/data/data/com.termux/files/home';
-            const logPath = path.join(homeDir, '.cloudflared', 'proxy_reverso.log');
+            const configYmlPath = path.join(homeDir, '.cloudflared', 'config.yml');
+
+            // 1. Gerar config.yml a partir das rotas salvas
+            const genResult = generateConfigYmlFromRoutes();
+            if (!genResult.success) {
+                return res.status(400).json({ success: false, error: 'Falha ao gerar config.yml: ' + genResult.error });
+            }
+
+            // 2. Validar config.yml
+            const binary = getCloudflaredBinaryPath();
+            try {
+                execSync(`"${binary}" --config "${configYmlPath}" tunnel ingress validate`, {
+                    encoding: 'utf8',
+                    stdio: ['ignore', 'pipe', 'pipe']
+                });
+            } catch (err) {
+                const outErr = err.stdout || err.stderr || err.message;
+                return res.status(400).json({ 
+                    success: false, 
+                    error: 'A validação do config.yml falhou. Verifique as configurações das rotas.',
+                    output: outErr 
+                });
+            }
+
+            // 3. Iniciar cloudflared
+            const logPath = path.join(PANEL_DIR, 'logs', 'cloudflared.log');
+            const logsDir = path.dirname(logPath);
+            if (!fs.existsSync(logsDir)) {
+                fs.mkdirSync(logsDir, { recursive: true });
+            }
             const out = fs.openSync(logPath, 'a');
-            
-            const child = spawn('cloudflared', ['tunnel', 'run', tunnelId], {
+
+            const args = ['--config', configYmlPath, 'tunnel', 'run'];
+            const child = spawn(binary, args, {
                 detached: true,
-                stdio: ['ignore', out, out]
+                stdio: ['ignore', out, out],
+                env: {
+                    ...process.env,
+                    TUNNEL_ORIGIN_CERT: path.join(homeDir, '.cloudflared', 'cert.pem')
+                }
             });
             child.unref();
 
-            res.json({ success: true, message: 'Comando de iniciar túnel enviado.' });
+            if (child.pid) {
+                res.json({
+                    success: true,
+                    pid: child.pid,
+                    configPath: configYmlPath,
+                    command: `${binary} ${args.join(' ')}`
+                });
+            } else {
+                res.status(500).json({ success: false, error: 'Falha ao obter PID do processo cloudflared.' });
+            }
         } catch (err) {
             res.status(500).json({ success: false, error: err.message });
         }
     });
 
-    router.post('/cloudflared/process/stop', (req, res) => {
+    router.post('/cloudflared/process/stop', async (req, res) => {
         try {
-            const { execSync } = require('child_process');
-            try { execSync('pkill -f cloudflared'); } catch (e) {}
-            try { execSync('killall -9 cloudflared'); } catch (e) {}
-            res.json({ success: true, message: 'Processo parado.' });
+            await stopCloudflaredProcesses();
+            res.json({ success: true, message: 'Processo parado com segurança.' });
         } catch (err) {
             res.status(500).json({ success: false, error: err.message });
         }
@@ -618,13 +819,62 @@ module.exports = function createCloudflaredRoutes() {
 
     router.post('/cloudflared/validate', (req, res) => {
         try {
-            const stdout = execSync('cloudflared tunnel ingress validate', { 
+            const binary = getCloudflaredBinaryPath();
+            const homeDir = process.env.HOME || os.homedir() || '/data/data/com.termux/files/home';
+            const configYmlPath = path.join(homeDir, '.cloudflared', 'config.yml');
+
+            if (!fs.existsSync(configYmlPath)) {
+                return res.json({ success: false, error: 'Arquivo config.yml não encontrado para validação.' });
+            }
+
+            const cmd = `"${binary}" --config "${configYmlPath}" tunnel ingress validate`;
+            const stdout = execSync(cmd, { 
                 encoding: 'utf8', 
                 stdio: ['ignore', 'pipe', 'pipe'] 
             });
             res.json({ success: true, output: stdout });
         } catch (err) {
-            res.json({ success: false, error: err.message, output: err.stdout || err.stderr });
+            res.json({ success: false, error: err.message, output: err.stdout || err.stderr || err.message });
+        }
+    });
+
+    router.post('/cloudflared/test-rules', (req, res) => {
+        try {
+            const binary = getCloudflaredBinaryPath();
+            const homeDir = process.env.HOME || os.homedir() || '/data/data/com.termux/files/home';
+            const configYmlPath = path.join(homeDir, '.cloudflared', 'config.yml');
+
+            if (!fs.existsSync(configYmlPath)) {
+                return res.status(400).json({ success: false, error: 'Arquivo config.yml não encontrado.' });
+            }
+
+            const routes = readRoutesJson();
+            const results = [];
+
+            for (const r of routes) {
+                if (!r.enabled) continue;
+                const testUrl = `https://${r.hostname}${r.path || '/'}`;
+                const cmd = `"${binary}" --config "${configYmlPath}" tunnel ingress rule "${testUrl}"`;
+                try {
+                    const stdout = execSync(cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+                    results.push({
+                        url: testUrl,
+                        success: true,
+                        output: stdout.trim()
+                    });
+                } catch (err) {
+                    results.push({
+                        url: testUrl,
+                        success: false,
+                        error: err.message,
+                        output: err.stdout || err.stderr || ''
+                    });
+                }
+            }
+
+            res.json({ success: true, results });
+        } catch (err) {
+            res.status(500).json({ success: false, error: err.message });
         }
     });
 
@@ -648,19 +898,25 @@ module.exports = function createCloudflaredRoutes() {
 
     router.get('/cloudflared/logs', (req, res) => {
         try {
+            const primaryLogPath = path.join(PANEL_DIR, 'logs', 'cloudflared.log');
             const homeDir = process.env.HOME || os.homedir() || '/data/data/com.termux/files/home';
-            const logPath = path.join(homeDir, '.cloudflared', 'proxy_reverso.log');
+            const fallbackLogPath = path.join(homeDir, '.cloudflared', 'proxy_reverso.log');
             
+            let logPath = primaryLogPath;
+            if (!fs.existsSync(primaryLogPath) && fs.existsSync(fallbackLogPath)) {
+                logPath = fallbackLogPath;
+            }
+
             if (fs.existsSync(logPath)) {
                 let logs = '';
-                if (process.platform !== 'win32') {
-                    try {
+                try {
+                    if (process.platform !== 'win32') {
                         logs = execSync(`tail -n 150 "${logPath}"`).toString();
-                    } catch (e) {
+                    } else {
                         const content = fs.readFileSync(logPath, 'utf8').split('\n');
                         logs = content.slice(-150).join('\n');
                     }
-                } else {
+                } catch (e) {
                     const content = fs.readFileSync(logPath, 'utf8').split('\n');
                     logs = content.slice(-150).join('\n');
                 }
@@ -668,11 +924,12 @@ module.exports = function createCloudflaredRoutes() {
             }
 
             const tunnels = manager.getTunnels();
-            if (tunnels.length === 0) {
-                return res.json({ success: true, logs: 'Nenhum túnel cadastrado e arquivo de log proxy_reverso.log não encontrado.' });
+            if (tunnels.length > 0) {
+                const logs = processManager.readLogs(tunnels[0].id, 150);
+                return res.json({ success: true, logs });
             }
-            const logs = processManager.readLogs(tunnels[0].id, 150);
-            res.json({ success: true, logs });
+
+            res.json({ success: true, logs: 'Nenhum log de ingress disponível no momento.' });
         } catch (err) {
             res.status(500).json({ success: false, error: err.message });
         }
