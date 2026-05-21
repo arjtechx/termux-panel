@@ -4429,7 +4429,7 @@ async function cfrSubmitRoute(event) {
         return showToast('O domínio público não deve conter portas (:8080, etc).', 'warning');
     }
 
-    const url = id ? `${API_BASE}/cloudflared/routes/${id}` : `${API_BASE}/cloudflared/routes`;
+    const url = id ? `${API_BASE}/cloudflared/routes-sync/${id}` : `${API_BASE}/cloudflared/routes`;
     const method = id ? 'PUT' : 'POST';
 
     try {
@@ -4446,7 +4446,7 @@ async function cfrSubmitRoute(event) {
 
         const data = await res.json();
         if (data.success) {
-            showToast(id ? 'Rota atualizada com sucesso!' : 'Rota adicionada com sucesso!', 'success');
+            showToast(id ? 'Rota atualizada com sucesso! (DNS sincronizado no backend)' : 'Rota adicionada com sucesso!', 'success');
             cfrCloseRouteModal();
             cfrFetchRoutes();
         } else {
@@ -4462,7 +4462,7 @@ async function cfrDeleteRoute(id) {
     if (!confirm('Deseja realmente excluir esta rota?')) return;
 
     try {
-        const res = await fetch(`${API_BASE}/cloudflared/routes/${id}`, {
+        const res = await fetch(`${API_BASE}/cloudflared/routes-sync/${id}`, {
             method: 'DELETE'
         });
 
@@ -4486,7 +4486,7 @@ async function cfrDeleteRoute(id) {
 
 async function cfrToggleRouteEnabled(id, currentStatus) {
     try {
-        const res = await fetch(`${API_BASE}/cloudflared/routes/${id}`, {
+        const res = await fetch(`${API_BASE}/cloudflared/routes-sync/${id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ enabled: !currentStatus })
@@ -5228,13 +5228,37 @@ setInterval(() => {
     }
 }, 5000);
 
+// Override: delete route with Cloudflare DNS cleanup feedback
+async function cfrDeleteRouteWithDnsFeedback(id) {
+    if (!confirm('Deseja realmente excluir esta rota?')) return;
+    try {
+        const res = await fetch(`${API_BASE}/cloudflared/routes-sync/${id}`, { method: 'DELETE' });
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || `HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Erro desconhecido ao excluir rota.');
+
+        if (data.dnsCleanup && data.dnsCleanup.success) {
+            showToast('Rota excluida e DNS removido da Cloudflare!', 'success');
+        } else {
+            showToast('Rota excluida com sucesso!', 'success');
+        }
+        cfrFetchRoutes();
+    } catch (err) {
+        console.error('[cfrDeleteRouteWithDnsFeedback] Erro:', err);
+        showToast('Erro ao excluir rota: ' + err.message, 'error');
+    }
+}
+
 // Expor no escopo global
 window.cfrFetchRoutes = cfrFetchRoutes;
 window.cfrRenderRoutes = cfrRenderRoutes;
 window.cfrOpenRouteModal = cfrOpenRouteModal;
 window.cfrCloseRouteModal = cfrCloseRouteModal;
 window.cfrSubmitRoute = cfrSubmitRoute;
-window.cfrDeleteRoute = cfrDeleteRoute;
+window.cfrDeleteRoute = cfrDeleteRouteWithDnsFeedback;
 window.cfrToggleRouteEnabled = cfrToggleRouteEnabled;
 window.cfrMoveRouteUp = cfrMoveRouteUp;
 window.cfrMoveRouteDown = cfrMoveRouteDown;

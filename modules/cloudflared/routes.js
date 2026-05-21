@@ -324,6 +324,80 @@ function ensureDnsRoutesForEnabledHostnames() {
     return { success: true, tunnelId, results };
 }
 
+function getCurrentTunnelId() {
+    const meta = getTunnelMetadata();
+    const tunnelId = (meta.tunnelId || '').trim();
+    if (!tunnelId || tunnelId === 'SEU_TUNNEL_ID') return null;
+    return tunnelId;
+}
+
+function removeDnsRouteForHostname(hostname) {
+    const cleanHost = String(hostname || '').trim().toLowerCase();
+    const tunnelId = getCurrentTunnelId();
+    const binary = getCloudflaredBinaryPath();
+
+    if (!cleanHost) return { success: false, error: 'Hostname vazio para remoção DNS.' };
+    if (!tunnelId) return { success: false, error: 'Tunnel ID não encontrado no config.yml.' };
+
+    const attempts = [
+        `"${binary}" tunnel route dns "${tunnelId}" "${cleanHost}" --delete`,
+        `"${binary}" tunnel route dns --delete "${cleanHost}"`,
+        `"${binary}" tunnel route dns delete "${cleanHost}"`
+    ];
+
+    const errors = [];
+    for (const cmd of attempts) {
+        try {
+            const output = execSync(cmd, {
+                encoding: 'utf8',
+                stdio: ['ignore', 'pipe', 'pipe']
+            });
+            return { success: true, hostname: cleanHost, command: cmd, output: String(output || '').trim() };
+        } catch (err) {
+            errors.push({
+                command: cmd,
+                error: err.message,
+                output: String(err.stdout || err.stderr || '').trim()
+            });
+        }
+    }
+
+    return { success: false, hostname: cleanHost, errors };
+}
+
+function ensureDnsRouteForHostname(hostname) {
+    const cleanHost = String(hostname || '').trim().toLowerCase();
+    const tunnelId = getCurrentTunnelId();
+    const binary = getCloudflaredBinaryPath();
+
+    if (!cleanHost) return { success: false, error: 'Hostname vazio para criar/atualizar DNS.' };
+    if (!tunnelId) return { success: false, error: 'Tunnel ID não encontrado no config.yml.' };
+
+    const attempts = [
+        `"${binary}" tunnel route dns "${tunnelId}" "${cleanHost}" --overwrite-dns`,
+        `"${binary}" tunnel route dns "${tunnelId}" "${cleanHost}"`
+    ];
+
+    const errors = [];
+    for (const cmd of attempts) {
+        try {
+            const output = execSync(cmd, {
+                encoding: 'utf8',
+                stdio: ['ignore', 'pipe', 'pipe']
+            });
+            return { success: true, hostname: cleanHost, command: cmd, output: String(output || '').trim() };
+        } catch (err) {
+            errors.push({
+                command: cmd,
+                error: err.message,
+                output: String(err.stdout || err.stderr || '').trim()
+            });
+        }
+    }
+
+    return { success: false, hostname: cleanHost, errors };
+}
+
 async function testUrl(targetUrl) {
     const startTime = Date.now();
     return new Promise((resolve) => {
@@ -633,6 +707,101 @@ module.exports = function createCloudflaredRoutes() {
             routes = routes.filter(r => r.id !== req.params.id);
             writeRoutesJson(routes);
             res.json({ success: true });
+        } catch (err) {
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
+    // Atomic update with DNS cleanup for old hostname no longer used
+    router.put('/cloudflared/routes-sync/:id', (req, res) => {
+        try {
+            const routes = readRoutesJson();
+            const idx = routes.findIndex(r => r.id === req.params.id);
+            if (idx === -1) return res.status(404).json({ success: false, error: 'Rota nao encontrada' });
+
+            const oldHost = String(routes[idx].hostname || '').trim().toLowerCase();
+            const newHostname = req.body.hostname !== undefined ? req.body.hostname : routes[idx].hostname;
+            const newPath = req.body.path !== undefined ? req.body.path : routes[idx].path;
+
+            const duplicate = routes.find(r => r.id !== req.params.id && r.hostname === newHostname && r.path === newPath);
+            if (duplicate) {
+                if (newPath === '/') {
+                    return res.status(400).json({ success: false, error: 'Ja existe uma rota raiz para este dominio.' });
+                } else {
+                    return res.status(400).json({ success: false, error: `Ja existe uma rota para o dominio ${newHostname} com o caminho ${newPath}.` });
+                }
+            }
+
+            routes[idx] = {
+                ...routes[idx],
+                name: req.body.name !== undefined ? req.body.name : routes[idx].name,
+                enabled: req.body.enabled !== undefined ? !!req.body.enabled : routes[idx].enabled,
+                hostname: newHostname,
+                path: newPath,
+                targetProtocol: req.body.targetProtocol !== undefined ? req.body.targetProtocol : routes[idx].targetProtocol,
+                targetHost: req.body.targetHost !== undefined ? req.body.targetHost : routes[idx].targetHost,
+                targetPort: req.body.targetPort !== undefined ? parseInt(req.body.targetPort) : routes[idx].targetPort,
+                order: req.body.order !== undefined ? parseInt(req.body.order) : routes[idx].order
+            };
+
+            writeRoutesJson(routes);
+
+            let dnsCleanup = null;
+            let dnsUpsert = null;
+            const finalHost = String(routes[idx].hostname || '').trim().toLowerCase();
+            const routeEnabled = routes[idx].enabled !== false;
+
+            if (routeEnabled && finalHost) {
+                dnsUpsert = ensureDnsRouteForHostname(finalHost);
+            }
+
+            if (oldHost && finalHost && oldHost !== finalHost) {
+                const stillUsed = routes.some((r, i) =>
+                    i !== idx &&
+                    r.enabled !== false &&
+                    String(r.hostname || '').trim().toLowerCase() === oldHost
+                );
+                if (!stillUsed) dnsCleanup = removeDnsRouteForHostname(oldHost);
+            }
+
+            if (!routeEnabled && finalHost) {
+                const stillUsed = routes.some((r, i) =>
+                    i !== idx &&
+                    r.enabled !== false &&
+                    String(r.hostname || '').trim().toLowerCase() === finalHost
+                );
+                if (!stillUsed) dnsCleanup = removeDnsRouteForHostname(finalHost);
+            }
+
+            res.json({ success: true, route: routes[idx], dnsCleanup, dnsUpsert });
+        } catch (err) {
+            res.status(400).json({ success: false, error: err.message });
+        }
+    });
+
+    // Atomic delete with DNS cleanup when hostname is no longer used
+    router.delete('/cloudflared/routes-sync/:id', (req, res) => {
+        try {
+            let routes = readRoutesJson();
+            const toDelete = routes.find(r => r.id === req.params.id);
+            if (!toDelete) {
+                return res.status(404).json({ success: false, error: 'Rota nao encontrada' });
+            }
+
+            const deletedHost = String(toDelete.hostname || '').trim().toLowerCase();
+            routes = routes.filter(r => r.id !== req.params.id);
+            writeRoutesJson(routes);
+
+            let dnsCleanup = null;
+            if (deletedHost) {
+                const stillUsed = routes.some(r =>
+                    r.enabled !== false &&
+                    String(r.hostname || '').trim().toLowerCase() === deletedHost
+                );
+                if (!stillUsed) dnsCleanup = removeDnsRouteForHostname(deletedHost);
+            }
+
+            res.json({ success: true, dnsCleanup });
         } catch (err) {
             res.status(500).json({ success: false, error: err.message });
         }
