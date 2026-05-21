@@ -1981,3 +1981,25 @@ body[data-theme="light"] .gaming-terminal {
     font-size: 0.7rem;
     color: var(--text-muted);
 }
+/* Cloudflared tunnel button loading */
+.btn-loading {
+  opacity: 0.95;
+  cursor: wait;
+}
+
+.mini-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  display: inline-block;
+  vertical-align: -2px;
+  margin-right: 6px;
+  animation: mini-spin 0.7s linear infinite;
+}
+
+@keyframes mini-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

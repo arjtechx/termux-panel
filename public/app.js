@@ -2868,6 +2868,7 @@ let cfTunnels = [];
 let cfLogInterval = null;
 let cfSelectedTunnelId = null;
 let cfSelectedYamlTunnelId = null;
+const cfTunnelActionBusy = {};
 
 function cfShowCreateModal() {
     document.getElementById('cfCreateModal').classList.remove('hidden');
@@ -2956,6 +2957,27 @@ function cfRenderTunnels() {
     cfFilterTunnels();
 }
 
+function cfIsTunnelBusy(id) {
+    return !!cfTunnelActionBusy[id];
+}
+
+function cfSetTunnelBusy(id, action) {
+    if (!id) return;
+    if (!action) delete cfTunnelActionBusy[id];
+    else cfTunnelActionBusy[id] = action;
+    cfRenderTunnels();
+}
+
+function cfRenderTunnelActionButton(t) {
+    const action = cfTunnelActionBusy[t.id];
+    if (action === 'start') return `<button class="btn btn-sm btn-warning btn-loading" disabled><span class="mini-spinner"></span> Iniciando...</button>`;
+    if (action === 'pause') return `<button class="btn btn-sm btn-warning btn-loading" disabled><span class="mini-spinner"></span> Pausando...</button>`;
+    if (action === 'restart') return `<button class="btn btn-sm btn-warning btn-loading" disabled><span class="mini-spinner"></span> Reiniciando...</button>`;
+    return t.running
+        ? `<button class="btn btn-sm btn-danger" onclick="cfPauseTunnel('${t.id}')"><i data-lucide="pause"></i> Pausar</button>`
+        : `<button class="btn btn-sm btn-success" onclick="cfStartTunnel('${t.id}')"><i data-lucide="play"></i> Iniciar</button>`;
+}
+
 function cfFilterTunnels() {
     const grid = document.getElementById('cfTunnelsGrid');
     if (!grid) return;
@@ -2985,11 +3007,9 @@ function cfFilterTunnels() {
         else if (t.type === 'classic_custom') typeBadge = '<span class="badge badge-primary">YAML Ingress</span>';
         else typeBadge = '<span class="badge badge-secondary">Quick</span>';
 
-        const btnAction = isRunning 
-            ? `<button class="btn btn-sm btn-danger" onclick="cfStopTunnel('${t.id}')"><i data-lucide="square"></i> Parar</button>`
-            : `<button class="btn btn-sm btn-success" onclick="cfStartTunnel('${t.id}')"><i data-lucide="play"></i> Iniciar</button>`;
+        const btnAction = cfRenderTunnelActionButton(t);
 
-        const restartBtn = isRunning
+        const restartBtn = isRunning && !cfIsTunnelBusy(t.id)
             ? `<button class="btn btn-sm btn-warning" onclick="cfRestartTunnel('${t.id}')" title="Reiniciar Túnel"><i data-lucide="rotate-cw"></i></button>`
             : '';
 
@@ -3061,6 +3081,8 @@ function cfFilterTunnels() {
 }
 
 async function cfStartTunnel(id) {
+    if (cfIsTunnelBusy(id)) return;
+    cfSetTunnelBusy(id, 'start');
     try {
         const res = await fetch(`${API_BASE}/tunnel/start`, {
             method: 'POST',
@@ -3076,10 +3098,14 @@ async function cfStartTunnel(id) {
         cfFetchTunnels();
     } catch (e) {
         showToast('Erro ao iniciar túnel: ' + e.message, 'error');
+    } finally {
+        cfSetTunnelBusy(id, null);
     }
 }
 
-async function cfStopTunnel(id) {
+async function cfPauseTunnel(id) {
+    if (cfIsTunnelBusy(id)) return;
+    cfSetTunnelBusy(id, 'pause');
     try {
         const res = await fetch(`${API_BASE}/tunnel/stop`, {
             method: 'POST',
@@ -3088,17 +3114,21 @@ async function cfStopTunnel(id) {
         });
         const data = await res.json();
         if (!data.success) {
-            showToast('Falha ao parar: ' + data.error, 'error');
+            showToast('Falha ao pausar: ' + data.error, 'error');
         } else {
-            showToast('Túnel parado com sucesso!', 'success');
+            showToast('Túnel pausado com sucesso!', 'success');
         }
         cfFetchTunnels();
     } catch (e) {
-        showToast('Erro ao parar túnel: ' + e.message, 'error');
+        showToast('Erro ao pausar túnel: ' + e.message, 'error');
+    } finally {
+        cfSetTunnelBusy(id, null);
     }
 }
 
 async function cfRestartTunnel(id) {
+    if (cfIsTunnelBusy(id)) return;
+    cfSetTunnelBusy(id, 'restart');
     try {
         const res = await fetch(`${API_BASE}/tunnel/restart`, {
             method: 'POST',
@@ -3114,6 +3144,8 @@ async function cfRestartTunnel(id) {
         cfFetchTunnels();
     } catch (e) {
         showToast('Erro ao reiniciar túnel: ' + e.message, 'error');
+    } finally {
+        cfSetTunnelBusy(id, null);
     }
 }
 
