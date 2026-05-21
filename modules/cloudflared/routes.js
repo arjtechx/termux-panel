@@ -270,6 +270,48 @@ function generateConfigYmlFromRoutes() {
     return { success: true, path: configYmlPath, content: yaml };
 }
 
+function ensureDnsRoutesForEnabledHostnames() {
+    const binary = getCloudflaredBinaryPath();
+    const routes = readRoutesJson();
+    const meta = getTunnelMetadata();
+    const tunnelId = (meta.tunnelId || '').trim();
+
+    if (!tunnelId || tunnelId === 'SEU_TUNNEL_ID') {
+        return {
+            success: false,
+            warning: 'Tunnel ID não encontrado no config.yml. DNS route automático não foi aplicado.'
+        };
+    }
+
+    const enabledHostnames = [...new Set(
+        routes
+            .filter(r => r && r.enabled !== false && r.hostname)
+            .map(r => String(r.hostname).trim().toLowerCase())
+            .filter(Boolean)
+    )];
+
+    const results = [];
+    enabledHostnames.forEach((hostname) => {
+        try {
+            const cmd = `"${binary}" tunnel route dns "${tunnelId}" "${hostname}"`;
+            const output = execSync(cmd, {
+                encoding: 'utf8',
+                stdio: ['ignore', 'pipe', 'pipe']
+            });
+            results.push({ hostname, success: true, output: String(output || '').trim() });
+        } catch (err) {
+            results.push({
+                hostname,
+                success: false,
+                error: err.message,
+                output: String(err.stdout || err.stderr || '').trim()
+            });
+        }
+    });
+
+    return { success: true, tunnelId, results };
+}
+
 async function testUrl(targetUrl) {
     const startTime = Date.now();
     return new Promise((resolve) => {
@@ -687,6 +729,9 @@ module.exports = function createCloudflaredRoutes() {
                 return res.status(400).json({ success: false, error: 'Falha ao gerar config.yml: ' + genResult.error });
             }
 
+            // 1.5. Garantir DNS routes dos hostnames ativos para o túnel atual
+            const dnsEnsure = ensureDnsRoutesForEnabledHostnames();
+
             // 2. Validar config.yml
             const binary = getCloudflaredBinaryPath();
             try {
@@ -727,7 +772,8 @@ module.exports = function createCloudflaredRoutes() {
                     success: true,
                     pid: child.pid,
                     configPath: configYmlPath,
-                    command: `${binary} ${args.join(' ')}`
+                    command: `${binary} ${args.join(' ')}`,
+                    dns: dnsEnsure
                 });
             } else {
                 res.status(500).json({ success: false, error: 'Falha ao obter PID do processo cloudflared.' });
