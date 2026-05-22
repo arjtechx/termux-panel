@@ -109,6 +109,7 @@ module.exports = function(io) {
                 status: noipStatus.status,
                 currentIp: noipStatus.currentIP,
                 lastUpdate: noipStatus.lastUpdate,
+                log: noipStatus.log,
                 username: config.username,
                 hostname: config.hostname,
                 interval: config.interval,

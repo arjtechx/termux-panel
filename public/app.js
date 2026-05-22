@@ -1888,10 +1888,19 @@ async function fetchNoipStatus() {
     if (ipEl)     ipEl.textContent     = data.currentIp || '--';
     if (updateEl) updateEl.textContent = data.lastUpdate || '--';
 
+    if (data.log && Array.isArray(data.log)) {
+        const container = document.getElementById('noip-log-container');
+        if (container) {
+            container.innerHTML = data.log.slice().reverse().map(line => `<div>${escapeHtml(line)}</div>`).join('');
+            container.scrollTop = container.scrollHeight;
+        }
+    }
+
     const btn = document.getElementById('noip-toggle-btn');
     if (btn) {
-        btn.textContent = data.status === 'running' ? '⏹ Parar' : '▶ Iniciar';
-        btn.className = `btn btn-sm ${data.status === 'running' ? 'btn-danger' : 'btn-primary'}`;
+        const isRunning = data.status === 'Executando...';
+        btn.textContent = isRunning ? '⏹ Parar' : '▶ Iniciar';
+        btn.className = `btn btn-sm ${isRunning ? 'btn-danger' : 'btn-primary'}`;
     }
 
     if (data.username) document.getElementById('noipUsername').value = data.username || '';
@@ -1924,11 +1933,33 @@ async function saveNoipConfig(e) {
     fetchNoipStatus();
 }
 
-function appendNoipLog(msg) {
+function appendNoipLog(data) {
     const container = document.getElementById('noip-log-container');
     if (!container) return;
-    container.innerHTML += `<div>${msg}</div>`;
-    container.scrollTop = container.scrollHeight;
+    
+    if (typeof data === 'string') {
+        container.innerHTML += `<div>${escapeHtml(data)}</div>`;
+        container.scrollTop = container.scrollHeight;
+        return;
+    }
+
+    if (data.log && Array.isArray(data.log)) {
+        container.innerHTML = data.log.slice().reverse().map(line => `<div>${escapeHtml(line)}</div>`).join('');
+        container.scrollTop = container.scrollHeight;
+    }
+
+    if (data.status) {
+        const statusEl = document.getElementById('noip-status-text');
+        if (statusEl) statusEl.textContent = data.status;
+    }
+    if (data.currentIP) {
+        const ipEl = document.getElementById('noip-current-ip');
+        if (ipEl) ipEl.textContent = data.currentIP;
+    }
+    if (data.lastUpdate) {
+        const updateEl = document.getElementById('noip-last-update');
+        if (updateEl) updateEl.textContent = data.lastUpdate;
+    }
 }
 
 // ============================================================
@@ -2871,6 +2902,42 @@ let cfInstances = [];
 let cfLogInterval = null;
 let cfSelectedInstId = null;
 let cfTempRoutes = [];
+const CF_ROUTE_PROTOCOLS = ['http', 'https', 'tcp', 'ssh', 'rdp', 'unix'];
+
+function cfNormalizeRouteType(routeType, protocol) {
+    if (routeType) return routeType;
+    const p = (protocol || 'http').toLowerCase();
+    if (p === 'tcp' || p === 'ssh' || p === 'rdp') return 'tcp_ssh';
+    return 'http_path';
+}
+
+function cfBuildServicePreview(route) {
+    const protocol = (route.targetProtocol || 'http').toLowerCase();
+    const host = (route.targetHost || '127.0.0.1').trim() || '127.0.0.1';
+    const port = parseInt(route.targetPort, 10) || 80;
+    if (protocol === 'unix') {
+        const socketPath = host.startsWith('/') ? host : `/${host}`;
+        return `unix:${socketPath}`;
+    }
+    return `${protocol}://${host}:${port}`;
+}
+
+function cfNormalizeRouteForEditor(route) {
+    if (!route) return route;
+    const protocol = (route.targetProtocol || 'http').toLowerCase();
+    const normalized = {
+        name: route.name || '',
+        hostname: route.hostname || '',
+        path: route.path || '/',
+        targetProtocol: CF_ROUTE_PROTOCOLS.includes(protocol) ? protocol : 'http',
+        targetHost: (route.targetHost || '127.0.0.1').trim() || '127.0.0.1',
+        targetPort: parseInt(route.targetPort, 10) || 80,
+        routeType: cfNormalizeRouteType(route.routeType, protocol),
+        service: route.service || ''
+    };
+    normalized.service = cfBuildServicePreview(normalized);
+    return normalized;
+}
 
 async function cfFetchInstances() {
     try {
@@ -2962,7 +3029,7 @@ function cfShowInstanceModal(id = null) {
             document.getElementById('cfInstHostname').value = inst.hostname || '';
             document.getElementById('cfInstProtected').checked = !!inst.protected;
             document.getElementById('cfInstAutoRestart').checked = !!inst.autoRestartOnSave;
-            if (inst.routes) cfTempRoutes = [...inst.routes];
+            if (inst.routes) cfTempRoutes = inst.routes.map(cfNormalizeRouteForEditor);
         }
     } else {
         title.textContent = '🚀 Nova Instância';
@@ -2983,26 +3050,76 @@ function cfRenderTempRoutes() {
         return;
     }
 
-    container.innerHTML = cfTempRoutes.map((r, index) => `
-        <div style="display:flex; gap:10px; align-items:center; margin-bottom:10px; background:var(--bg-primary); padding:10px; border-radius:6px;">
-            <input type="text" placeholder="Hostname (ex: api.site.com)" value="${cfEscape(r.hostname || '')}" onchange="cfUpdateTempRoute(${index}, 'hostname', this.value)" style="flex:2; padding:6px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
-            <input type="text" placeholder="Path (ex: /api)" value="${cfEscape(r.path || '')}" onchange="cfUpdateTempRoute(${index}, 'path', this.value)" style="flex:1; padding:6px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
-            <input type="text" placeholder="Serviço (ex: http://127.0.0.1:3000)" value="${cfEscape(r.service || '')}" onchange="cfUpdateTempRoute(${index}, 'service', this.value)" style="flex:2; padding:6px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
-            <button type="button" class="btn btn-danger btn-sm" onclick="cfRemoveTempRoute(${index})"><i data-lucide="trash"></i></button>
+    container.innerHTML = cfTempRoutes.map((r, index) => {
+        const protocol = r.targetProtocol || 'http';
+        const routeType = r.routeType || 'http_path';
+        const isTcpRoute = routeType === 'tcp_ssh';
+        const pathDisabled = isTcpRoute ? 'disabled' : '';
+        const pathStyle = isTcpRoute ? 'opacity:0.6; cursor:not-allowed;' : '';
+        const servicePreview = cfBuildServicePreview(r);
+        const publicPreview = `https://${r.hostname || 'seu-host.com'}${isTcpRoute ? '/' : (r.path || '/')}`;
+
+        return `
+        <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:10px; background:var(--bg-primary); padding:10px; border-radius:6px; border:1px solid var(--border-color);">
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <input type="text" placeholder="Nome da rota (ex: Painel Core)" value="${cfEscape(r.name || '')}" onchange="cfUpdateTempRoute(${index}, 'name', this.value)" style="flex:2; min-width:180px; padding:6px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
+                <select onchange="cfUpdateTempRoute(${index}, 'routeType', this.value)" style="flex:1; min-width:160px; padding:6px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
+                    <option value="http_path" ${routeType === 'http_path' ? 'selected' : ''}>HTTP Path</option>
+                    <option value="http_hostname" ${routeType === 'http_hostname' ? 'selected' : ''}>HTTP Hostname</option>
+                    <option value="tcp_ssh" ${routeType === 'tcp_ssh' ? 'selected' : ''}>TCP/SSH</option>
+                </select>
+                <button type="button" class="btn btn-danger btn-sm" onclick="cfRemoveTempRoute(${index})"><i data-lucide="trash"></i></button>
+            </div>
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <input type="text" placeholder="Host publico (ex: panel.arjtechbr.site)" value="${cfEscape(r.hostname || '')}" onchange="cfUpdateTempRoute(${index}, 'hostname', this.value)" style="flex:2; min-width:220px; padding:6px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
+                <input type="text" placeholder="Path publico (ex: /api/)" value="${cfEscape(r.path || '/')}" onchange="cfUpdateTempRoute(${index}, 'path', this.value)" ${pathDisabled} style="flex:1; min-width:140px; padding:6px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color); ${pathStyle}">
+            </div>
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <select onchange="cfUpdateTempRoute(${index}, 'targetProtocol', this.value)" style="flex:1; min-width:120px; padding:6px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
+                    ${CF_ROUTE_PROTOCOLS.map(p => `<option value="${p}" ${protocol === p ? 'selected' : ''}>${p}</option>`).join('')}
+                </select>
+                <input type="text" placeholder="Host interno (127.0.0.1)" value="${cfEscape(r.targetHost || '127.0.0.1')}" onchange="cfUpdateTempRoute(${index}, 'targetHost', this.value)" style="flex:1; min-width:160px; padding:6px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
+                <input type="number" min="1" max="65535" placeholder="Porta interna" value="${cfEscape((r.targetPort || 80).toString())}" onchange="cfUpdateTempRoute(${index}, 'targetPort', this.value)" style="flex:1; min-width:120px; padding:6px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
+            </div>
+            <div style="display:flex; flex-direction:column; gap:4px;">
+                <div style="font-size:0.8rem; color:var(--text-muted);">Destino final: <code>${cfEscape(servicePreview)}</code></div>
+                <div style="font-size:0.78rem; color:var(--text-muted);">URL publica: <code>${cfEscape(publicPreview)}</code> (sem porta interna)</div>
+            </div>
         </div>
-    `).join('');
-    
+        `;
+    }).join('');
+
     if (window.lucide) lucide.createIcons();
 }
-
 function cfAddRouteRow() {
-    cfTempRoutes.push({ hostname: '', path: '', service: 'http://127.0.0.1:80' });
+    cfTempRoutes.push(cfNormalizeRouteForEditor({
+        name: '',
+        hostname: '',
+        path: '/',
+        targetProtocol: 'http',
+        targetHost: '127.0.0.1',
+        targetPort: 8088,
+        routeType: 'http_path'
+    }));
     cfRenderTempRoutes();
 }
 
 function cfUpdateTempRoute(index, field, value) {
     if (cfTempRoutes[index]) {
         cfTempRoutes[index][field] = value;
+        if (field === 'routeType' && value === 'tcp_ssh') {
+            cfTempRoutes[index].path = '/';
+        }
+        if (field === 'targetProtocol') {
+            const protocol = (value || '').toLowerCase();
+            if ((protocol === 'ssh' || protocol === 'tcp' || protocol === 'rdp') && cfTempRoutes[index].routeType !== 'tcp_ssh') {
+                cfTempRoutes[index].routeType = 'tcp_ssh';
+            } else if ((protocol === 'http' || protocol === 'https') && cfTempRoutes[index].routeType === 'tcp_ssh') {
+                cfTempRoutes[index].routeType = 'http_path';
+            }
+        }
+        cfTempRoutes[index] = cfNormalizeRouteForEditor(cfTempRoutes[index]);
+        cfRenderTempRoutes();
     }
 }
 
@@ -3023,8 +3140,17 @@ async function cfSubmitInstance(e) {
         createCloudflareTunnel: document.getElementById('cfInstCreateTunnel').checked,
         protected: document.getElementById('cfInstProtected').checked,
         autoRestartOnSave: document.getElementById('cfInstAutoRestart').checked,
-        routes: cfTempRoutes
+        routes: cfTempRoutes.map(cfNormalizeRouteForEditor)
     };
+
+    for (const route of payload.routes) {
+        if (!route.hostname) return showToast('Cada rota precisa de hostname publico.', 'warning');
+        if (route.hostname.includes(':')) return showToast('Hostname publico nao deve conter porta interna.', 'warning');
+        if (!route.targetHost) return showToast('Cada rota precisa de host interno.', 'warning');
+        if (!route.targetPort || Number(route.targetPort) < 1 || Number(route.targetPort) > 65535) {
+            return showToast('Cada rota precisa de porta interna valida (1-65535).', 'warning');
+        }
+    }
 
     try {
         let res;

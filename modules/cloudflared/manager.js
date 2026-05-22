@@ -28,6 +28,47 @@ function saveInstances(instances) {
     fs.writeFileSync(DB_FILE, JSON.stringify(instances, null, 2));
 }
 
+function normalizeRouteType(routeType, protocol) {
+    if (routeType) return routeType;
+    const p = (protocol || 'http').toLowerCase();
+    if (p === 'tcp' || p === 'ssh' || p === 'rdp') return 'tcp_ssh';
+    return 'http_path';
+}
+
+function buildServiceFromRoute(route) {
+    const protocol = (route.targetProtocol || 'http').toLowerCase();
+    const host = (route.targetHost || '127.0.0.1').trim() || '127.0.0.1';
+    const port = parseInt(route.targetPort, 10) || 80;
+
+    if (protocol === 'unix') {
+        const socketPath = host.startsWith('/') ? host : `/${host}`;
+        return `unix:${socketPath}`;
+    }
+
+    return `${protocol}://${host}:${port}`;
+}
+
+function normalizeRoute(route) {
+    const protocol = (route.targetProtocol || 'http').toLowerCase();
+    const normalized = {
+        name: route.name || '',
+        hostname: route.hostname || '',
+        path: route.path || '/',
+        targetProtocol: protocol,
+        targetHost: (route.targetHost || '127.0.0.1').trim() || '127.0.0.1',
+        targetPort: parseInt(route.targetPort, 10) || 80,
+        routeType: normalizeRouteType(route.routeType, protocol),
+        service: ''
+    };
+    normalized.service = buildServiceFromRoute(normalized);
+    return normalized;
+}
+
+function normalizeRoutes(routes) {
+    if (!Array.isArray(routes)) return [];
+    return routes.map(r => normalizeRoute(r || {}));
+}
+
 function generateYamlForInstance(instance, tempNext = false) {
     let yaml = `# Configuração automática gerada pelo Termux Panel - Instância: ${instance.name}\n`;
     
@@ -47,15 +88,19 @@ function generateYamlForInstance(instance, tempNext = false) {
     if (instance.routes && Array.isArray(instance.routes) && instance.routes.length > 0) {
         // Ordenar rotas: caminhos mais específicos primeiro, catch-all por último
         const sortedRoutes = [...instance.routes].sort((a, b) => {
+            if ((a.routeType === 'tcp_ssh') !== (b.routeType === 'tcp_ssh')) {
+                return a.routeType === 'tcp_ssh' ? 1 : -1;
+            }
             const aLen = a.path ? a.path.length : 0;
             const bLen = b.path ? b.path.length : 0;
             return bLen - aLen;
         });
 
         sortedRoutes.forEach(rule => {
-            if (rule.hostname) yaml += `  - hostname: "${rule.hostname}"\n`;
-            if (rule.path && rule.path !== '/') yaml += `    path: "${rule.path}"\n`;
-            yaml += `    service: "${rule.service}"\n`;
+            const route = normalizeRoute(rule);
+            if (route.hostname) yaml += `  - hostname: "${route.hostname}"\n`;
+            if (route.routeType !== 'tcp_ssh' && route.path && route.path !== '/') yaml += `    path: "${route.path}"\n`;
+            yaml += `    service: "${route.service}"\n`;
         });
     } else {
         // Rota padrão caso o usuário esqueça, mas para evitar erro do cloudflared
@@ -93,7 +138,7 @@ function createInstance(data) {
         configPath: path.join(HOME_DIR, '.cloudflared', `${id}.yml`),
         credentialsFile: data.credentialsFile || '',
         tunnelId: data.tunnelId || '',
-        routes: data.routes || []
+        routes: normalizeRoutes(data.routes || [])
     };
 
     // Auto-create tunnel if requested, but generally user provides JSON/token
@@ -133,7 +178,7 @@ function updateInstance(id, data) {
     if (data.hostname !== undefined) inst.hostname = data.hostname;
     if (data.credentialsFile !== undefined) inst.credentialsFile = data.credentialsFile;
     if (data.tunnelId !== undefined) inst.tunnelId = data.tunnelId;
-    if (data.routes !== undefined) inst.routes = data.routes;
+    if (data.routes !== undefined) inst.routes = normalizeRoutes(data.routes);
 
     generateYamlForInstance(inst); // Regenerate yaml
     
@@ -212,11 +257,14 @@ function migrateLegacyRoutes() {
         return { success: true, message: 'Já migrado anteriormente.' };
     }
 
-    const newRoutes = oldRoutes.map(r => ({
+    const newRoutes = normalizeRoutes(oldRoutes.map(r => ({
         hostname: r.hostname || '',
         path: r.path || '',
-        service: `${r.targetProtocol || 'http'}://${r.targetHost || '127.0.0.1'}:${r.targetPort || 80}`
-    }));
+        targetProtocol: r.targetProtocol || 'http',
+        targetHost: r.targetHost || '127.0.0.1',
+        targetPort: r.targetPort || 80,
+        routeType: 'http_path'
+    })));
 
     
     let extractedTunnelId = '';
