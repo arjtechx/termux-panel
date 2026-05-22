@@ -2417,6 +2417,69 @@ async function safeFetch(url, method = 'GET', body = null, timeoutMs = 8000) {
 function logout() { window.location.href = '/login.html'; }
 
 // ============================================================
+//  REDE E ACESSO (IPs / HTTPS)
+// ============================================================
+async function fetchNetworkInfo() {
+    const ipv4El = document.getElementById('network-ipv4-display');
+    const ipv6El = document.getElementById('network-ipv6-display');
+    const httpsToggle = document.getElementById('settings-https-toggle');
+    const cgnatWarn = document.getElementById('network-cgnat-warning');
+
+    if (ipv4El) ipv4El.textContent = 'Buscando...';
+    if (ipv6El) ipv6El.textContent = 'Buscando...';
+
+    const res = await safeFetch(`${API_BASE}/network/info`);
+    if (res && res.success) {
+        if (ipv4El) ipv4El.textContent = res.ipv4;
+        if (ipv6El) ipv6El.textContent = res.ipv6;
+        if (httpsToggle) httpsToggle.checked = res.httpsEnabled;
+
+        // Verifica provável CGNAT no IPv4 nativo baseado em prefixos típicos
+        // As operadoras geralmente dão IPs como 100.x.x.x para CGNAT,
+        // mas alguns public IPs de icanhazip podem ser do firewall deles.
+        // O melhor é exibir o aviso genérico se o IPv4 existir, mas pra mobile é quase sempre CGNAT.
+        if (cgnatWarn) {
+            if (res.ipv4 && res.ipv4 !== 'Indisponível') {
+                cgnatWarn.classList.remove('hidden');
+            } else {
+                cgnatWarn.classList.add('hidden');
+            }
+        }
+    } else {
+        if (ipv4El) ipv4El.textContent = 'Falha';
+        if (ipv6El) ipv6El.textContent = 'Falha';
+    }
+}
+
+async function togglePanelHttps(el) {
+    const isChecked = el.checked;
+    el.disabled = true;
+    
+    // Mostra Toast de processamento porque o OpenSSL demora uns segundos
+    if (isChecked) {
+        showToast('Gerando certificado criptografado localmente. Aguarde...', 'info');
+    }
+
+    const res = await safeFetch(`${API_BASE}/network/ssl`, 'POST', { enabled: isChecked });
+    
+    el.disabled = false;
+    
+    if (res && res.success) {
+        showToast(isChecked ? 'HTTPS ativado! O servidor reiniciará em 2 segundos.' : 'HTTPS desativado! O servidor reiniciará em 2 segundos.', 'success');
+        
+        setTimeout(() => {
+            const currentHost = window.location.hostname;
+            const port = document.getElementById('settings-port-input').value || 8088;
+            const proto = isChecked ? 'https:' : 'http:';
+            window.location.href = `${proto}//${currentHost}:${port}/`;
+        }, 2000);
+    } else {
+        el.checked = !isChecked; // revert
+        showToast('Erro ao configurar HTTPS: ' + (res?.error || 'Desconhecido'), 'error');
+    }
+}
+
+// ============================================================
 //  CONFIGURAÇÕES DO PAINEL
 // ============================================================
 async function loadSettings() {
@@ -2434,10 +2497,8 @@ async function loadSettings() {
         const passInput = document.getElementById('settings-pass-input');
         if (passInput) passInput.value = '';
 
-        const extIpv4 = document.getElementById('settings-ext-ipv4');
-        const extIpv6 = document.getElementById('settings-ext-ipv6');
-        if (extIpv4) extIpv4.checked = res.networkAccess ? res.networkAccess.ipv4 !== false : true;
-        if (extIpv6) extIpv6.checked = res.networkAccess ? res.networkAccess.ipv6 === true : false;
+        // Dispara a busca pela rede/IPs assim que a aba Settings carregar
+        fetchNetworkInfo();
 
         // Preenche autostart badge e botão (Opção 1)
         const badge = document.getElementById('autostart-status-badge');
@@ -2554,7 +2615,7 @@ async function savePanelPort() {
     if (res?.success) {
         showToast('Porta alterada com sucesso! O servidor está reiniciando, redirecionando em 5 segundos...', 'success');
         setTimeout(() => {
-            window.location.href = `http://${window.location.hostname}:${newPort}`;
+            window.location.href = `${window.location.protocol}//${window.location.hostname}:${newPort}`;
         }, 5000);
     } else {
         showToast(`Erro: ${res?.error || 'Não foi possível alterar a porta.'}`, 'error');

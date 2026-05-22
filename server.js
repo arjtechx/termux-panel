@@ -13,18 +13,32 @@ const net = require('net');
 const crypto = require('crypto');
 
 const app = express();
-const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: '*' } });
 const SERVER_CONFIG_FILE = path.join(__dirname, 'config', 'server.json');
+
 let PORT = 8088;
+let useHttps = false;
+let sslOptions = {};
+
 if (fs.existsSync(SERVER_CONFIG_FILE)) {
     try {
         const serverConfig = JSON.parse(fs.readFileSync(SERVER_CONFIG_FILE, 'utf8'));
         if (serverConfig.port) {
             PORT = parseInt(serverConfig.port) || 8088;
         }
+        if (serverConfig.https) {
+            const keyPath = path.join(__dirname, 'config', 'ssl.key');
+            const certPath = path.join(__dirname, 'config', 'ssl.crt');
+            if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
+                sslOptions.key = fs.readFileSync(keyPath);
+                sslOptions.cert = fs.readFileSync(certPath);
+                useHttps = true;
+            }
+        }
     } catch(e) {}
 }
+
+const server = useHttps ? require('https').createServer(sslOptions, app) : http.createServer(app);
+const io = new Server(server, { cors: { origin: '*' } });
 
 const session = require('express-session');
 const APPS_FILE = path.join(__dirname, 'config', 'apps.json');

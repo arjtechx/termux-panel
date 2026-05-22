@@ -1604,39 +1604,61 @@
                         </div>
                     </div>
 
-                    <!-- Port Card -->
-                    <div class="card" style="display:flex; flex-direction:column; justify-content:space-between; height: 100%;">
+                    <!-- Rede & Acesso Externo Card -->
+                    <div class="card" style="display:flex; flex-direction:column; justify-content:space-between; height: 100%; grid-column: span 2;">
                         <div>
-                            <h3 class="card-title" style="margin-bottom:14px; display:flex; align-items:center;"><i data-lucide="network" style="color:var(--primary); margin-right:8px;"></i>Porta de Acesso</h3>
+                            <h3 class="card-title" style="margin-bottom:14px; display:flex; align-items:center;">
+                                <i data-lucide="globe" style="color:var(--info); margin-right:8px;"></i> Rede & Acesso Externo
+                            </h3>
                             <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:16px;">
-                                Altere a porta HTTP do painel (Padrão: 8088). Após alterar, o servidor reiniciará automaticamente na nova porta.
+                                Gerencie a porta do painel, descubra seus IPs públicos e habilite comunicação segura (HTTPS).
                             </p>
-                            <div class="form-row" style="margin-bottom: 16px;">
-                                <input type="number" id="settings-port-input" placeholder="Nova Porta (Ex: 8089)" min="1" max="65535" style="width:100%;">
-                            </div>
-                        </div>
-                        <button class="btn class-port-save btn-success btn-block" onclick="savePanelPort()">
-                            <i data-lucide="save"></i> Salvar Nova Porta
-                        </button>
-                    </div>
+                            
+                            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px;">
+                                <!-- Porta -->
+                                <div style="background:var(--bg-secondary); padding:12px; border-radius:6px; border:1px solid var(--border-color);">
+                                    <h4 style="font-size:0.9rem; margin-bottom:8px; display:flex; align-items:center;"><i data-lucide="network" style="width:16px; margin-right:6px; color:var(--primary)"></i>Porta de Acesso</h4>
+                                    <div class="form-row" style="margin-bottom: 8px;">
+                                        <input type="number" id="settings-port-input" placeholder="Nova Porta (Ex: 8089)" min="1" max="65535" style="width:100%;">
+                                    </div>
+                                    <button class="btn btn-primary btn-sm btn-block" onclick="savePanelPort()">
+                                        Salvar Porta
+                                    </button>
+                                </div>
 
-                    <!-- External Access Card -->
-                    <div class="card" style="display:flex; flex-direction:column; justify-content:space-between; height: 100%;">
-                        <div>
-                            <h3 class="card-title" style="margin-bottom:14px; display:flex; align-items:center;"><i data-lucide="globe" style="color:var(--info); margin-right:8px;"></i>Acesso Externo IPv4/IPv6</h3>
-                            <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:16px;">
-                                Preferências de acesso externo do painel. A efetividade depende de rede, firewall e túnel configurado.
-                            </p>
-                            <label style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
-                                <input type="checkbox" id="settings-ext-ipv4"> Habilitar IPv4 externo
-                            </label>
-                            <label style="display:flex; align-items:center; gap:8px; margin-bottom:16px;">
-                                <input type="checkbox" id="settings-ext-ipv6"> Habilitar IPv6 externo
-                            </label>
+                                <!-- SSL -->
+                                <div style="background:var(--bg-secondary); padding:12px; border-radius:6px; border:1px solid var(--border-color);">
+                                    <h4 style="font-size:0.9rem; margin-bottom:8px; display:flex; align-items:center;"><i data-lucide="lock" style="width:16px; margin-right:6px; color:var(--success)"></i>Segurança (HTTPS)</h4>
+                                    <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:10px;">
+                                        Gera um certificado autoassinado local. (Atenção: o navegador emitirá aviso de segurança).
+                                    </p>
+                                    <label style="display:flex; align-items:center; gap:8px; font-weight:600; cursor:pointer;">
+                                        <input type="checkbox" id="settings-https-toggle" onchange="togglePanelHttps(this)" style="width:18px; height:18px;">
+                                        Habilitar HTTPS Seguro
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- IPv4/IPv6 Info -->
+                            <div style="background:var(--bg-secondary); padding:12px; border-radius:6px; border:1px solid var(--border-color); margin-top:16px;">
+                                <h4 style="font-size:0.9rem; margin-bottom:8px; display:flex; align-items:center;"><i data-lucide="map-pin" style="width:16px; margin-right:6px; color:var(--warning)"></i>Seus IPs Públicos</h4>
+                                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-color); padding-bottom:6px; margin-bottom:6px;">
+                                    <strong style="font-size:0.85rem;">IPv4 Real:</strong>
+                                    <span id="network-ipv4-display" style="font-family:monospace; font-size:0.9rem;">Carregando...</span>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; align-items:center;">
+                                    <strong style="font-size:0.85rem;">IPv6 Real:</strong>
+                                    <span id="network-ipv6-display" style="font-family:monospace; font-size:0.9rem;">Carregando...</span>
+                                </div>
+                                <div id="network-cgnat-warning" class="hidden" style="margin-top:10px; font-size:0.75rem; color:var(--danger); background:rgba(239,68,68,0.1); padding:8px; border-radius:4px;">
+                                    <i data-lucide="alert-triangle" style="width:12px; display:inline-block; margin-right:4px;"></i>Aviso: IPv4 em zona CGNAT. Apenas o IPv6 ou Cloudflare Tunnel estarão abertos para o mundo.
+                                </div>
+                                <div style="margin-top:10px; text-align:right;">
+                                    <button class="btn btn-secondary btn-sm" onclick="fetchNetworkInfo()"><i data-lucide="refresh-cw" style="width:14px;"></i> Atualizar IPs</button>
+                                </div>
+                            </div>
+
                         </div>
-                        <button class="btn btn-primary btn-block" onclick="saveExternalAccessSettings()">
-                            <i data-lucide="save"></i> Salvar IPv4/IPv6
-                        </button>
                     </div>
 
                     <!-- Admin Auth Card -->
@@ -1784,7 +1806,7 @@
 <div class="fm-toast-container" id="fm-toast-container"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.129"></script>
+<script src="filemanager.js?v=0.2.130"></script>
 <script src="app.js?v=4.5"></script>
 </body>
 </html>
