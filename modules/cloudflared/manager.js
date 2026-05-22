@@ -18,8 +18,12 @@ if (!fs.existsSync(DB_FILE)) fs.writeFileSync(DB_FILE, JSON.stringify([]));
 function getInstances() {
     try {
         const instances = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-        // Garantir instâncias padrão caso vazio (apenas para fallback, se necessário)
-        return Array.isArray(instances) ? instances : [];
+        if (!Array.isArray(instances)) return [];
+        return instances.map((inst) => ({
+            ...inst,
+            protected: inst.protected === true || inst.protected === 'true' || inst.protected === 1,
+            routes: normalizeRoutes(inst.routes || [])
+        }));
     } catch {
         return [];
     }
@@ -53,15 +57,30 @@ function buildServiceFromRoute(route) {
     return `${protocol}://${host}:${port}`;
 }
 
+function parseServiceToRouteParts(service) {
+    if (!service || typeof service !== 'string') return null;
+    if (service.startsWith('unix:')) {
+        return { targetProtocol: 'unix', targetHost: service.replace(/^unix:/, ''), targetPort: 1 };
+    }
+    const m = service.match(/^([a-z0-9+.-]+):\/\/([^:/]+)(?::(\d+))?/i);
+    if (!m) return null;
+    return {
+        targetProtocol: (m[1] || 'http').toLowerCase(),
+        targetHost: m[2] || '127.0.0.1',
+        targetPort: parseInt(m[3], 10) || 80
+    };
+}
+
 function normalizeRoute(route) {
-    const protocol = (route.targetProtocol || 'http').toLowerCase();
+    const legacyFromService = parseServiceToRouteParts(route.service);
+    const protocol = (route.targetProtocol || (legacyFromService && legacyFromService.targetProtocol) || 'http').toLowerCase();
     const normalized = {
         name: route.name || '',
         hostname: route.hostname || '',
         path: route.path || '/',
         targetProtocol: protocol,
-        targetHost: (route.targetHost || '127.0.0.1').trim() || '127.0.0.1',
-        targetPort: parseInt(route.targetPort, 10) || 80,
+        targetHost: ((route.targetHost || (legacyFromService && legacyFromService.targetHost) || '127.0.0.1') + '').trim() || '127.0.0.1',
+        targetPort: parseInt(route.targetPort, 10) || (legacyFromService && legacyFromService.targetPort) || 80,
         routeType: normalizeRouteType(route.routeType, protocol),
         service: ''
     };
@@ -93,8 +112,10 @@ function generateYamlForInstance(instance, tempNext = false) {
     if (instance.routes && Array.isArray(instance.routes) && instance.routes.length > 0) {
         // Ordenar rotas: caminhos mais específicos primeiro, catch-all por último
         const sortedRoutes = [...instance.routes].sort((a, b) => {
-            if ((a.routeType === 'tcp_ssh') !== (b.routeType === 'tcp_ssh')) {
-                return a.routeType === 'tcp_ssh' ? 1 : -1;
+            const aHttp = a.routeType === 'http' || a.routeType === 'https';
+            const bHttp = b.routeType === 'http' || b.routeType === 'https';
+            if (aHttp !== bHttp) {
+                return aHttp ? -1 : 1;
             }
             const aLen = a.path ? a.path.length : 0;
             const bLen = b.path ? b.path.length : 0;

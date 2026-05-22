@@ -5,7 +5,7 @@ const processManager = require('./process');
 module.exports = function createCloudflaredRoutes() {
     const router = express.Router();
 
-    // Listar todas as instâncias (retorna infos + status do processo)
+    // Listar todas as instÃƒÂ¢ncias (retorna infos + status do processo)
     router.get('/cloudflared/instances', async (req, res) => {
         try {
             const instances = manager.getInstances();
@@ -20,7 +20,7 @@ module.exports = function createCloudflaredRoutes() {
         }
     });
 
-    // Criar nova instância
+    // Criar nova instÃƒÂ¢ncia
     router.post('/cloudflared/instances', (req, res) => {
         try {
             const inst = manager.createInstance(req.body);
@@ -30,7 +30,7 @@ module.exports = function createCloudflaredRoutes() {
         }
     });
 
-    // Editar instância
+    // Editar instÃƒÂ¢ncia
     router.put('/cloudflared/instances/:id', (req, res) => {
         try {
             const inst = manager.updateInstance(req.params.id, req.body);
@@ -40,7 +40,7 @@ module.exports = function createCloudflaredRoutes() {
         }
     });
 
-    // Deletar instância (protegidas são bloqueadas no manager)
+    // Deletar instÃƒÂ¢ncia (protegidas sÃƒÂ£o bloqueadas no manager)
     router.delete('/cloudflared/instances/:id', (req, res) => {
         try {
             const result = manager.deleteInstance(req.params.id);
@@ -54,7 +54,7 @@ module.exports = function createCloudflaredRoutes() {
     router.post('/cloudflared/instances/:id/start', (req, res) => {
         try {
             const inst = manager.getInstances().find(i => i.id === req.params.id);
-            if (!inst) throw new Error('Instância não encontrada.');
+            if (!inst) throw new Error('InstÃƒÂ¢ncia nÃƒÂ£o encontrada.');
             const result = processManager.startInstance(inst);
             res.json(result);
         } catch (err) {
@@ -66,9 +66,10 @@ module.exports = function createCloudflaredRoutes() {
     router.post('/cloudflared/instances/:id/stop', (req, res) => {
         try {
             const inst = manager.getInstances().find(i => i.id === req.params.id);
-            if (!inst) throw new Error('Instância não encontrada.');
-            if (inst.protected && req.body.force !== true) {
-                throw new Error('Bloqueado: Esta instância é protegida. Use o modo force para sobrescrever.');
+            if (!inst) throw new Error('InstÃƒÂ¢ncia nÃƒÂ£o encontrada.');
+            const force = !!(req.body && req.body.force === true);
+            if (inst.protected && !force) {
+                throw new Error('Bloqueado: Esta instÃƒÂ¢ncia ÃƒÂ© protegida. Use o modo force para sobrescrever.');
             }
             const result = processManager.stopInstance(req.params.id);
             res.json(result);
@@ -81,9 +82,10 @@ module.exports = function createCloudflaredRoutes() {
     router.post('/cloudflared/instances/:id/restart', async (req, res) => {
         try {
             const inst = manager.getInstances().find(i => i.id === req.params.id);
-            if (!inst) throw new Error('Instância não encontrada.');
-            if (inst.protected && req.body.force !== true) {
-                throw new Error('Bloqueado: Esta instância é protegida. Use o modo force para sobrescrever.');
+            if (!inst) throw new Error('InstÃƒÂ¢ncia nÃƒÂ£o encontrada.');
+            const force = !!(req.body && req.body.force === true);
+            if (inst.protected && !force) {
+                throw new Error('Bloqueado: Esta instÃƒÂ¢ncia ÃƒÂ© protegida. Use o modo force para sobrescrever.');
             }
             processManager.stopInstance(req.params.id);
             await new Promise(r => setTimeout(r, 1000));
@@ -98,9 +100,10 @@ module.exports = function createCloudflaredRoutes() {
     router.post('/cloudflared/instances/:id/reload-safe', async (req, res) => {
         try {
             const inst = manager.getInstances().find(i => i.id === req.params.id);
-            if (!inst) throw new Error('Instância não encontrada.');
-            if (inst.protected && req.body.force !== true) {
-                throw new Error('Bloqueado: Esta instância é protegida e o reload safe pode causar instabilidades.');
+            if (!inst) throw new Error('InstÃƒÂ¢ncia nÃƒÂ£o encontrada.');
+            const force = !!(req.body && req.body.force === true);
+            if (inst.protected && !force) {
+                throw new Error('Bloqueado: Esta instÃƒÂ¢ncia ÃƒÂ© protegida e o reload safe pode causar instabilidades.');
             }
             
             manager.generateYamlForInstance(inst, true); // gera .next.yml
