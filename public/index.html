@@ -1253,6 +1253,12 @@
                         <p style="color:var(--text-muted); font-size:0.875rem; margin-top:2px;">Gerenciamento Multi-instância Profissional (Termux Android).</p>
                     </div>
                     <div class="toolbar-group">
+                        <button class="btn btn-success btn-sm" onclick="cfCloudflareLogin()">
+                            <i data-lucide="log-in"></i> Login Cloudflare
+                        </button>
+                        <button class="btn btn-danger btn-sm" onclick="cfRemoveLoginConfig()">
+                            <i data-lucide="shield-off"></i> Remover cert.pem
+                        </button>
                         
                         <button class="btn btn-info btn-sm" onclick="cfMigrateLegacy()" title="Resgatar instalações antigas e converter para o novo modelo">
                             <i data-lucide="download-cloud"></i> Resgatar Instâncias Antigas
@@ -1721,7 +1727,7 @@
 <div class="fm-toast-container" id="fm-toast-container"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.121"></script>
+<script src="filemanager.js?v=0.2.122"></script>
 <script src="app.js?v=4.5"></script>
 </body>
 </html>

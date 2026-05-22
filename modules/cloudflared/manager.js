@@ -3,6 +3,7 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 const { execSync } = require('child_process');
+const { spawn } = require('child_process');
 const processManager = require('./process');
 
 const PANEL_DIR = path.resolve(__dirname, '..', '..');
@@ -29,10 +30,14 @@ function saveInstances(instances) {
 }
 
 function normalizeRouteType(routeType, protocol) {
-    if (routeType) return routeType;
+    const explicit = (routeType || '').toLowerCase();
+    if (['http', 'https', 'tcp', 'ssh', 'rdp', 'unix'].includes(explicit)) return explicit;
+    if (explicit === 'tcp_ssh') return 'tcp';
+    if (explicit === 'http_path' || explicit === 'http_hostname') return (protocol || 'http').toLowerCase();
     const p = (protocol || 'http').toLowerCase();
-    if (p === 'tcp' || p === 'ssh' || p === 'rdp') return 'tcp_ssh';
-    return 'http_path';
+    if (p === 'tcp' || p === 'ssh' || p === 'rdp' || p === 'unix') return p;
+    if (p === 'https') return 'https';
+    return 'http';
 }
 
 function buildServiceFromRoute(route) {
@@ -99,7 +104,9 @@ function generateYamlForInstance(instance, tempNext = false) {
         sortedRoutes.forEach(rule => {
             const route = normalizeRoute(rule);
             if (route.hostname) yaml += `  - hostname: "${route.hostname}"\n`;
-            if (route.routeType !== 'tcp_ssh' && route.path && route.path !== '/') yaml += `    path: "${route.path}"\n`;
+            if ((route.routeType === 'http' || route.routeType === 'https') && route.path && route.path !== '/') {
+                yaml += `    path: "${route.path}"\n`;
+            }
             yaml += `    service: "${route.service}"\n`;
         });
     } else {
@@ -232,6 +239,95 @@ function initAutoStart() {
 
 setTimeout(initAutoStart, 3000);
 
+function getCloudflaredHomeDir() {
+    return path.join(HOME_DIR, '.cloudflared');
+}
+
+function getCertPemPath() {
+    return path.join(getCloudflaredHomeDir(), 'cert.pem');
+}
+
+function getLoginStatus() {
+    const certPath = getCertPemPath();
+    return {
+        certPath,
+        loggedIn: fs.existsSync(certPath)
+    };
+}
+
+function removeLoginConfig() {
+    const certPath = getCertPemPath();
+    const existed = fs.existsSync(certPath);
+    if (existed) fs.unlinkSync(certPath);
+    return {
+        success: true,
+        removed: existed,
+        certPath
+    };
+}
+
+function extractCloudflareAuthUrl(text) {
+    if (!text) return '';
+    const match = text.match(/https:\/\/[^\s"]+/i);
+    return match ? match[0] : '';
+}
+
+function startCloudflareLogin() {
+    return new Promise((resolve) => {
+        const binary = processManager.getCloudflaredBinaryPath();
+        const child = spawn(binary, ['tunnel', 'login'], { env: process.env });
+        let out = '';
+        let settled = false;
+
+        const finish = (payload) => {
+            if (settled) return;
+            settled = true;
+            resolve(payload);
+        };
+
+        const onChunk = (buf) => {
+            out += String(buf || '');
+            const authUrl = extractCloudflareAuthUrl(out);
+            if (authUrl) {
+                try { child.kill('SIGTERM'); } catch (_) {}
+                finish({
+                    success: true,
+                    authUrl,
+                    message: 'URL de autenticacao gerada. Complete o login no navegador.'
+                });
+            }
+        };
+
+        child.stdout.on('data', onChunk);
+        child.stderr.on('data', onChunk);
+        child.on('error', (err) => finish({ success: false, error: err.message }));
+        child.on('close', () => {
+            const authUrl = extractCloudflareAuthUrl(out);
+            if (authUrl) {
+                return finish({
+                    success: true,
+                    authUrl,
+                    message: 'URL de autenticacao gerada. Complete o login no navegador.'
+                });
+            }
+            const status = getLoginStatus();
+            finish({
+                success: status.loggedIn,
+                authUrl: '',
+                message: status.loggedIn
+                    ? 'cert.pem detectado. Login Cloudflare parece concluido.'
+                    : 'Nao foi possivel capturar a URL de login. Verifique se cloudflared esta instalado.',
+                output: out.slice(-2000)
+            });
+        });
+
+        setTimeout(() => {
+            if (settled) return;
+            try { child.kill('SIGTERM'); } catch (_) {}
+        }, 12000);
+    });
+}
+
 
 function migrateLegacyRoutes() {
     const oldRoutesFile = path.join(PANEL_DIR, 'data', 'cloudflared-routes.json');
@@ -263,7 +359,7 @@ function migrateLegacyRoutes() {
         targetProtocol: r.targetProtocol || 'http',
         targetHost: r.targetHost || '127.0.0.1',
         targetPort: r.targetPort || 80,
-        routeType: 'http_path'
+        routeType: 'http'
     })));
 
     
@@ -315,5 +411,8 @@ module.exports = {
     createInstance,
     updateInstance,
     deleteInstance,
-    generateYamlForInstance
+    generateYamlForInstance,
+    getLoginStatus,
+    removeLoginConfig,
+    startCloudflareLogin
 };

@@ -127,6 +127,36 @@ module.exports = function createCloudflaredRoutes() {
         res.json(processManager.killAllZombies());
     });
 
+    // Login Cloudflare (gera URL de autenticacao)
+    router.post('/cloudflared/system/login', async (req, res) => {
+        try {
+            const result = await manager.startCloudflareLogin();
+            res.status(result.success ? 200 : 400).json(result);
+        } catch (err) {
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
+    // Status do cert.pem (login Cloudflare)
+    router.get('/cloudflared/system/login-status', (req, res) => {
+        try {
+            const status = manager.getLoginStatus();
+            res.json({ success: true, ...status });
+        } catch (err) {
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
+    // Remover cert.pem manualmente
+    router.post('/cloudflared/system/remove-login-config', (req, res) => {
+        try {
+            const result = manager.removeLoginConfig();
+            res.json(result);
+        } catch (err) {
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
     
     // Migrar rotas legadas
     router.post('/cloudflared/system/migrate-legacy', (req, res) => {

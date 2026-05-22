@@ -2905,10 +2905,14 @@ let cfTempRoutes = [];
 const CF_ROUTE_PROTOCOLS = ['http', 'https', 'tcp', 'ssh', 'rdp', 'unix'];
 
 function cfNormalizeRouteType(routeType, protocol) {
-    if (routeType) return routeType;
+    const explicit = (routeType || '').toLowerCase();
+    if (['http', 'https', 'tcp', 'ssh', 'rdp', 'unix'].includes(explicit)) return explicit;
+    if (explicit === 'tcp_ssh') return 'tcp';
+    if (explicit === 'http_path' || explicit === 'http_hostname') return (protocol || 'http').toLowerCase();
     const p = (protocol || 'http').toLowerCase();
-    if (p === 'tcp' || p === 'ssh' || p === 'rdp') return 'tcp_ssh';
-    return 'http_path';
+    if (p === 'tcp' || p === 'ssh' || p === 'rdp' || p === 'unix') return p;
+    if (p === 'https') return 'https';
+    return 'http';
 }
 
 function cfBuildServicePreview(route) {
@@ -3052,8 +3056,9 @@ function cfRenderTempRoutes() {
 
     container.innerHTML = cfTempRoutes.map((r, index) => {
         const protocol = r.targetProtocol || 'http';
-        const routeType = r.routeType || 'http_path';
-        const isTcpRoute = routeType === 'tcp_ssh';
+        const routeType = r.routeType || 'http';
+        const isHttpRoute = routeType === 'http' || routeType === 'https';
+        const isTcpRoute = !isHttpRoute;
         const pathDisabled = isTcpRoute ? 'disabled' : '';
         const pathStyle = isTcpRoute ? 'opacity:0.6; cursor:not-allowed;' : '';
         const servicePreview = cfBuildServicePreview(r);
@@ -3064,9 +3069,12 @@ function cfRenderTempRoutes() {
             <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
                 <input type="text" placeholder="Nome da rota (ex: Painel Core)" value="${cfEscape(r.name || '')}" onchange="cfUpdateTempRoute(${index}, 'name', this.value)" style="flex:2; min-width:180px; padding:6px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
                 <select onchange="cfUpdateTempRoute(${index}, 'routeType', this.value)" style="flex:1; min-width:160px; padding:6px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
-                    <option value="http_path" ${routeType === 'http_path' ? 'selected' : ''}>HTTP Path</option>
-                    <option value="http_hostname" ${routeType === 'http_hostname' ? 'selected' : ''}>HTTP Hostname</option>
-                    <option value="tcp_ssh" ${routeType === 'tcp_ssh' ? 'selected' : ''}>TCP/SSH</option>
+                    <option value="http" ${routeType === 'http' ? 'selected' : ''}>HTTP</option>
+                    <option value="https" ${routeType === 'https' ? 'selected' : ''}>HTTPS</option>
+                    <option value="ssh" ${routeType === 'ssh' ? 'selected' : ''}>SSH</option>
+                    <option value="rdp" ${routeType === 'rdp' ? 'selected' : ''}>RDP</option>
+                    <option value="tcp" ${routeType === 'tcp' ? 'selected' : ''}>TCP</option>
+                    <option value="unix" ${routeType === 'unix' ? 'selected' : ''}>UNIX</option>
                 </select>
                 <button type="button" class="btn btn-danger btn-sm" onclick="cfRemoveTempRoute(${index})"><i data-lucide="trash"></i></button>
             </div>
@@ -3099,7 +3107,7 @@ function cfAddRouteRow() {
         targetProtocol: 'http',
         targetHost: '127.0.0.1',
         targetPort: 8088,
-        routeType: 'http_path'
+        routeType: 'http'
     }));
     cfRenderTempRoutes();
 }
@@ -3107,15 +3115,18 @@ function cfAddRouteRow() {
 function cfUpdateTempRoute(index, field, value) {
     if (cfTempRoutes[index]) {
         cfTempRoutes[index][field] = value;
-        if (field === 'routeType' && value === 'tcp_ssh') {
-            cfTempRoutes[index].path = '/';
+        if (field === 'routeType') {
+            const protocolFromType = (value || 'http').toLowerCase();
+            cfTempRoutes[index].targetProtocol = protocolFromType;
+            if (protocolFromType !== 'http' && protocolFromType !== 'https') {
+                cfTempRoutes[index].path = '/';
+            }
         }
         if (field === 'targetProtocol') {
             const protocol = (value || '').toLowerCase();
-            if ((protocol === 'ssh' || protocol === 'tcp' || protocol === 'rdp') && cfTempRoutes[index].routeType !== 'tcp_ssh') {
-                cfTempRoutes[index].routeType = 'tcp_ssh';
-            } else if ((protocol === 'http' || protocol === 'https') && cfTempRoutes[index].routeType === 'tcp_ssh') {
-                cfTempRoutes[index].routeType = 'http_path';
+            cfTempRoutes[index].routeType = protocol || 'http';
+            if (protocol !== 'http' && protocol !== 'https') {
+                cfTempRoutes[index].path = '/';
             }
         }
         cfTempRoutes[index] = cfNormalizeRouteForEditor(cfTempRoutes[index]);
@@ -3244,6 +3255,35 @@ async function cfKillZombies() {
     }
 }
 
+async function cfCloudflareLogin() {
+    try {
+        showToast('Gerando URL de login Cloudflare...', 'info');
+        const res = await fetch(`${API_BASE}/cloudflared/system/login`, { method: 'POST' });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || data.message || 'Falha ao iniciar login Cloudflare.');
+        if (data.authUrl) {
+            window.open(data.authUrl, '_blank', 'noopener,noreferrer');
+            showToast('URL de login aberta no navegador.', 'success');
+        } else {
+            showToast(data.message || 'Login iniciado.', 'info');
+        }
+    } catch (e) {
+        showToast('Erro no login Cloudflare: ' + e.message, 'error');
+    }
+}
+
+async function cfRemoveLoginConfig() {
+    if (!confirm('Deseja remover o arquivo cert.pem do Cloudflare login?')) return;
+    try {
+        const res = await fetch(`${API_BASE}/cloudflared/system/remove-login-config`, { method: 'POST' });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Falha ao remover cert.pem.');
+        showToast(data.removed ? 'cert.pem removido com sucesso.' : 'cert.pem não encontrado (já removido).', 'success');
+    } catch (e) {
+        showToast('Erro ao remover cert.pem: ' + e.message, 'error');
+    }
+}
+
 function cfEscape(str) {
     return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
@@ -3289,6 +3329,8 @@ window.cfRemoveTempRoute = cfRemoveTempRoute;
 window.cfUpdateTempRoute = cfUpdateTempRoute;
 window.cfShowLogsModal = cfShowLogsModal;
 window.cfCloseLogsModal = cfCloseLogsModal;
+window.cfCloudflareLogin = cfCloudflareLogin;
+window.cfRemoveLoginConfig = cfRemoveLoginConfig;
 
 setInterval(() => {
     const el = document.getElementById('tab-cloudflared');
