@@ -5,515 +5,192 @@ const { execSync } = require('child_process');
 const processManager = require('./process');
 
 const PANEL_DIR = path.resolve(__dirname, '..', '..');
-const DB_FILE = path.join(PANEL_DIR, 'config', 'cloudflared_tunnels.json');
+const DB_FILE = path.join(PANEL_DIR, 'data', 'cloudflared-instances.json');
 const CONFIGS_DIR = path.join(PANEL_DIR, 'config', 'cloudflared');
+const HOME_DIR = process.env.HOME || os.homedir() || '/data/data/com.termux/files/home';
 
-// Ensure directories and files exist
 if (!fs.existsSync(CONFIGS_DIR)) fs.mkdirSync(CONFIGS_DIR, { recursive: true });
-if (!fs.existsSync(DB_FILE)) {
-    if (!fs.existsSync(path.dirname(DB_FILE))) fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
-    fs.writeFileSync(DB_FILE, JSON.stringify([]));
-}
+if (!fs.existsSync(path.dirname(DB_FILE))) fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
+if (!fs.existsSync(DB_FILE)) fs.writeFileSync(DB_FILE, JSON.stringify([]));
 
-function getTunnels() {
+function getInstances() {
     try {
-        let tunnels = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-        let migrated = false;
-        
-        // Automatic Schema Migration
-        tunnels = tunnels.map(t => {
-            let changed = false;
-            if (!t.type) { t.type = 'classic'; changed = true; }
-            if (t.port && !t.localPort) { t.localPort = String(t.port); changed = true; }
-            if (!t.proto) { t.proto = 'http'; changed = true; }
-            if (!t.localHost) { t.localHost = 'localhost'; changed = true; }
-            if (t.autoStart === undefined) { t.autoStart = false; changed = true; }
-            if (changed) migrated = true;
-            return t;
-        });
-
-        if (migrated) saveTunnels(tunnels);
-        return tunnels;
+        const instances = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+        // Garantir instâncias padrão caso vazio (apenas para fallback, se necessário)
+        return Array.isArray(instances) ? instances : [];
     } catch {
         return [];
     }
 }
 
-function saveTunnels(tunnels) {
-    fs.writeFileSync(DB_FILE, JSON.stringify(tunnels, null, 2));
+function saveInstances(instances) {
+    fs.writeFileSync(DB_FILE, JSON.stringify(instances, null, 2));
 }
 
-/**
- * Generates dynamic YAML config template for classic custom tunnels
- */
-function generateYamlConfig(tunnel) {
-    let yaml = `# Configuração automática gerada pelo Termux Panel\n`;
-    yaml += `tunnel: "${tunnel.uuid || tunnel.name}"\n`;
+function generateYamlForInstance(instance, tempNext = false) {
+    let yaml = `# Configuração automática gerada pelo Termux Panel - Instância: ${instance.name}\n`;
     
-    const credPath = path.join(CONFIGS_DIR, `${tunnel.id}.json`);
-    yaml += `credentials-file: "${credPath}"\n\n`;
+    if (instance.tunnelId) {
+        yaml += `tunnel: "${instance.tunnelId}"\n`;
+    }
     
-    yaml += `ingress:\n`;
+    if (instance.credentialsFile) {
+        yaml += `credentials-file: "${instance.credentialsFile}"\n`;
+    }
     
-    if (tunnel.ingress && Array.isArray(tunnel.ingress) && tunnel.ingress.length > 0) {
-        tunnel.ingress.forEach(rule => {
-            yaml += `  - hostname: "${rule.hostname}"\n`;
-            if (rule.path) yaml += `    path: "${rule.path}"\n`;
+    yaml += `\n`;
+    // Opções recomendadas
+    yaml += `protocol: quic\n`; // quic is often better
+    yaml += `\ningress:\n`;
+    
+    if (instance.routes && Array.isArray(instance.routes) && instance.routes.length > 0) {
+        // Ordenar rotas: caminhos mais específicos primeiro, catch-all por último
+        const sortedRoutes = [...instance.routes].sort((a, b) => {
+            const aLen = a.path ? a.path.length : 0;
+            const bLen = b.path ? b.path.length : 0;
+            return bLen - aLen;
+        });
+
+        sortedRoutes.forEach(rule => {
+            if (rule.hostname) yaml += `  - hostname: "${rule.hostname}"\n`;
+            if (rule.path && rule.path !== '/') yaml += `    path: "${rule.path}"\n`;
             yaml += `    service: "${rule.service}"\n`;
         });
     } else {
-        const proto = tunnel.proto || 'http';
-        const host = tunnel.localHost || 'localhost';
-        const port = tunnel.localPort || '80';
-        const serviceUrl = `${proto}://${host}:${port}`;
-        
-        if (tunnel.domain) {
-            yaml += `  - hostname: "${tunnel.domain}"\n`;
-            yaml += `    service: "${serviceUrl}"\n`;
+        // Rota padrão caso o usuário esqueça, mas para evitar erro do cloudflared
+        if (instance.hostname) {
+            yaml += `  - hostname: "${instance.hostname}"\n`;
+            yaml += `    service: "http://127.0.0.1:80"\n`;
         }
     }
     
-    // Catch-all rules requirements from Cloudflared
+    // Catch-all obrigatorio
     yaml += `  - service: http_status:404\n`;
-    return yaml;
-}
-
-/**
- * Validates YAML text structures
- */
-function validateYamlConfig(yamlText) {
-    if (/\t/.test(yamlText)) {
-        return { valid: false, error: 'O arquivo YAML não pode conter caracteres de tabulação (Tab). Use apenas espaços.' };
-    }
-    if (!/tunnel\s*:/i.test(yamlText)) {
-        return { valid: false, error: 'A propriedade "tunnel:" contendo o ID ou nome é obrigatória.' };
-    }
-    if (!/ingress\s*:/i.test(yamlText)) {
-        return { valid: false, error: 'A diretiva "ingress:" é obrigatória para definir as rotas locais.' };
+    
+    const configName = tempNext ? `${instance.id}.next.yml` : `${instance.id}.yml`;
+    const configPath = path.join(HOME_DIR, '.cloudflared', configName);
+    
+    if (!fs.existsSync(path.dirname(configPath))) {
+        fs.mkdirSync(path.dirname(configPath), { recursive: true });
     }
     
-    const lines = yamlText.split('\n');
-    for (let i = 0; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (!line || line.startsWith('#')) continue;
-        if (!line.includes(':') && !line.startsWith('-')) {
-            return { valid: false, error: `Erro de indentação/sintaxe na linha ${i + 1}: Falta do delimitador ":"` };
-        }
-    }
-    return { valid: true };
+    fs.writeFileSync(configPath, yaml, 'utf8');
+    return configPath;
 }
 
-/**
- * Creates tunnel config
- */
-function createTunnel(data) {
-    const { name, type, token, domain, proto, localHost, localPort, autoStart, ingress } = data;
-    const tunnels = getTunnels();
+function createInstance(data) {
+    const instances = getInstances();
     
-    if (!name) throw new Error('O nome do túnel é obrigatório.');
-    if (tunnels.find(t => t.name === name)) {
-        throw new Error('Um túnel com este nome já existe.');
-    }
-
-    const id = Date.now().toString();
-    const newTunnel = {
+    const id = data.id || `inst-${Date.now()}`;
+    const newInstance = {
         id,
-        name,
-        type: type || 'classic',
-        token: token || '',
-        domain: domain || '',
-        proto: proto || 'http',
-        localHost: localHost || 'localhost',
-        localPort: localPort ? String(localPort) : '80',
-        autoStart: !!autoStart,
-        ingress: ingress || [],
-        createdAt: new Date().toISOString(),
-        yamlConfig: ''
+        name: data.name || 'Nova Instância',
+        type: data.type || 'service', // core | service | group
+        protected: !!data.protected,
+        autoRestartOnSave: data.autoRestartOnSave !== undefined ? data.autoRestartOnSave : true,
+        hostname: data.hostname || '',
+        configPath: path.join(HOME_DIR, '.cloudflared', `${id}.yml`),
+        credentialsFile: data.credentialsFile || '',
+        tunnelId: data.tunnelId || '',
+        routes: data.routes || []
     };
 
-    // If classic_custom, automatically create the tunnel on Cloudflare via CLI
-    if (newTunnel.type === 'classic_custom') {
-        if (!isClassicAuthenticated()) {
-            throw new Error('Você precisa autenticar a Cloudflare primeiro! Vá na aba de Autenticação Clássica e faça login.');
-        }
-
-        const slug = name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').trim();
+    // Auto-create tunnel if requested, but generally user provides JSON/token
+    if (data.createCloudflareTunnel && newInstance.name) {
         try {
-            console.log(`[CLOUDFLARED] Criando túnel na Cloudflare: ${slug}`);
-            const stdout = execSync(`cloudflared tunnel create "${slug}"`, { 
-                encoding: 'utf8',
-                env: { ...process.env }
-            });
-            console.log(`[CLOUDFLARED] Saída da criação:\n${stdout}`);
-            
-            // Parse UUID
-            const uuid = (stdout.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i) || [])[0];
-            if (!uuid) {
-                throw new Error('Não foi possível obter o UUID do túnel a partir da saída do comando.');
+            const binary = processManager.getCloudflaredBinaryPath();
+            const slug = newInstance.name.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+            const stdout = execSync(`"${binary}" tunnel create "${slug}"`, { encoding: 'utf8', env: process.env });
+            const uuidMatch = stdout.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+            if (uuidMatch) {
+                newInstance.tunnelId = uuidMatch[0];
+                newInstance.credentialsFile = path.join(HOME_DIR, '.cloudflared', `${newInstance.tunnelId}.json`);
             }
-            
-            // Parse credentials path (must start with an absolute path slash/backslash or Windows drive letter)
-            let credPath;
-            const pathMatch = (stdout.match(/(?:[A-Za-z]:)?[\\\/][^\r\n"'<>]*?\.json/i) || [])[0];
-            if (pathMatch) {
-                credPath = pathMatch.trim();
-            }
-            
-            const homeDir = process.env.HOME || os.homedir() || '/data/data/com.termux/files/home';
-            const defaultCredPath = path.join(homeDir, '.cloudflared', `${uuid}.json`);
-            
-            // If parsed path doesn't exist or is invalid, fallback to the standard home directory location
-            if (!credPath || !fs.existsSync(credPath)) {
-                credPath = defaultCredPath;
-            }
-            
-            if (!fs.existsSync(credPath)) {
-                throw new Error(`Arquivo de credenciais não encontrado em: ${credPath}`);
-            }
-            
-            // Copy credentials to our CONFIGS_DIR as ${id}.json
-            const targetCredPath = path.join(CONFIGS_DIR, `${id}.json`);
-            fs.copyFileSync(credPath, targetCredPath);
-            
-            // Store UUID inside tunnel metadata
-            newTunnel.uuid = uuid;
-
-            // Automatically route the public subdomain/domain in Cloudflare DNS
-            if (domain) {
-                console.log(`[CLOUDFLARED] Roteando domínio ${domain} para o túnel ${uuid}...`);
-                try {
-                    const dnsStdout = execSync(`cloudflared tunnel route dns "${uuid}" "${domain}"`, {
-                        encoding: 'utf8',
-                        env: { ...process.env }
-                    });
-                    console.log(`[CLOUDFLARED] Saída do roteamento DNS:\n${dnsStdout}`);
-                } catch (dnsErr) {
-                    console.warn(`[CLOUDFLARED] Aviso ao rotear DNS: ${dnsErr.message}`);
-                }
-            }
-            
-        } catch (err) {
-            throw new Error(`Falha ao criar o túnel na Cloudflare: ${err.message}`);
+        } catch (e) {
+            console.warn("Aviso ao criar tunnel via CLI:", e.message);
         }
     }
 
-    // Pre-generate default YAML
-    if (newTunnel.type === 'classic_custom') {
-        newTunnel.yamlConfig = generateYamlConfig(newTunnel);
-    }
-
-    tunnels.push(newTunnel);
-    saveTunnels(tunnels);
-    return newTunnel;
+    generateYamlForInstance(newInstance);
+    instances.push(newInstance);
+    saveInstances(instances);
+    return newInstance;
 }
 
-/**
- * Update existing tunnel configuration
- */
-function updateTunnel(id, data) {
-    const tunnels = getTunnels();
-    const index = tunnels.findIndex(t => t.id === id);
-    if (index === -1) throw new Error('Túnel não encontrado.');
+function updateInstance(id, data) {
+    const instances = getInstances();
+    const idx = instances.findIndex(i => i.id === id);
+    if (idx === -1) throw new Error('Instância não encontrada.');
 
-    const t = tunnels[index];
-    if (data.name) t.name = data.name;
-    if (data.type) t.type = data.type;
-    if (data.token !== undefined) t.token = data.token;
-    
-    let needsYamlRegen = false;
+    const inst = instances[idx];
 
-    if (data.domain !== undefined) {
-        if (t.type === 'classic_custom' && t.uuid && data.domain && data.domain !== t.domain) {
-            console.log(`[CLOUDFLARED] Roteando novo domínio ${data.domain} para o túnel ${t.uuid}...`);
-            try {
-                const dnsStdout = execSync(`cloudflared tunnel route dns "${t.uuid}" "${data.domain}"`, {
-                    encoding: 'utf8',
-                    env: { ...process.env }
-                });
-                console.log(`[CLOUDFLARED] Saída do roteamento DNS:\n${dnsStdout}`);
-            } catch (dnsErr) {
-                console.warn(`[CLOUDFLARED] Aviso ao rotear novo DNS: ${dnsErr.message}`);
-            }
-            needsYamlRegen = true;
-        }
-        t.domain = data.domain;
-    }
-    if (data.proto !== undefined) {
-        if (data.proto !== t.proto && t.type === 'classic_custom') needsYamlRegen = true;
-        t.proto = data.proto;
-    }
-    if (data.localHost !== undefined) {
-        if (data.localHost !== t.localHost && t.type === 'classic_custom') needsYamlRegen = true;
-        t.localHost = data.localHost;
-    }
-    if (data.localPort !== undefined) {
-        const newPort = String(data.localPort);
-        if (newPort !== t.localPort && t.type === 'classic_custom') needsYamlRegen = true;
-        t.localPort = newPort;
-    }
-    if (data.autoStart !== undefined) t.autoStart = !!data.autoStart;
-    if (data.ingress !== undefined) {
-        t.ingress = data.ingress;
-        if (t.type === 'classic_custom') needsYamlRegen = true;
-    }
-    
-    if (needsYamlRegen) {
-        t.yamlConfig = generateYamlConfig(t);
-    }
-    
-    // Save YAML changes directly if provided and validated
-    if (data.yamlConfig !== undefined) {
-        if (data.yamlConfig) {
-            const check = validateYamlConfig(data.yamlConfig);
-            if (!check.valid) throw new Error(check.error);
+    // Se for 'core' e protegido, pode bloquear certas edições destrutivas se necessário, mas o painel permite editar
+    if (data.name !== undefined) inst.name = data.name;
+    if (data.type !== undefined) inst.type = data.type;
+    if (data.protected !== undefined) inst.protected = !!data.protected;
+    if (data.autoRestartOnSave !== undefined) inst.autoRestartOnSave = !!data.autoRestartOnSave;
+    if (data.hostname !== undefined) inst.hostname = data.hostname;
+    if (data.credentialsFile !== undefined) inst.credentialsFile = data.credentialsFile;
+    if (data.tunnelId !== undefined) inst.tunnelId = data.tunnelId;
+    if (data.routes !== undefined) inst.routes = data.routes;
 
-            // Extract all hostnames from custom YAML and route them in Cloudflare DNS
-            if (t.type === 'classic_custom' && t.uuid) {
-                const hostnames = [];
-                const regex = /hostname:\s*["']?([a-zA-Z0-9.-]+)["']?/g;
-                let match;
-                while ((match = regex.exec(data.yamlConfig)) !== null) {
-                    hostnames.push(match[1]);
-                }
-                
-                hostnames.forEach(hostname => {
-                    console.log(`[CLOUDFLARED] Roteando hostname do YAML ${hostname} para o túnel ${t.uuid}...`);
+    generateYamlForInstance(inst); // Regenerate yaml
+    
+    // Roteamento DNS automático para novas rotas
+    if (inst.tunnelId) {
+        const binary = processManager.getCloudflaredBinaryPath();
+        if (inst.routes && Array.isArray(inst.routes)) {
+            inst.routes.forEach(route => {
+                if (route.hostname) {
                     try {
-                        execSync(`cloudflared tunnel route dns "${t.uuid}" "${hostname}"`, {
-                            encoding: 'utf8',
-                            env: { ...process.env }
-                        });
-                    } catch (dnsErr) {
-                        console.warn(`[CLOUDFLARED] Aviso ao rotear hostname do YAML ${hostname}: ${dnsErr.message}`);
-                    }
-                });
-            }
+                        execSync(`"${binary}" tunnel route dns "${inst.tunnelId}" "${route.hostname}"`, { stdio: 'ignore' });
+                    } catch (e) {}
+                }
+            });
         }
-        t.yamlConfig = data.yamlConfig;
     }
 
-    tunnels[index] = t;
-    saveTunnels(tunnels);
-    return t;
+    instances[idx] = inst;
+    saveInstances(instances);
+    return inst;
 }
 
-/**
- * Delete tunnel and config files
- */
-function deleteTunnel(id) {
-    let tunnels = getTunnels();
-    const tunnel = tunnels.find(t => t.id === id);
-    if (!tunnel) throw new Error('Túnel não encontrado.');
+function deleteInstance(id) {
+    let instances = getInstances();
+    const inst = instances.find(i => i.id === id);
+    if (!inst) throw new Error('Instância não encontrada.');
+    if (inst.protected) throw new Error('Esta instância está protegida e não pode ser excluída.');
 
-    // Stop process
-    processManager.stopTunnelProcess(id);
+    processManager.stopInstance(id);
 
-    // Delete custom YAML files if they exist
-    const configPath = path.join(CONFIGS_DIR, `${id}_config.yml`);
-    const credPath = path.join(CONFIGS_DIR, `${id}.json`);
-    if (fs.existsSync(configPath)) fs.unlinkSync(configPath);
-    if (fs.existsSync(credPath)) fs.unlinkSync(credPath);
+    if (fs.existsSync(inst.configPath)) fs.unlinkSync(inst.configPath);
+    // Não apagamos o credentialsFile para segurança, o usuário pode ter outros usos
 
-    tunnels = tunnels.filter(t => t.id !== id);
-    saveTunnels(tunnels);
+    instances = instances.filter(i => i.id !== id);
+    saveInstances(instances);
     return { success: true };
 }
 
-/**
- * Starts a specific tunnel
- */
-function startTunnel(id) {
-    const tunnel = getTunnels().find(t => t.id === id);
-    if (!tunnel) throw new Error('Túnel não encontrado.');
-
-    if (tunnel.type === 'token') {
-        return processManager.startTunnelProcess(id, { 
-            token: tunnel.token,
-            autoRestart: tunnel.autoStart
-        });
-    } else if (tunnel.type === 'classic_custom') {
-        const configPath = path.join(CONFIGS_DIR, `${tunnel.id}_config.yml`);
-        const finalYaml = tunnel.yamlConfig || generateYamlConfig(tunnel);
-        
-        fs.writeFileSync(configPath, finalYaml);
-        return processManager.startTunnelProcess(id, {
-            configPath,
-            tunnelName: tunnel.name,
-            autoRestart: tunnel.autoStart
-        });
-    } else {
-        // Classic Quick Tunnel: compose URL from proto + host + port
-        const proto = tunnel.proto || 'http';
-        const host = tunnel.localHost || 'localhost';
-        const port = tunnel.localPort ? tunnel.localPort.replace(/\D/g, '') : '80';
-        const targetUrl = `${proto}://${host}:${port}`;
-            
-        return processManager.startTunnelProcess(id, { 
-            quickUrl: targetUrl,
-            autoRestart: tunnel.autoStart
-        });
-    }
-}
-
-/**
- * Stops a specific tunnel
- */
-function stopTunnel(id) {
-    return processManager.stopTunnelProcess(id);
-}
-
-/**
- * List all tunnels with process status
- */
-async function listTunnels() {
-    const tunnels = getTunnels();
-    const result = [];
-    for (const t of tunnels) {
-        const status = await processManager.getTunnelStatus(t.id);
-        result.push({ ...t, ...status });
-    }
-    return result;
-}
-
-function getCertPath() {
-    const homeDir = process.env.HOME || os.homedir() || '/data/data/com.termux/files/home';
-    return path.join(homeDir, '.cloudflared', 'cert.pem');
-}
-
-function isClassicAuthenticated() {
-    return fs.existsSync(getCertPath());
-}
-
-function clearCertificate() {
-    const certPath = getCertPath();
-    if (fs.existsSync(certPath)) {
-        fs.unlinkSync(certPath);
-    }
-}
-
-async function resetManager() {
-    const tunnels = getTunnels();
-    for (const t of tunnels) {
+function initAutoStart() {
+    console.log('[CLOUDFLARED] Iniciando túneis salvos...');
+    const instances = getInstances();
+    instances.forEach(inst => {
+        // Como o design quer que os túneis subam no autoStart
         try {
-            processManager.stopTunnelProcess(t.id);
-        } catch (err) {
-            console.error(`Erro ao parar túnel ${t.id}:`, err.message);
-        }
-        try {
-            const configPath = path.join(CONFIGS_DIR, `${t.id}_config.yml`);
-            const credPath = path.join(CONFIGS_DIR, `${t.id}.json`);
-            if (fs.existsSync(configPath)) fs.unlinkSync(configPath);
-            if (fs.existsSync(credPath)) fs.unlinkSync(credPath);
-        } catch (err) {
-            console.error(`Erro ao remover arquivos do túnel ${t.id}:`, err.message);
-        }
-    }
-    try {
-        processManager.killAllZombies();
-    } catch (err) {
-        console.error('Erro ao limpar processos zumbis:', err.message);
-    }
-    saveTunnels([]);
-    clearCertificate();
-    return { success: true };
-}
-
-/**
- * Imports configurations and merges
- */
-function importConfigurations(tunnelsList) {
-    if (!Array.isArray(tunnelsList)) throw new Error('O arquivo de configuração importado precisa ser uma lista válida.');
-    
-    const existing = getTunnels();
-    tunnelsList.forEach(imported => {
-        if (!imported.name) return;
-        const dupIndex = existing.findIndex(t => t.name === imported.name);
-        
-        const tunnelObj = {
-            id: imported.id || Date.now().toString() + Math.random().toString().slice(-4),
-            name: imported.name,
-            type: imported.type || 'classic',
-            token: imported.token || '',
-            domain: imported.domain || '',
-            proto: imported.proto || 'http',
-            localHost: imported.localHost || 'localhost',
-            localPort: String(imported.localPort || '80'),
-            autoStart: !!imported.autoStart,
-            ingress: imported.ingress || [],
-            yamlConfig: imported.yamlConfig || '',
-            createdAt: imported.createdAt || new Date().toISOString()
-        };
-
-        if (dupIndex !== -1) {
-            existing[dupIndex] = tunnelObj;
-        } else {
-            existing.push(tunnelObj);
-        }
-    });
-
-    saveTunnels(existing);
-    return { success: true, count: tunnelsList.length };
-}
-
-/**
- * Automatic Initialization of Autostart tunnels
- */
-function initAutoStartTunnels() {
-    console.log('[CLOUDFLARED] Inicializando Watchdog e carregando túneis autostart...');
-    const tunnels = getTunnels();
-    tunnels.forEach(t => {
-        if (t.autoStart) {
-            try {
-                console.log(`[CLOUDFLARED] Inicializando túnel automático: ${t.name}`);
-                startTunnel(t.id);
-            } catch (err) {
-                console.error(`[CLOUDFLARED] Falha ao iniciar túnel de autostart (${t.name}):`, err.message);
-            }
+            processManager.startInstance(inst);
+        } catch (e) {
+            console.error(`Erro ao iniciar instância ${inst.name}:`, e.message);
         }
     });
 }
 
-async function getLoginUrl() {
-    try {
-        const tmpLog = path.join(CONFIGS_DIR, 'login.log');
-        // Ensure folder exists
-        fs.mkdirSync(path.dirname(tmpLog), { recursive: true });
-        if (fs.existsSync(tmpLog)) fs.unlinkSync(tmpLog);
-
-        const { exec } = require('child_process');
-        exec(`cloudflared tunnel login > "${tmpLog}" 2>&1`);
-
-        // Poll logs every 500ms for up to 15 seconds for the login URL
-        for (let i = 0; i < 30; i++) {
-            await new Promise(r => setTimeout(r, 500));
-            if (fs.existsSync(tmpLog)) {
-                const logs = fs.readFileSync(tmpLog, 'utf8');
-                const match = logs.match(/https:\/\/(?:[a-zA-Z0-9-]+\.)*cloudflare\.com\/[^\s"]+/);
-                if (match) return { url: match[0].trim() };
-            }
-        }
-        return { error: 'Timeout ao aguardar URL de autorização (15s). Certifique-se que o cloudflared está instalado e há conexão ativa.' };
-    } catch (err) {
-        return { error: err.message };
-    }
-}
-
-// Delay startup slightly to let the Express server warm up
-setTimeout(initAutoStartTunnels, 3000);
+setTimeout(initAutoStart, 3000);
 
 module.exports = {
-    getTunnels,
-    createTunnel,
-    updateTunnel,
-    deleteTunnel,
-    startTunnel,
-    stopTunnel,
-    listTunnels,
-    getLoginUrl,
-    isClassicAuthenticated,
-    clearCertificate,
-    resetManager,
-    importConfigurations,
-    validateYamlConfig,
-    generateYamlConfig
+    getInstances,
+    saveInstances,
+    createInstance,
+    updateInstance,
+    deleteInstance,
+    generateYamlForInstance
 };
