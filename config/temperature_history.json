@@ -1,25 +1,5 @@
 [
   {
-    "timestamp": 1779154694924,
-    "temperature": 29.6
-  },
-  {
-    "timestamp": 1779158294924,
-    "temperature": 28.8
-  },
-  {
-    "timestamp": 1779161894924,
-    "temperature": 29
-  },
-  {
-    "timestamp": 1779165494924,
-    "temperature": 28.7
-  },
-  {
-    "timestamp": 1779169094924,
-    "temperature": 27.9
-  },
-  {
     "timestamp": 1779172694924,
     "temperature": 27.9
   },
@@ -306,5 +286,25 @@
   {
     "timestamp": 1779413359057,
     "temperature": 32.1
+  },
+  {
+    "timestamp": 1779416959068,
+    "temperature": 30.6
+  },
+  {
+    "timestamp": 1779420559069,
+    "temperature": 35.2
+  },
+  {
+    "timestamp": 1779424159074,
+    "temperature": 29.5
+  },
+  {
+    "timestamp": 1779427759077,
+    "temperature": 30.8
+  },
+  {
+    "timestamp": 1779431359079,
+    "temperature": 28
   }
 ]
