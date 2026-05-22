@@ -4,8 +4,11 @@ const { buildCloudflaredConfig, writeCloudflaredConfig } = require('./cloudflare
 const { buildNginxConfig, writeNginxConfig } = require('./nginxService');
 const { validateAll, run } = require('./validationService');
 const { createBackup, restoreLastBackup } = require('./backupService');
+const cloudflaredManager = require('../../modules/cloudflared/manager');
 
 const MODES = ['cloudflare_only', 'cloudflare_nginx', 'proxy_only'];
+const AUTOCONFIG_INSTANCE_ID = 'inst-autoconfig-system';
+const AUTOCONFIG_INSTANCE_NAME = 'Autoconfiguração do Sistema';
 
 function normalizeMode(mode) {
   if (mode === '1' || mode === 'cloudflare') return 'cloudflare_only';
@@ -76,6 +79,7 @@ async function apply(input) {
   }
   if (conf.mode !== 'proxy_only') {
     await run('cloudflared tunnel ingress validate');
+    syncAutoconfigCloudflaredInstance(conf);
   }
 
   // Depois valida runtime (ports/head checks)
@@ -89,6 +93,51 @@ async function apply(input) {
 
   logLine('services', `Configuração aplicada com sucesso (${conf.mode})`);
   return { success: true, backup, validation: runtimeVal, syntaxValidation: syntaxVal };
+}
+
+function syncAutoconfigCloudflaredInstance(conf) {
+  const state = readJson(FILES.services, { services: [] });
+  const services = Array.isArray(state.services) ? state.services : [];
+
+  const routes = [];
+  if (conf.mode === 'cloudflare_nginx') {
+    routes.push({
+      name: 'Autoconfig Nginx Entry',
+      hostname: conf.domain,
+      path: '/',
+      routeType: 'http',
+      targetProtocol: 'http',
+      targetHost: '127.0.0.1',
+      targetPort: 8090
+    });
+  } else if (conf.mode === 'cloudflare_only') {
+    for (const svc of services) {
+      if (!svc.enabled || !svc.public) continue;
+      routes.push({
+        name: svc.name || svc.id,
+        hostname: conf.domain,
+        path: svc.path || '/',
+        routeType: (svc.protocol === 'https' ? 'https' : 'http'),
+        targetProtocol: (svc.protocol === 'https' ? 'https' : 'http'),
+        targetHost: '127.0.0.1',
+        targetPort: svc.defaultPort || 80
+      });
+    }
+  }
+
+  const payload = {
+    id: AUTOCONFIG_INSTANCE_ID,
+    name: AUTOCONFIG_INSTANCE_NAME,
+    type: 'service',
+    protected: true,
+    autoRestartOnSave: true,
+    hostname: conf.domain,
+    routes
+  };
+
+  const exists = cloudflaredManager.getInstances().some(i => i.id === AUTOCONFIG_INSTANCE_ID);
+  if (exists) cloudflaredManager.updateInstance(AUTOCONFIG_INSTANCE_ID, payload);
+  else cloudflaredManager.createInstance(payload);
 }
 
 module.exports = { detect, generate, validate, apply, restoreLastBackup, normalizeMode };
