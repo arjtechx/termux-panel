@@ -205,6 +205,7 @@ function migrateLegacyRoutes() {
         return { success: false, error: 'Nenhuma rota no arquivo antigo.' };
     }
 
+    const instances = getInstances();
     const jaMigrado = instances.some(i => i.name === 'Túneis Legados (Migração)');
     if (jaMigrado) {
         return { success: true, message: 'Já migrado anteriormente.' };
@@ -231,7 +232,7 @@ function migrateLegacyRoutes() {
     };
 
     instances.push(novaInstancia);
-    saveInstances();
+    saveInstances(instances);
     return { success: true, message: 'Rotas antigas resgatadas com sucesso!' };
 }
 
