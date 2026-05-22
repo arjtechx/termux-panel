@@ -8,6 +8,7 @@ const path = require('path');
 const { execSync } = require('child_process');
 
 const SERVER_CONFIG_FILE = path.join(__dirname, '..', '..', 'config', 'server.json');
+const NETWORK_ACCESS_FILE = path.join(__dirname, '..', '..', 'config', 'network-access.json');
 
 router.get('/api/network/info', async (req, res) => {
     let ipv4 = 'Indisponível';
@@ -23,17 +24,36 @@ router.get('/api/network/info', async (req, res) => {
         } catch(e) {}
     }
 
-    try {
-        const v4Res = await axios.get('https://ipv4.icanhazip.com', { timeout: 4000 });
-        if (v4Res.data) ipv4 = v4Res.data.trim();
-    } catch(e) {}
+    let fetchV4 = true;
+    let fetchV6 = false;
 
-    try {
-        const v6Res = await axios.get('https://ipv6.icanhazip.com', { timeout: 4000 });
-        if (v6Res.data) ipv6 = v6Res.data.trim();
-    } catch(e) {}
+    if (fs.existsSync(NETWORK_ACCESS_FILE)) {
+        try {
+            const netConfig = JSON.parse(fs.readFileSync(NETWORK_ACCESS_FILE, 'utf8'));
+            fetchV4 = netConfig.ipv4 !== false;
+            fetchV6 = netConfig.ipv6 === true;
+        } catch(e) {}
+    }
 
-    res.json({ success: true, ipv4, ipv6, httpsEnabled, port });
+    if (fetchV4) {
+        try {
+            const v4Res = await axios.get('https://ipv4.icanhazip.com', { timeout: 4000 });
+            if (v4Res.data) ipv4 = v4Res.data.trim();
+        } catch(e) {}
+    } else {
+        ipv4 = 'Desativado';
+    }
+
+    if (fetchV6) {
+        try {
+            const v6Res = await axios.get('https://ipv6.icanhazip.com', { timeout: 4000 });
+            if (v6Res.data) ipv6 = v6Res.data.trim();
+        } catch(e) {}
+    } else {
+        ipv6 = 'Desativado';
+    }
+
+    res.json({ success: true, ipv4, ipv6, httpsEnabled, port, fetchV4, fetchV6 });
 });
 
 router.post('/api/network/ssl', (req, res) => {

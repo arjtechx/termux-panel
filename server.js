@@ -654,7 +654,7 @@ server.on('error', (e) => {
             }
             console.log(`[OK] Porta ${PORT} liberada com sucesso! Reiniciando escuta do servidor em 1.5s...`);
             setTimeout(() => {
-                server.listen(PORT, '0.0.0.0');
+                server.listen(PORT);
             }, 1500);
         } catch (err) {
             console.error('[ERR] Erro crítico ao tentar liberar a porta:', err.message);
@@ -666,12 +666,13 @@ server.on('error', (e) => {
 });
 
 server.once('listening', () => {
+    const proto = useHttps ? 'https' : 'http';
     console.log(`Painel Termux rodando em:`);
-    console.log(`- Local: http://localhost:${PORT}`);
-    console.log(`- Rede:  http://0.0.0.0:${PORT}`);
+    console.log(`- Local: ${proto}://localhost:${PORT}`);
+    console.log(`- Rede:  ${proto}://[::]:${PORT} (IPv6) e ${proto}://0.0.0.0:${PORT} (IPv4)`);
 });
 
-server.listen(PORT, '0.0.0.0');
+server.listen(PORT);
 
 // Inicializar registro de temperaturas (a cada 1 hora)
 try {

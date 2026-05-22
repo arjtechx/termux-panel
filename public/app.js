@@ -2424,6 +2424,8 @@ async function fetchNetworkInfo() {
     const ipv6El = document.getElementById('network-ipv6-display');
     const httpsToggle = document.getElementById('settings-https-toggle');
     const cgnatWarn = document.getElementById('network-cgnat-warning');
+    const extIpv4 = document.getElementById('settings-ext-ipv4');
+    const extIpv6 = document.getElementById('settings-ext-ipv6');
 
     if (ipv4El) ipv4El.textContent = 'Buscando...';
     if (ipv6El) ipv6El.textContent = 'Buscando...';
@@ -2433,13 +2435,11 @@ async function fetchNetworkInfo() {
         if (ipv4El) ipv4El.textContent = res.ipv4;
         if (ipv6El) ipv6El.textContent = res.ipv6;
         if (httpsToggle) httpsToggle.checked = res.httpsEnabled;
+        if (extIpv4) extIpv4.checked = res.fetchV4;
+        if (extIpv6) extIpv6.checked = res.fetchV6;
 
-        // Verifica provável CGNAT no IPv4 nativo baseado em prefixos típicos
-        // As operadoras geralmente dão IPs como 100.x.x.x para CGNAT,
-        // mas alguns public IPs de icanhazip podem ser do firewall deles.
-        // O melhor é exibir o aviso genérico se o IPv4 existir, mas pra mobile é quase sempre CGNAT.
         if (cgnatWarn) {
-            if (res.ipv4 && res.ipv4 !== 'Indisponível') {
+            if (res.ipv4 && res.ipv4 !== 'Indisponível' && res.ipv4 !== 'Desativado') {
                 cgnatWarn.classList.remove('hidden');
             } else {
                 cgnatWarn.classList.add('hidden');

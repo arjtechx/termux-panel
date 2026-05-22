@@ -5,10 +5,15 @@ const { buildNginxConfig, writeNginxConfig } = require('./nginxService');
 const { validateAll, run } = require('./validationService');
 const { createBackup, restoreLastBackup } = require('./backupService');
 const cloudflaredManager = require('../../modules/cloudflared/manager');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 
 const MODES = ['cloudflare_only', 'cloudflare_nginx', 'proxy_only'];
 const AUTOCONFIG_INSTANCE_ID = 'inst-autoconfig-system';
 const AUTOCONFIG_INSTANCE_NAME = 'Autoconfiguração do Sistema';
+const HOME_DIR = process.env.HOME || os.homedir();
+const DEFAULT_CLOUDFLARED_CONFIG = path.join(HOME_DIR, '.cloudflared', 'config.yml');
 
 function normalizeMode(mode) {
   if (mode === '1' || mode === 'cloudflare') return 'cloudflare_only';
@@ -98,6 +103,7 @@ async function apply(input) {
 function syncAutoconfigCloudflaredInstance(conf) {
   const state = readJson(FILES.services, { services: [] });
   const services = Array.isArray(state.services) ? state.services : [];
+  const tunnelContext = resolveTunnelContext();
 
   const routes = [];
   if (conf.mode === 'cloudflare_nginx') {
@@ -130,14 +136,43 @@ function syncAutoconfigCloudflaredInstance(conf) {
     name: AUTOCONFIG_INSTANCE_NAME,
     type: 'service',
     protected: true,
-    autoRestartOnSave: true,
+    autoRestartOnSave: !!tunnelContext.tunnelId,
     hostname: conf.domain,
+    tunnelId: tunnelContext.tunnelId,
+    credentialsFile: tunnelContext.credentialsFile,
     routes
   };
+
+  if (!payload.tunnelId) {
+    logLine('services', 'Autoconfiguração sem tunnelId detectado: instância salva sem auto-restart para evitar loop de erro.');
+  }
 
   const exists = cloudflaredManager.getInstances().some(i => i.id === AUTOCONFIG_INSTANCE_ID);
   if (exists) cloudflaredManager.updateInstance(AUTOCONFIG_INSTANCE_ID, payload);
   else cloudflaredManager.createInstance(payload);
+}
+
+function resolveTunnelContext() {
+  const instances = cloudflaredManager.getInstances();
+  const preferred = instances.find(i => i.id !== AUTOCONFIG_INSTANCE_ID && i.tunnelId);
+  if (preferred) {
+    return {
+      tunnelId: String(preferred.tunnelId || '').trim(),
+      credentialsFile: String(preferred.credentialsFile || '').trim()
+    };
+  }
+
+  if (!fs.existsSync(DEFAULT_CLOUDFLARED_CONFIG)) {
+    return { tunnelId: '', credentialsFile: '' };
+  }
+
+  const text = fs.readFileSync(DEFAULT_CLOUDFLARED_CONFIG, 'utf8');
+  const tunnelMatch = text.match(/^\s*tunnel:\s*["']?([^"'\n]+)["']?\s*$/m);
+  const credMatch = text.match(/^\s*credentials-file:\s*["']?([^"'\n]+)["']?\s*$/m);
+  return {
+    tunnelId: tunnelMatch ? tunnelMatch[1].trim() : '',
+    credentialsFile: credMatch ? credMatch[1].trim() : ''
+  };
 }
 
 module.exports = { detect, generate, validate, apply, restoreLastBackup, normalizeMode };
