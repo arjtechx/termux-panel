@@ -9,6 +9,7 @@ const { runCmd } = require('../utils/shell');
 
 const SERVER_CONFIG_FILE = path.join(__dirname, '..', '..', 'config', 'server.json');
 const AUTH_FILE = path.join(__dirname, '..', '..', 'config', 'auth.json');
+const NETWORK_ACCESS_FILE = path.join(__dirname, '..', '..', 'config', 'network-access.json');
 
 // --- Power and Services Controls ---
 router.post('/api/reboot', async (req, res) => {
@@ -108,15 +109,35 @@ router.get('/api/system/settings', (req, res) => {
         
         const serverConfig = fs.existsSync(SERVER_CONFIG_FILE) ? JSON.parse(fs.readFileSync(SERVER_CONFIG_FILE, 'utf8')) : { port: 8088 };
         const currentPort = serverConfig.port || 8088;
+        const networkAccess = fs.existsSync(NETWORK_ACCESS_FILE)
+            ? JSON.parse(fs.readFileSync(NETWORK_ACCESS_FILE, 'utf8'))
+            : { ipv4: true, ipv6: false };
 
         res.json({
             success: true,
             port: currentPort,
             autostart,
             autostartBoot,
-            adminUser
+            adminUser,
+            networkAccess: {
+                ipv4: networkAccess.ipv4 !== false,
+                ipv6: networkAccess.ipv6 === true
+            }
         });
     } catch(err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.post('/api/system/settings/network', (req, res) => {
+    try {
+        const next = {
+            ipv4: req.body && req.body.ipv4 !== false,
+            ipv6: !!(req.body && req.body.ipv6 === true)
+        };
+        fs.writeFileSync(NETWORK_ACCESS_FILE, JSON.stringify(next, null, 2));
+        res.json({ success: true, networkAccess: next, message: 'Configuração de acesso externo salva.' });
+    } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });

@@ -2434,6 +2434,11 @@ async function loadSettings() {
         const passInput = document.getElementById('settings-pass-input');
         if (passInput) passInput.value = '';
 
+        const extIpv4 = document.getElementById('settings-ext-ipv4');
+        const extIpv6 = document.getElementById('settings-ext-ipv6');
+        if (extIpv4) extIpv4.checked = res.networkAccess ? res.networkAccess.ipv4 !== false : true;
+        if (extIpv6) extIpv6.checked = res.networkAccess ? res.networkAccess.ipv6 === true : false;
+
         // Preenche autostart badge e botão (Opção 1)
         const badge = document.getElementById('autostart-status-badge');
         const btn = document.getElementById('btn-toggle-autostart');
@@ -2482,6 +2487,18 @@ async function loadSettings() {
         }
 
         if (window.lucide) lucide.createIcons();
+    }
+}
+
+async function saveExternalAccessSettings() {
+    const ipv4 = !!document.getElementById('settings-ext-ipv4')?.checked;
+    const ipv6 = !!document.getElementById('settings-ext-ipv6')?.checked;
+    const res = await safeFetch(`${API_BASE}/system/settings/network`, 'POST', { ipv4, ipv6 });
+    if (res?.success) {
+        showToast('Configuração de IPv4/IPv6 externo salva.', 'success');
+        loadSettings();
+    } else {
+        showToast(`Erro: ${res?.error || 'Falha ao salvar configuração de rede.'}`, 'error');
     }
 }
 

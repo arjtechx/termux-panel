@@ -17,6 +17,18 @@ function readExistingHeader() {
 }
 
 function buildCloudflaredConfig({ domain, mode, services }) {
+  const toOriginService = (target) => {
+    const raw = String(target || '').trim();
+    if (!raw) return '';
+    if (!/^https?:\/\//i.test(raw)) return raw;
+    try {
+      const u = new URL(raw);
+      return `${u.protocol}//${u.host}`;
+    } catch {
+      return raw;
+    }
+  };
+
   const ingress = [];
   if (mode === 'cloudflare_nginx') {
     ingress.push({ hostname: domain, service: 'http://127.0.0.1:8090' });
@@ -24,10 +36,11 @@ function buildCloudflaredConfig({ domain, mode, services }) {
     for (const svc of services) {
       if (!svc.enabled || !svc.public) continue;
       const routePath = svc.path || '/';
+      const originService = toOriginService(svc.target);
       if (routePath !== '/' && svc.protocol.startsWith('http')) {
-        ingress.push({ hostname: domain, path: `${routePath.replace(/\/$/, '')}.*`, service: svc.target.replace(/\/api$/, '') });
+        ingress.push({ hostname: domain, path: `${routePath.replace(/\/$/, '')}.*`, service: originService });
       } else {
-        ingress.push({ hostname: domain, service: svc.target.replace(/\/api$/, '') });
+        ingress.push({ hostname: domain, service: originService });
       }
     }
   }

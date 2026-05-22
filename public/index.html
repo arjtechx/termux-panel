@@ -1620,6 +1620,25 @@
                         </button>
                     </div>
 
+                    <!-- External Access Card -->
+                    <div class="card" style="display:flex; flex-direction:column; justify-content:space-between; height: 100%;">
+                        <div>
+                            <h3 class="card-title" style="margin-bottom:14px; display:flex; align-items:center;"><i data-lucide="globe" style="color:var(--info); margin-right:8px;"></i>Acesso Externo IPv4/IPv6</h3>
+                            <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:16px;">
+                                Preferências de acesso externo do painel. A efetividade depende de rede, firewall e túnel configurado.
+                            </p>
+                            <label style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+                                <input type="checkbox" id="settings-ext-ipv4"> Habilitar IPv4 externo
+                            </label>
+                            <label style="display:flex; align-items:center; gap:8px; margin-bottom:16px;">
+                                <input type="checkbox" id="settings-ext-ipv6"> Habilitar IPv6 externo
+                            </label>
+                        </div>
+                        <button class="btn btn-primary btn-block" onclick="saveExternalAccessSettings()">
+                            <i data-lucide="save"></i> Salvar IPv4/IPv6
+                        </button>
+                    </div>
+
                     <!-- Admin Auth Card -->
                     <div class="card" style="display:flex; flex-direction:column; justify-content:space-between; height: 100%;">
                         <div>
@@ -1765,7 +1784,7 @@
 <div class="fm-toast-container" id="fm-toast-container"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.127"></script>
+<script src="filemanager.js?v=0.2.128"></script>
 <script src="app.js?v=4.5"></script>
 </body>
 </html>
