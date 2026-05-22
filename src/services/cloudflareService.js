@@ -40,9 +40,13 @@ function buildCloudflaredConfig({ domain, mode, services }) {
   txt += 'protocol: quic\n';
   txt += 'ingress:\n';
   for (const rule of ingress) {
-    if (rule.hostname) txt += `  - hostname: \"${rule.hostname}\"\n`;
-    if (rule.path) txt += `    path: \"${rule.path}\"\n`;
-    txt += `    service: \"${rule.service}\"\n`;
+    if (rule.hostname) {
+      txt += `  - hostname: \"${rule.hostname}\"\n`;
+      if (rule.path) txt += `    path: \"${rule.path}\"\n`;
+      txt += `    service: \"${rule.service}\"\n`;
+    } else {
+      txt += `  - service: \"${rule.service}\"\n`;
+    }
   }
   return txt;
 }

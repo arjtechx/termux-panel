@@ -106,7 +106,13 @@ module.exports = function(io) {
                     noipStatus.status = `Erro NO-IP: ${resultBody.split(/\s+/)[0]}`;
                 }
             } catch (e) {
-                logNoip(`Erro ao atualizar NO-IP: ${e.message}`);
+                const status = e?.response?.status;
+                const body = String(e?.response?.data || '').trim();
+                if (status || body) {
+                    logNoip(`Erro ao atualizar NO-IP: HTTP ${status || '-'} ${body}`.trim());
+                } else {
+                    logNoip(`Erro ao atualizar NO-IP: ${e.message}`);
+                }
             }
         };
 
