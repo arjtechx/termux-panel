@@ -6,7 +6,7 @@ module.exports = function createCloudflaredRoutes() {
     const router = express.Router();
 
     // Listar todas as instâncias (retorna infos + status do processo)
-    router.get('/instances', async (req, res) => {
+    router.get('/cloudflared/instances', async (req, res) => {
         try {
             const instances = manager.getInstances();
             const result = [];
@@ -21,7 +21,7 @@ module.exports = function createCloudflaredRoutes() {
     });
 
     // Criar nova instância
-    router.post('/instances', (req, res) => {
+    router.post('/cloudflared/instances', (req, res) => {
         try {
             const inst = manager.createInstance(req.body);
             res.json({ success: true, instance: inst });
@@ -31,7 +31,7 @@ module.exports = function createCloudflaredRoutes() {
     });
 
     // Editar instância
-    router.put('/instances/:id', (req, res) => {
+    router.put('/cloudflared/instances/:id', (req, res) => {
         try {
             const inst = manager.updateInstance(req.params.id, req.body);
             res.json({ success: true, instance: inst });
@@ -41,7 +41,7 @@ module.exports = function createCloudflaredRoutes() {
     });
 
     // Deletar instância (protegidas são bloqueadas no manager)
-    router.delete('/instances/:id', (req, res) => {
+    router.delete('/cloudflared/instances/:id', (req, res) => {
         try {
             const result = manager.deleteInstance(req.params.id);
             res.json(result);
@@ -51,7 +51,7 @@ module.exports = function createCloudflaredRoutes() {
     });
 
     // Start
-    router.post('/instances/:id/start', (req, res) => {
+    router.post('/cloudflared/instances/:id/start', (req, res) => {
         try {
             const inst = manager.getInstances().find(i => i.id === req.params.id);
             if (!inst) throw new Error('Instância não encontrada.');
@@ -63,7 +63,7 @@ module.exports = function createCloudflaredRoutes() {
     });
 
     // Stop
-    router.post('/instances/:id/stop', (req, res) => {
+    router.post('/cloudflared/instances/:id/stop', (req, res) => {
         try {
             const inst = manager.getInstances().find(i => i.id === req.params.id);
             if (!inst) throw new Error('Instância não encontrada.');
@@ -78,7 +78,7 @@ module.exports = function createCloudflaredRoutes() {
     });
 
     // Restart Hard
-    router.post('/instances/:id/restart', async (req, res) => {
+    router.post('/cloudflared/instances/:id/restart', async (req, res) => {
         try {
             const inst = manager.getInstances().find(i => i.id === req.params.id);
             if (!inst) throw new Error('Instância não encontrada.');
@@ -95,7 +95,7 @@ module.exports = function createCloudflaredRoutes() {
     });
 
     // Reload Safe (Zero Downtime)
-    router.post('/instances/:id/reload-safe', async (req, res) => {
+    router.post('/cloudflared/instances/:id/reload-safe', async (req, res) => {
         try {
             const inst = manager.getInstances().find(i => i.id === req.params.id);
             if (!inst) throw new Error('Instância não encontrada.');
@@ -112,7 +112,7 @@ module.exports = function createCloudflaredRoutes() {
     });
 
     // Pegar logs
-    router.get('/instances/:id/logs', (req, res) => {
+    router.get('/cloudflared/instances/:id/logs', (req, res) => {
         try {
             const lines = parseInt(req.query.lines) || 100;
             const logs = processManager.readLogs(req.params.id, lines);
@@ -123,7 +123,7 @@ module.exports = function createCloudflaredRoutes() {
     });
 
     // Kill all zombies
-    router.post('/system/kill-zombies', (req, res) => {
+    router.post('/cloudflared/system/kill-zombies', (req, res) => {
         res.json(processManager.killAllZombies());
     });
 
