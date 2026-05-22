@@ -48,7 +48,7 @@ async function generate({ domain, mode }) {
 
 async function validate(input) {
   const conf = input || readJson(FILES.tunnelConfig, {});
-  const result = await validateAll(conf.mode || 'cloudflare_nginx');
+  const result = await validateAll(conf.mode || 'cloudflare_nginx', { includeRuntime: true });
   logLine('services', `Validacao ${result.success ? 'OK' : 'FALHOU'} (${conf.mode || 'default'})`);
   return result;
 }
@@ -61,22 +61,34 @@ async function apply(input) {
   if (conf.mode !== 'proxy_only' && conf.cloudflared) writeCloudflaredConfig(conf.cloudflared);
   if (conf.mode !== 'cloudflare_only' && conf.nginx) writeNginxConfig(conf.nginx);
 
-  const val = await validate(conf);
-  if (!val.success) {
+  // Primeiro valida sintaxe/estrutura (sem runtime check)
+  const syntaxVal = await validateAll(conf.mode || 'cloudflare_nginx', { includeRuntime: false });
+  if (!syntaxVal.success) {
     restoreLastBackup();
+    logLine('services', `Validacao FALHOU (${conf.mode}) detalhes: ${JSON.stringify(syntaxVal.checks)}`);
     logLine('services', 'Rollback automático executado por falha de validação.');
-    return { success: false, error: 'Falha na validação; backup restaurado.', validation: val, backup };
+    return { success: false, error: 'Falha na validação de sintaxe; backup restaurado.', validation: syntaxVal, backup };
   }
 
   if (conf.mode !== 'cloudflare_only') {
-    await run('nginx -s reload').catch(() => run('nginx'));
+    const reload = await run('nginx -s reload');
+    if (!reload.ok) await run('nginx');
   }
   if (conf.mode !== 'proxy_only') {
     await run('cloudflared tunnel ingress validate');
   }
 
+  // Depois valida runtime (ports/head checks)
+  const runtimeVal = await validateAll(conf.mode || 'cloudflare_nginx', { includeRuntime: true });
+  if (!runtimeVal.success) {
+    restoreLastBackup();
+    logLine('services', `Validacao FALHOU (${conf.mode}) detalhes: ${JSON.stringify(runtimeVal.checks)}`);
+    logLine('services', 'Rollback automático executado por falha de validação.');
+    return { success: false, error: 'Falha na validação de runtime; backup restaurado.', validation: runtimeVal, backup };
+  }
+
   logLine('services', `Configuração aplicada com sucesso (${conf.mode})`);
-  return { success: true, backup, validation: val };
+  return { success: true, backup, validation: runtimeVal, syntaxValidation: syntaxVal };
 }
 
 module.exports = { detect, generate, validate, apply, restoreLastBackup, normalizeMode };
