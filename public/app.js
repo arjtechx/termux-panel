@@ -216,9 +216,9 @@ function switchTab(targetId) {
     if (targetId === 'tab-cron')     fetchCron();
     if (targetId === 'tab-noip')     fetchNoipStatus();
     if (targetId === 'tab-cloudflared') {
-        if (typeof cfFetchTunnels === 'function') {
-            cfFetchTunnels();
-            window.cfTabInterval = setInterval(cfFetchTunnels, 4000);
+        if (typeof cfFetchInstances === 'function') {
+            cfFetchInstances();
+            window.cfTabInterval = setInterval(cfFetchInstances, 4000);
         }
     }
     if (targetId === 'tab-docs')     loadDocumentation();
