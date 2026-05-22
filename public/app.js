@@ -220,6 +220,9 @@ function switchTab(targetId) {
             cfFetchInstances();
             window.cfTabInterval = setInterval(cfFetchInstances, 4000);
         }
+        if (typeof acLoadState === 'function') {
+            acLoadState();
+        }
     }
     if (targetId === 'tab-docs')     loadDocumentation();
     if (targetId === 'tab-settings') {
@@ -3315,6 +3318,130 @@ async function cfLoadLogs() {
     } catch {}
 }
 
+function acGetPayload() {
+    return {
+        domain: (document.getElementById('acDomain')?.value || '').trim(),
+        mode: document.getElementById('acMode')?.value || 'cloudflare_nginx'
+    };
+}
+
+function acRenderServices(services = []) {
+    const tbody = document.getElementById('acServicesTable');
+    if (!tbody) return;
+    if (!services.length) {
+        tbody.innerHTML = '<tr><td colspan="6" style="padding:12px; color:var(--text-muted);">Nenhum serviço detectado.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = services.map((s) => `
+        <tr style="border-top:1px solid var(--border-color);">
+            <td style="padding:10px;">${cfEscape(s.name || s.id)}</td>
+            <td style="padding:10px;">${s.defaultPort || '-'}</td>
+            <td style="padding:10px;">${cfEscape((s.protocol || '').toUpperCase())}</td>
+            <td style="padding:10px;">${cfEscape(s.path || 'local')}</td>
+            <td style="padding:10px;">${s.enabled ? 'Online' : 'Offline'}</td>
+            <td style="padding:10px;">${s.public ? (s.protected ? 'Protegido' : 'Público') : 'Local apenas'}</td>
+        </tr>
+    `).join('');
+}
+
+function acSetLogs(text) {
+    const el = document.getElementById('acLogsBox');
+    if (el) el.textContent = text || 'Sem logs.';
+}
+
+async function acDetectServices() {
+    const payload = acGetPayload();
+    if (!payload.domain) return showToast('Informe o domínio principal.', 'warning');
+    try {
+        const res = await fetch(`${API_BASE}/autoconfig/detect`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Falha na detecção.');
+        acRenderServices(data.services || []);
+        showToast('Serviços detectados com sucesso.', 'success');
+    } catch (e) {
+        showToast('Erro ao detectar serviços: ' + e.message, 'error');
+    }
+}
+
+async function acGenerateRoutes() {
+    const payload = acGetPayload();
+    if (!payload.domain) return showToast('Informe o domínio principal.', 'warning');
+    try {
+        const res = await fetch(`${API_BASE}/autoconfig/generate`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Falha ao gerar rotas.');
+        showToast('Rotas automáticas geradas.', 'success');
+        await acDetectServices();
+    } catch (e) {
+        showToast('Erro ao gerar rotas: ' + e.message, 'error');
+    }
+}
+
+async function acValidateConfig() {
+    try {
+        const res = await fetch(`${API_BASE}/autoconfig/validate`, { method:'POST' });
+        const data = await res.json();
+        const lines = (data.checks || []).map(c => `${c.key}: ${c.ok ? 'OK' : 'FALHOU'} ${c.output || ''}`).join('\n');
+        acSetLogs(lines || JSON.stringify(data, null, 2));
+        if (!data.success) return showToast('Validação falhou.', 'error');
+        showToast('Validação concluída com sucesso.', 'success');
+    } catch (e) {
+        showToast('Erro na validação: ' + e.message, 'error');
+    }
+}
+
+async function acApplyConfig() {
+    try {
+        const res = await fetch(`${API_BASE}/autoconfig/apply`, { method:'POST' });
+        const data = await res.json();
+        if (!data.success) {
+            acSetLogs(JSON.stringify(data.validation || data, null, 2));
+            throw new Error(data.error || 'Falha ao aplicar configuração.');
+        }
+        showToast('Configuração aplicada sem derrubar o painel.', 'success');
+        acSetLogs('Aplicação concluída com sucesso.');
+    } catch (e) {
+        showToast('Erro ao aplicar: ' + e.message, 'error');
+    }
+}
+
+async function acRestoreBackup() {
+    try {
+        const res = await fetch(`${API_BASE}/autoconfig/restore`, { method:'POST' });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Falha ao restaurar backup.');
+        showToast('Backup restaurado com sucesso.', 'success');
+        acSetLogs(JSON.stringify(data.backup || data, null, 2));
+    } catch (e) {
+        showToast('Erro ao restaurar backup: ' + e.message, 'error');
+    }
+}
+
+async function acLoadLogs() {
+    try {
+        const res = await fetch(`${API_BASE}/autoconfig/logs?kind=services`);
+        const data = await res.json();
+        acSetLogs(data.logs || 'Sem logs.');
+    } catch (e) {
+        showToast('Erro ao carregar logs: ' + e.message, 'error');
+    }
+}
+
+async function acLoadState() {
+    try {
+        const res = await fetch(`${API_BASE}/autoconfig/state`);
+        const data = await res.json();
+        if (!data.success) return;
+        const domain = data.config?.domain || data.services?.domain || '';
+        const mode = data.config?.mode || 'cloudflare_nginx';
+        const domainEl = document.getElementById('acDomain');
+        const modeEl = document.getElementById('acMode');
+        if (domainEl && !domainEl.value) domainEl.value = domain;
+        if (modeEl) modeEl.value = mode;
+        acRenderServices(data.services?.services || []);
+    } catch {}
+}
+
 window.cfKillZombies = cfKillZombies;
 window.cfShowInstanceModal = cfShowInstanceModal;
 window.cfCloseInstanceModal = cfCloseInstanceModal;
@@ -3331,6 +3458,12 @@ window.cfShowLogsModal = cfShowLogsModal;
 window.cfCloseLogsModal = cfCloseLogsModal;
 window.cfCloudflareLogin = cfCloudflareLogin;
 window.cfRemoveLoginConfig = cfRemoveLoginConfig;
+window.acDetectServices = acDetectServices;
+window.acGenerateRoutes = acGenerateRoutes;
+window.acValidateConfig = acValidateConfig;
+window.acApplyConfig = acApplyConfig;
+window.acRestoreBackup = acRestoreBackup;
+window.acLoadLogs = acLoadLogs;
 
 setInterval(() => {
     const el = document.getElementById('tab-cloudflared');

@@ -1306,6 +1306,44 @@
                         </table>
                     </div>
                 </div>
+
+                <div class="card" style="margin-top: 20px; padding: 20px;">
+                    <h2 style="margin:0 0 14px 0; font-size:1.2rem;">Autoconfiguração do Sistema</h2>
+                    <div style="display:grid; grid-template-columns:2fr 1fr; gap:10px; margin-bottom:10px;">
+                        <input id="acDomain" type="text" placeholder="Domínio principal (ex: panel.arjtechbr.site)" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
+                        <select id="acMode" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
+                            <option value="cloudflare_only">Somente Cloudflare Tunnel</option>
+                            <option value="cloudflare_nginx" selected>Cloudflare Tunnel + Nginx Proxy Reverso</option>
+                            <option value="proxy_only">Apenas Proxy Reverso Local</option>
+                        </select>
+                    </div>
+                    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px;">
+                        <button class="btn btn-secondary btn-sm" onclick="acDetectServices()">Detectar Serviços</button>
+                        <button class="btn btn-primary btn-sm" onclick="acGenerateRoutes()">Gerar Rotas Automaticamente</button>
+                        <button class="btn btn-warning btn-sm" onclick="acValidateConfig()">Validar Configuração</button>
+                        <button class="btn btn-success btn-sm" onclick="acApplyConfig()">Aplicar Configuração</button>
+                        <button class="btn btn-danger btn-sm" onclick="acRestoreBackup()">Restaurar Backup</button>
+                        <button class="btn btn-info btn-sm" onclick="acLoadLogs()">Ver Logs</button>
+                    </div>
+                    <div style="overflow-x:auto; border:1px solid var(--border-color); border-radius:8px;">
+                        <table style="width:100%; border-collapse: collapse; font-size:0.86rem;">
+                            <thead>
+                                <tr style="background: rgba(0,0,0,0.05);">
+                                    <th style="padding:10px; text-align:left;">Serviço</th>
+                                    <th style="padding:10px; text-align:left;">Porta</th>
+                                    <th style="padding:10px; text-align:left;">Protocolo</th>
+                                    <th style="padding:10px; text-align:left;">Caminho</th>
+                                    <th style="padding:10px; text-align:left;">Status</th>
+                                    <th style="padding:10px; text-align:left;">Exposição</th>
+                                </tr>
+                            </thead>
+                            <tbody id="acServicesTable">
+                                <tr><td colspan="6" style="padding:12px; color:var(--text-muted);">Nenhuma detecção executada ainda.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="acLogsBox" class="terminal-box" style="height:160px; margin-top:10px; white-space:pre-wrap;">Logs de autoconfiguração aparecerão aqui.</div>
+                </div>
             </div>
 
             <!-- === MODAL: CRIAR/EDITAR INSTÂNCIA CLOUDFLARED === -->
@@ -1727,7 +1765,7 @@
 <div class="fm-toast-container" id="fm-toast-container"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.123"></script>
+<script src="filemanager.js?v=0.2.124"></script>
 <script src="app.js?v=4.5"></script>
 </body>
 </html>

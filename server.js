@@ -153,6 +153,9 @@ app.use('/', networkRoutes);
 const speedtestRoutes = require('./src/routes/speedtestRoutes');
 app.use('/api', speedtestRoutes);
 
+const autoConfigRoutes = require('./src/routes/autoConfigRoutes');
+app.use('/api/autoconfig', autoConfigRoutes);
+
 const {
     getCpuStats,
     setCpuRootMode,
