@@ -4987,3 +4987,22 @@ window.cfrRestartProcess = cfrRestartProcess;
 
 
 
+
+
+async function cfMigrateLegacy() {
+    if (!confirm('Deseja procurar por instâncias/rotas do painel antigo e importá-las para a nova versão?')) return;
+    try {
+        showToast('Procurando instâncias antigas...', 'info');
+        const res = await fetch(`${API_BASE}/cloudflared/system/migrate-legacy`, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+            showToast(data.message || 'Instâncias resgatadas com sucesso!', 'success');
+            cfFetchInstances();
+        } else {
+            showToast('Nenhuma instância antiga para resgatar ou erro: ' + data.error, 'warning');
+        }
+    } catch (e) {
+        showToast('Erro: ' + e.message, 'error');
+    }
+}
+window.cfMigrateLegacy = cfMigrateLegacy;

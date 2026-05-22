@@ -186,7 +186,57 @@ function initAutoStart() {
 
 setTimeout(initAutoStart, 3000);
 
+
+function migrateLegacyRoutes() {
+    const oldRoutesFile = path.join(PANEL_DIR, 'data', 'cloudflared-routes.json');
+    if (!fs.existsSync(oldRoutesFile)) {
+        return { success: false, error: 'Arquivo antigo (cloudflared-routes.json) não encontrado.' };
+    }
+
+    let oldRoutes = [];
+    try {
+        oldRoutes = JSON.parse(fs.readFileSync(oldRoutesFile, 'utf8'));
+        if (!Array.isArray(oldRoutes)) oldRoutes = [];
+    } catch (e) {
+        return { success: false, error: 'Erro ao ler arquivo antigo: ' + e.message };
+    }
+
+    if (oldRoutes.length === 0) {
+        return { success: false, error: 'Nenhuma rota no arquivo antigo.' };
+    }
+
+    const jaMigrado = instances.some(i => i.name === 'Túneis Legados (Migração)');
+    if (jaMigrado) {
+        return { success: true, message: 'Já migrado anteriormente.' };
+    }
+
+    const newRoutes = oldRoutes.map(r => ({
+        hostname: r.hostname || '',
+        path: r.path || '',
+        service: `${r.targetProtocol || 'http'}://${r.targetHost || '127.0.0.1'}:${r.targetPort || 80}`
+    }));
+
+    const novaInstancia = {
+        id: 'inst-' + crypto.randomBytes(4).toString('hex'),
+        name: 'Túneis Legados (Migração)',
+        type: 'service',
+        protected: false,
+        autoRestartOnSave: true,
+        tunnelId: '',
+        credentialsFile: '',
+        hostname: oldRoutes[0]?.hostname || '',
+        routes: newRoutes,
+        yamlConfig: null,
+        yamlMode: 'auto'
+    };
+
+    instances.push(novaInstancia);
+    saveInstances();
+    return { success: true, message: 'Rotas antigas resgatadas com sucesso!' };
+}
+
 module.exports = {
+    migrateLegacyRoutes,
     getInstances,
     saveInstances,
     createInstance,

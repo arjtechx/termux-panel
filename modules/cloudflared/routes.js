@@ -127,5 +127,16 @@ module.exports = function createCloudflaredRoutes() {
         res.json(processManager.killAllZombies());
     });
 
+    
+    // Migrar rotas legadas
+    router.post('/cloudflared/system/migrate-legacy', (req, res) => {
+        try {
+            const result = manager.migrateLegacyRoutes();
+            res.json(result);
+        } catch (err) {
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
     return router;
 };
