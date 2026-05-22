@@ -2897,7 +2897,7 @@ function cfRenderInstances() {
     list.innerHTML = cfInstances.map(inst => {
         const isRunning = inst.status && inst.status.running;
         const statusBadge = isRunning 
-            ? `<span class="badge badge-success">Online (PID ${inst.status.pids.join(',')})</span>` 
+            ? `<span class="badge badge-success">Online (PID ${inst.status.pid})</span>` 
             : '<span class="badge badge-danger">Offline</span>';
         
         const typeBadge = inst.type === 'core' 

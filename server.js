@@ -356,7 +356,14 @@ app.get('/api/env', (req, res) => {
 });
 
 // Routes
+
+let _apiStatusCache = null;
+let _apiStatusTime = 0;
+let _apiProcessesCache = null;
+let _apiProcessesTime = 0;
+
 app.get('/api/status', async (req, res) => {
+    if (Date.now() - _apiStatusTime < 2000 && _apiStatusCache) return res.json(_apiStatusCache);
     try {
         const status = {
             cpu: '0%', cpuCores: os.cpus().length, cpuSpeed: 'N/A',
@@ -486,7 +493,7 @@ app.get('/api/status', async (req, res) => {
             }
         }
 
-        res.json(status);
+        _apiStatusCache = status; _apiStatusTime = Date.now(); res.json(status);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
