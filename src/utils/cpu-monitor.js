@@ -20,7 +20,7 @@ function logCpuErrorOnce(message, key = 'global') {
     const now = Date.now();
     const last = lastErrorLogByKey.get(key) || 0;
     if (now - last > 60000) {
-        console.warn(message);
+        // console.warn(message);
         lastErrorLogByKey.set(key, now);
     }
 }
@@ -466,7 +466,7 @@ let lastClkTckWarn = 0;
 function warnClkTckOnce(message) {
     const now = Date.now();
     if (now - lastClkTckWarn > 60000) {
-        console.warn(message);
+        // console.warn(message);
         lastClkTckWarn = now;
     }
 }
