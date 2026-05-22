@@ -2874,7 +2874,7 @@ let cfTempRoutes = [];
 
 async function cfFetchInstances() {
     try {
-        const res = await fetch(`${API_BASE}/api/cloudflared/instances`);
+        const res = await fetch(`${API_BASE}/cloudflared/instances`);
         const data = await res.json();
         if (data.success) {
             cfInstances = data.instances;
@@ -3029,13 +3029,13 @@ async function cfSubmitInstance(e) {
     try {
         let res;
         if (id) {
-            res = await fetch(`${API_BASE}/api/cloudflared/instances/${id}`, {
+            res = await fetch(`${API_BASE}/cloudflared/instances/${id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
         } else {
-            res = await fetch(`${API_BASE}/api/cloudflared/instances`, {
+            res = await fetch(`${API_BASE}/cloudflared/instances`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
@@ -3056,7 +3056,7 @@ async function cfSubmitInstance(e) {
 async function cfDeleteInstance(id) {
     if (!confirm('Excluir esta instância permanentemente?')) return;
     try {
-        const res = await fetch(`${API_BASE}/api/cloudflared/instances/${id}`, { method: 'DELETE' });
+        const res = await fetch(`${API_BASE}/cloudflared/instances/${id}`, { method: 'DELETE' });
         const data = await res.json();
         if (!data.success) throw new Error(data.error);
         cfFetchInstances();
@@ -3069,7 +3069,7 @@ async function cfDeleteInstance(id) {
 async function cfStartInstance(id) {
     try {
         showToast('Iniciando instância...', 'info');
-        const res = await fetch(`${API_BASE}/api/cloudflared/instances/${id}/start`, { method: 'POST' });
+        const res = await fetch(`${API_BASE}/cloudflared/instances/${id}/start`, { method: 'POST' });
         const data = await res.json();
         if (!data.success) throw new Error(data.error);
         cfFetchInstances();
@@ -3082,7 +3082,7 @@ async function cfStartInstance(id) {
 async function cfStopInstance(id) {
     try {
         showToast('Parando instância...', 'info');
-        const res = await fetch(`${API_BASE}/api/cloudflared/instances/${id}/stop`, { method: 'POST' });
+        const res = await fetch(`${API_BASE}/cloudflared/instances/${id}/stop`, { method: 'POST' });
         const data = await res.json();
         if (!data.success) throw new Error(data.error);
         cfFetchInstances();
@@ -3095,7 +3095,7 @@ async function cfStopInstance(id) {
 async function cfReloadSafeInstance(id) {
     try {
         showToast('Efetuando Reload Safe (Zero Downtime)...', 'info');
-        const res = await fetch(`${API_BASE}/api/cloudflared/instances/${id}/reload-safe`, { method: 'POST' });
+        const res = await fetch(`${API_BASE}/cloudflared/instances/${id}/reload-safe`, { method: 'POST' });
         const data = await res.json();
         if (!data.success) throw new Error(data.error);
         cfFetchInstances();
@@ -3108,7 +3108,7 @@ async function cfReloadSafeInstance(id) {
 async function cfKillZombies() {
     if (!confirm('Matar todos os processos zumbis do Cloudflared?')) return;
     try {
-        const res = await fetch(`${API_BASE}/api/cloudflared/system/kill-zombies`, { method: 'POST' });
+        const res = await fetch(`${API_BASE}/cloudflared/system/kill-zombies`, { method: 'POST' });
         const data = await res.json();
         if (!data.success) throw new Error(data.error);
         showToast('Processos zumbis eliminados!', 'success');
@@ -3141,7 +3141,7 @@ function cfCloseLogsModal() {
 async function cfLoadLogs() {
     if (!cfSelectedInstId) return;
     try {
-        const res = await fetch(`${API_BASE}/api/cloudflared/instances/${cfSelectedInstId}/logs?lines=100`);
+        const res = await fetch(`${API_BASE}/cloudflared/instances/${cfSelectedInstId}/logs?lines=100`);
         const data = await res.json();
         const box = document.getElementById('cfLogsBody');
         box.textContent = data.logs || 'Nenhum log disponível.';
