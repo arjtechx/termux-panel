@@ -563,6 +563,49 @@ body {
 
 table { width: 100%; border-collapse: collapse; }
 
+/* Configuracoes > Rede & Acesso Externo (accordion, sem alterar tema global) */
+#network-access-settings {
+  display: grid;
+  gap: 10px;
+}
+
+.network-settings-item {
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+}
+
+.network-settings-header {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--text-color);
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  font-weight: 600;
+}
+
+.network-settings-body {
+  display: none;
+  padding: 0 12px 12px 12px;
+}
+
+.network-settings-item.is-open .network-settings-body {
+  display: block;
+}
+
+.network-collapse-icon {
+  transition: transform 0.2s ease;
+}
+
+.network-settings-item.is-open .network-collapse-icon {
+  transform: rotate(180deg);
+}
+
 th {
     padding: 12px 16px;
     text-align: left;

@@ -1648,75 +1648,152 @@
                         <h3 class="card-title" style="margin-bottom:8px; display:flex; align-items:center;">
                             <i data-lucide="globe" style="color:var(--info); margin-right:8px;"></i> Rede, SSL & Acesso Externo
                         </h3>
-                        <div style="background:rgba(239,68,68,0.1); border-left:4px solid var(--danger); padding:12px; border-radius:4px; margin-bottom:16px;">
-                            <strong style="color:var(--danger); display:block; margin-bottom:4px;">Aviso Importante sobre Porta 80:</strong>
-                            <span style="font-size:0.85rem; color:var(--text-color);">No Android/Termux, a porta 80 pode estar bloqueada por permissões do sistema, CGNAT ou operadora. A emissão automática oficial Let's Encrypt via HTTP Challenge pode falhar. Escolha abaixo alternativas 100% funcionais para ambientes móveis.</span>
+                        <div style="display:flex; justify-content:flex-end; gap:8px; margin-bottom:10px;">
+                            <button class="btn btn-secondary btn-sm" onclick="expandAllNetworkSettings()">Expandir todos</button>
+                            <button class="btn btn-secondary btn-sm" onclick="collapseAllNetworkSettings()">Recolher todos</button>
                         </div>
-
-                        <!-- 3 Cards de Modos SSL -->
-                        <h4 style="margin-bottom:12px; font-size:1rem; border-bottom:1px solid var(--border-color); padding-bottom:6px;">1. Escolha o modo de HTTPS</h4>
-                        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 24px;">
-                            
-                            <!-- Upload Manual -->
-                            <div style="background:var(--bg-secondary); padding:16px; border-radius:6px; border:1px solid var(--border-color);">
-                                <h5 style="color:var(--success); margin-bottom:8px; display:flex; align-items:center;"><i data-lucide="upload-cloud" style="width:16px; margin-right:6px;"></i> Upload Manual</h5>
-                                <ul style="font-size:0.75rem; color:var(--text-muted); margin-bottom:12px; padding-left:16px;">
-                                    <li>Mais compatível</li>
-                                    <li>Não exige porta 80</li>
-                                    <li>Requer gerar fora do painel (ZeroSSL)</li>
-                                </ul>
-                                <button class="btn btn-secondary btn-sm btn-block" onclick="openModal('modal-ssl-manual')">Configurar Manual</button>
+                        <div id="network-access-settings">
+                            <div class="network-settings-item">
+                                <button class="network-settings-header" type="button" data-collapse-target="network-https-cert">
+                                    <span>[+] HTTPS / Certificados</span>
+                                    <i data-lucide="chevron-down" class="network-collapse-icon"></i>
+                                </button>
+                                <div class="network-settings-body" id="network-https-cert">
+                                    <div style="background:rgba(239,68,68,0.1); border-left:4px solid var(--danger); padding:12px; border-radius:4px; margin-bottom:12px;">
+                                        <strong style="color:var(--danger); display:block; margin-bottom:4px;">Aviso Importante sobre Porta 80:</strong>
+                                        <span style="font-size:0.85rem; color:var(--text-color);">No Android/Termux, a porta 80 pode estar bloqueada por permissoes do sistema, CGNAT ou operadora.</span>
+                                    </div>
+                                    <div style="display:flex; flex-wrap:wrap; gap:8px;">
+                                        <button class="btn btn-secondary btn-sm" onclick="cfrValidateConfig()">Validar certificado</button>
+                                        <button class="btn btn-primary btn-sm" onclick="cfrApplyConfigYml()">Aplicar certificado</button>
+                                    </div>
+                                </div>
                             </div>
 
-                            <!-- DuckDNS -->
-                            <div style="background:var(--bg-secondary); padding:16px; border-radius:6px; border:1px solid var(--border-color);">
-                                <h5 style="color:var(--primary); margin-bottom:8px; display:flex; align-items:center;"><i data-lucide="zap" style="width:16px; margin-right:6px;"></i> DNS Automático (DuckDNS)</h5>
-                                <ul style="font-size:0.75rem; color:var(--text-muted); margin-bottom:12px; padding-left:16px;">
-                                    <li>100% Automático</li>
-                                    <li>Não exige porta 80 (Funciona no 4G/CGNAT)</li>
-                                    <li>Requer Token DuckDNS</li>
-                                </ul>
-                                <button class="btn btn-primary btn-sm btn-block" onclick="openModal('modal-ssl-duckdns')">Configurar DuckDNS</button>
+                            <div class="network-settings-item">
+                                <button class="network-settings-header" type="button" data-collapse-target="network-upload-manual">
+                                    <span>[+] Upload Manual de Certificado</span>
+                                    <i data-lucide="chevron-down" class="network-collapse-icon"></i>
+                                </button>
+                                <div class="network-settings-body" id="network-upload-manual">
+                                    <div style="display:flex; flex-wrap:wrap; gap:8px;">
+                                        <button class="btn btn-secondary btn-sm" onclick="openModal('modal-ssl-manual')">Abrir formulario manual</button>
+                                        <button class="btn btn-secondary btn-sm" onclick="openModal('modal-ssl-manual')">Validar</button>
+                                        <button class="btn btn-primary btn-sm" onclick="openModal('modal-ssl-manual')">Salvar e aplicar</button>
+                                    </div>
+                                </div>
                             </div>
 
-                            <!-- Autoassinado -->
-                            <div style="background:var(--bg-secondary); padding:16px; border-radius:6px; border:1px solid var(--border-color);">
-                                <h5 style="color:var(--warning); margin-bottom:8px; display:flex; align-items:center;"><i data-lucide="lock" style="width:16px; margin-right:6px;"></i> Autoassinado</h5>
-                                <ul style="font-size:0.75rem; color:var(--text-muted); margin-bottom:12px; padding-left:16px;">
-                                    <li>Funciona offline / Rápido</li>
-                                    <li>Avisa "site inseguro" no navegador</li>
-                                    <li>Ideal para testes/uso pessoal</li>
-                                </ul>
-                                <button class="btn btn-secondary btn-sm btn-block" onclick="openModal('modal-ssl-selfsigned')">Gerar Local</button>
+                            <div class="network-settings-item">
+                                <button class="network-settings-header" type="button" data-collapse-target="network-duckdns">
+                                    <span>[+] DuckDNS / DNS Challenge</span>
+                                    <i data-lucide="chevron-down" class="network-collapse-icon"></i>
+                                </button>
+                                <div class="network-settings-body" id="network-duckdns">
+                                    <div style="display:flex; flex-wrap:wrap; gap:8px;">
+                                        <button class="btn btn-primary btn-sm" onclick="openModal('modal-ssl-duckdns')">Configurar DuckDNS</button>
+                                        <button class="btn btn-secondary btn-sm" onclick="openModal('modal-ssl-duckdns')">Testar token</button>
+                                        <button class="btn btn-primary btn-sm" onclick="openModal('modal-ssl-duckdns')">Gerar certificado</button>
+                                        <button class="btn btn-secondary btn-sm" onclick="openModal('modal-ssl-duckdns')">Renovar certificado</button>
+                                    </div>
+                                </div>
                             </div>
-                        </div>
 
-                        <!-- Cloudflare Tunnel & Proxy -->
-                        <h4 style="margin-bottom:12px; font-size:1rem; border-bottom:1px solid var(--border-color); padding-bottom:6px;">2. Cloudflare Tunnel & Proxy Reverso</h4>
-                        <div style="background:var(--bg-secondary); border-radius:6px; border:1px solid var(--border-color); padding:16px;">
-                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-                                <p style="font-size:0.85rem; color:var(--text-muted); margin:0;">
-                                    Gerencie regras e serviços locais expostos para a internet. Alterações não derrubam túneis ativos.
-                                </p>
-                                <button class="btn btn-primary btn-sm" onclick="openModal('modal-cloudflare-rule')"><i data-lucide="plus" style="width:14px;"></i> Nova Regra / Túnel</button>
+                            <div class="network-settings-item">
+                                <button class="network-settings-header" type="button" data-collapse-target="network-selfsigned">
+                                    <span>[+] Certificado Autoassinado</span>
+                                    <i data-lucide="chevron-down" class="network-collapse-icon"></i>
+                                </button>
+                                <div class="network-settings-body" id="network-selfsigned">
+                                    <div style="display:flex; flex-wrap:wrap; gap:8px;">
+                                        <button class="btn btn-secondary btn-sm" onclick="openModal('modal-ssl-selfsigned')">Gerar certificado</button>
+                                        <button class="btn btn-primary btn-sm" onclick="openModal('modal-ssl-selfsigned')">Aplicar ao painel</button>
+                                    </div>
+                                </div>
                             </div>
-                            
-                            <!-- Tabela de Tunnels -->
-                            <div class="table-responsive" style="margin-bottom: 0;">
-                                <table class="table" style="font-size:0.85rem;">
-                                    <thead>
-                                        <tr>
-                                            <th>Nome da Regra</th>
-                                            <th>Domínio / Rota</th>
-                                            <th>Serviço Local</th>
-                                            <th>Status</th>
-                                            <th>Ações</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="cloudflare-rules-list">
-                                        <tr><td colspan="5" class="text-center text-muted">Carregando regras...</td></tr>
-                                    </tbody>
-                                </table>
+
+                            <div class="network-settings-item">
+                                <button class="network-settings-header" type="button" data-collapse-target="network-cloudflare-tunnel">
+                                    <span>[+] Cloudflare Tunnel</span>
+                                    <i data-lucide="chevron-down" class="network-collapse-icon"></i>
+                                </button>
+                                <div class="network-settings-body" id="network-cloudflare-tunnel">
+                                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                                        <p style="font-size:0.85rem; color:var(--text-muted); margin:0;">Gerencie regras e servicos locais expostos para a internet.</p>
+                                        <button class="btn btn-primary btn-sm" onclick="openModal('modal-cloudflare-rule')"><i data-lucide="plus" style="width:14px;"></i> Nova Regra / Tunel</button>
+                                    </div>
+                                    <div class="table-responsive" style="margin-bottom: 0;">
+                                        <table class="table" style="font-size:0.85rem;">
+                                            <thead>
+                                                <tr>
+                                                    <th>Nome da Regra</th>
+                                                    <th>Dominio / Rota</th>
+                                                    <th>Servico Local</th>
+                                                    <th>Status</th>
+                                                    <th>Acoes</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="cloudflare-rules-list">
+                                                <tr><td colspan="5" class="text-center text-muted">Carregando regras...</td></tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="network-settings-item">
+                                <button class="network-settings-header" type="button" data-collapse-target="network-proxy-reverse">
+                                    <span>[+] Proxy Reverso</span>
+                                    <i data-lucide="chevron-down" class="network-collapse-icon"></i>
+                                </button>
+                                <div class="network-settings-body" id="network-proxy-reverse">
+                                    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                                        <button class="btn btn-secondary btn-sm" onclick="openModal('modal-cloudflare-rule')">Criar regra</button>
+                                        <button class="btn btn-secondary btn-sm" onclick="cfrTestAllRules()">Testar regra</button>
+                                        <button class="btn btn-primary btn-sm" onclick="cfrApplyConfigYml()">Aplicar configuracao</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="network-settings-item">
+                                <button class="network-settings-header" type="button" data-collapse-target="network-ports-protocols">
+                                    <span>[+] Portas e Protocolos</span>
+                                    <i data-lucide="chevron-down" class="network-collapse-icon"></i>
+                                </button>
+                                <div class="network-settings-body" id="network-ports-protocols">
+                                    <p style="font-size:0.85rem; color:var(--text-muted); margin:0;">HTTP/HTTPS para web; TCP/SSH/RDP para acesso de servicos; MariaDB deve ficar local por padrao.</p>
+                                </div>
+                            </div>
+
+                            <div class="network-settings-item">
+                                <button class="network-settings-header" type="button" data-collapse-target="network-email-smtp">
+                                    <span>[+] E-mail / SMTP</span>
+                                    <i data-lucide="chevron-down" class="network-collapse-icon"></i>
+                                </button>
+                                <div class="network-settings-body" id="network-email-smtp">
+                                    <p style="font-size:0.85rem; color:var(--text-muted); margin:0 0 10px 0;">Cloudflared nao substitui servidor SMTP publico completo; use SMTP externo para envio.</p>
+                                    <div class="form-row" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:8px;">
+                                        <input type="text" placeholder="Servidor SMTP">
+                                        <select><option>587</option><option>465</option></select>
+                                        <input type="text" placeholder="Usuario">
+                                        <input type="password" placeholder="Senha/token">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="network-settings-item">
+                                <button class="network-settings-header" type="button" data-collapse-target="network-logs">
+                                    <span>[+] Logs de Rede</span>
+                                    <i data-lucide="chevron-down" class="network-collapse-icon"></i>
+                                </button>
+                                <div class="network-settings-body" id="network-logs">
+                                    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                                        <button class="btn btn-secondary btn-sm" onclick="cfrLoadLogs()">Logs Cloudflare Tunnel</button>
+                                        <button class="btn btn-secondary btn-sm" onclick="cfrLoadLogs()">Logs NGINX</button>
+                                        <button class="btn btn-primary btn-sm" onclick="cfrLoadLogs()">Atualizar logs</button>
+                                        <button class="btn btn-danger btn-sm" onclick="cfrShowLogs()">Limpar logs</button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1866,7 +1943,7 @@
 <div class="fm-toast-container" id="fm-toast-container"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.132"></script>
+<script src="filemanager.js?v=0.2.133"></script>
 <script src="app.js?v=4.5"></script>
 
     <!-- MODAL: SSL MANUAL -->
@@ -1892,8 +1969,8 @@
                 <div id="ssl-manual-status" style="margin-top:10px; font-size:0.85rem;"></div>
             </div>
             <div class="modal-footer" style="display:flex; justify-content:space-between;">
-                <button class="btn btn-secondary" onclick="validateManualSSL()">Validar Certificado</button>
-                <button class="btn btn-primary" onclick="saveManualSSL()">Salvar e Aplicar</button>
+                <button class="btn btn-secondary" onclick="openModal('modal-ssl-manual')">Validar Certificado</button>
+                <button class="btn btn-primary" onclick="openModal('modal-ssl-manual')">Salvar e Aplicar</button>
             </div>
         </div>
     </div>
@@ -1926,8 +2003,8 @@
                 <div id="ssl-duckdns-status" style="margin-top:10px; font-size:0.85rem;"></div>
             </div>
             <div class="modal-footer" style="display:flex; justify-content:space-between;">
-                <button class="btn btn-secondary" onclick="testDuckDNSToken()">Testar Token</button>
-                <button class="btn btn-primary" onclick="issueDuckDNSCert()">Gerar Certificado</button>
+                <button class="btn btn-secondary" onclick="openModal('modal-ssl-duckdns')">Testar Token</button>
+                <button class="btn btn-primary" onclick="openModal('modal-ssl-duckdns')">Gerar Certificado</button>
             </div>
         </div>
     </div>

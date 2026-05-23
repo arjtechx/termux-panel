@@ -60,6 +60,7 @@ async function runBootSequence() {
     bootProgress(15, 'Inicializando interface...');
     bootLog('Mapeando elementos DOM...');
     initElements();
+    initNetworkSettingsAccordion();
     initMonitorCards();
     initNavigation();
     initMobileNav();
@@ -2419,6 +2420,36 @@ function logout() { window.location.href = '/login.html'; }
 // ============================================================
 //  REDE E ACESSO (IPs / HTTPS)
 // ============================================================
+function initNetworkSettingsAccordion() {
+    const headers = document.querySelectorAll('#network-access-settings .network-settings-header[data-collapse-target]');
+    headers.forEach((header) => {
+        if (header.dataset.bound === '1') return;
+        header.dataset.bound = '1';
+        header.addEventListener('click', () => {
+            const targetId = header.getAttribute('data-collapse-target');
+            const body = document.getElementById(targetId);
+            if (!body) return;
+            const item = header.closest('.network-settings-item');
+            if (!item) return;
+            item.classList.toggle('is-open');
+        });
+    });
+}
+
+function expandAllNetworkSettings() {
+    document.querySelectorAll('#network-access-settings .network-settings-item').forEach((item) => {
+        item.classList.add('is-open');
+    });
+    if (window.lucide) lucide.createIcons();
+}
+
+function collapseAllNetworkSettings() {
+    document.querySelectorAll('#network-access-settings .network-settings-item').forEach((item) => {
+        item.classList.remove('is-open');
+    });
+    if (window.lucide) lucide.createIcons();
+}
+
 async function fetchNetworkInfo() {
     const ipv4El = document.getElementById('network-ipv4-display');
     const ipv6El = document.getElementById('network-ipv6-display');
@@ -5539,3 +5570,21 @@ async function saveCloudflareRule() {
         showToast(res?.error || 'Erro ao criar regra', 'error');
     }
 }
+
+// ============================================================
+// GLOBAL MODAL UTILITIES
+// ============================================================
+window.openModal = function(id) {
+    const modal = document.getElementById(id);
+    if (modal) {
+        modal.classList.remove('hidden');
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+    }
+};
+
+window.closeModal = function(id) {
+    const modal = document.getElementById(id);
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+};
