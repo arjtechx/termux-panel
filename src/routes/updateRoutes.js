@@ -611,6 +611,13 @@ function releaseIsNewerThanLocal(releaseDate, repo, tag) {
     return publishedAt.getTime() > installedReferenceDate.getTime() + 60 * 1000;
 }
 
+function safeIsoDate(dateLike) {
+    if (!dateLike) return null;
+    const d = dateLike instanceof Date ? dateLike : new Date(dateLike);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toISOString();
+}
+
 function readUpdateCache() {
     try {
         if (fs.existsSync(UPDATE_CACHE_FILE)) {
@@ -685,7 +692,7 @@ router.get('/api/update/status', async (req, res) => {
             status,
             repo,
             publishedAt,
-            localBuildDate: getInstalledReferenceDate(repo, `v${latest}`)?.toISOString() || null,
+            localBuildDate: safeIsoDate(getInstalledReferenceDate(repo, `v${latest}`)),
             updateReason
         };
 
@@ -695,7 +702,19 @@ router.get('/api/update/status', async (req, res) => {
 
         res.json(result);
     } catch(err) {
-        res.status(500).json({ error: err.message });
+        const config = getUpdateConfig();
+        const repo = config.github_repo || 'arjtechx/termux-panel';
+        res.json({
+            installed: '0.0.2',
+            latest: '0.0.2',
+            hasUpdate: false,
+            status: 'failed_check',
+            repo,
+            publishedAt: null,
+            localBuildDate: null,
+            updateReason: 'version',
+            error: err.message
+        });
     }
 });
 

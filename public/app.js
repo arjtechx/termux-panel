@@ -2013,9 +2013,23 @@ async function checkSystemUpdates() {
         repoInput.value = cfg.github_repo || '';
     }
 
-    const data = await safeFetch(`${API_BASE}/update/status?force=1`);
+    let data = await safeFetch(`${API_BASE}/update/status?force=1`);
+    if (!data) {
+        const legacy = await safeFetch(`${API_BASE}/system/update/check`);
+        if (legacy) {
+            data = {
+                installed: (legacy.currentVersion || '0.0.2').replace(/^v/, ''),
+                latest: (legacy.latestVersion || legacy.currentVersion || '0.0.2').replace(/^v/, ''),
+                hasUpdate: !!legacy.hasUpdate,
+                status: legacy.hasUpdate ? 'update_available' : 'up_to_date',
+                repo: legacy.githubRepo || cfg?.github_repo || ''
+            };
+        }
+    }
     if (!data) {
         if (statusText) statusText.innerHTML = '<span style="color:var(--danger)">Erro ao verificar</span>';
+        if (versionCur) versionCur.textContent = 'v-';
+        if (versionLat) versionLat.textContent = '-';
         return;
     }
 
@@ -2024,7 +2038,7 @@ async function checkSystemUpdates() {
     const hasUpdate = data.hasUpdate || false;
 
     if (versionCur) versionCur.textContent = `v${currentVersion}`;
-    if (versionLat) versionLat.textContent = latestVersion !== currentVersion ? `v${latestVersion}` : '—';
+    if (versionLat) versionLat.textContent = latestVersion !== currentVersion ? `v${latestVersion}` : '-';
 
     if (versionLat && hasUpdate) versionLat.textContent = `v${latestVersion}`;
 
