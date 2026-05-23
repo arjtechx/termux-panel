@@ -121,6 +121,9 @@
                 <a href="#" class="nav-link" data-target="tab-settings">
                     <i data-lucide="settings"></i> Ajustes / Senha / Porta
                 </a>
+                <a href="#" class="nav-link" data-target="tab-network">
+                    <i data-lucide="globe"></i> Rede, SSL & Acesso Externo
+                </a>
             </nav>
         </aside>
 
@@ -1521,6 +1524,130 @@
                 </div>
             </div>
 
+            <!-- === TAB: NETWORK === -->
+            <div id="tab-network" class="tab-pane">
+                <div class="page-header">
+                    <h1>Rede, SSL & Acesso Externo</h1>
+                </div>
+                <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; margin-bottom: 20px;">
+                    <!-- MÓDULO: REDE, SSL & CLOUDFLARE -->
+                    <div class="card" style="grid-column: 1 / -1;">
+                        <h3 class="card-title" style="margin-bottom:8px; display:flex; align-items:center;">
+                            <i data-lucide="globe" style="color:var(--info); margin-right:8px;"></i> Rede, SSL & Acesso Externo
+                        </h3>
+                        <div style="background:rgba(239,68,68,0.1); border-left:4px solid var(--danger); padding:12px; border-radius:4px; margin-bottom:16px;">
+                            <strong style="color:var(--danger); display:block; margin-bottom:4px;">Aviso Importante sobre Porta 80:</strong>
+                            <span style="font-size:0.85rem; color:var(--text-color);">No Android/Termux, a porta 80 pode estar bloqueada por permissões do sistema, CGNAT ou operadora. A emissão automática oficial Let's Encrypt via HTTP Challenge pode falhar. Escolha abaixo alternativas 100% funcionais para ambientes móveis.</span>
+                        </div>
+
+                        <div style="background:var(--bg-secondary); border-radius:6px; border:1px solid var(--border-color); padding:14px; margin-bottom:16px;">
+                            <h4 style="margin-bottom:10px; font-size:0.96rem;">Rede Externa e Porta do Painel</h4>
+                            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; margin-bottom:12px;">
+                                <div style="padding:10px; border:1px solid var(--border-color); border-radius:6px; background:var(--surface2);">
+                                    <span style="font-size:0.78rem; color:var(--text-muted);">IPv4 Externo</span>
+                                    <div id="network-ipv4-display" style="font-family:var(--font-mono); font-size:0.9rem; margin-top:4px;">--</div>
+                                </div>
+                                <div style="padding:10px; border:1px solid var(--border-color); border-radius:6px; background:var(--surface2);">
+                                    <span style="font-size:0.78rem; color:var(--text-muted);">IPv6 Externo</span>
+                                    <div id="network-ipv6-display" style="font-family:var(--font-mono); font-size:0.9rem; margin-top:4px;">--</div>
+                                </div>
+                            </div>
+
+                            <div id="network-cgnat-warning" class="hidden" style="font-size:0.8rem; color:var(--warning); margin-bottom:10px;">
+                                Atenção: sua rede pode estar sob CGNAT ou bloqueios de operadora.
+                            </div>
+
+                            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; margin-bottom:12px;">
+                                <div>
+                                    <label class="form-label">Porta do Painel</label>
+                                    <div style="display:flex; gap:8px;">
+                                        <input type="number" id="settings-port-input" placeholder="8088" style="width:100%;">
+                                        <button class="btn btn-secondary btn-sm" type="button" onclick="savePanelPort()">Salvar Porta</button>
+                                    </div>
+                                </div>
+                                <div style="display:flex; align-items:flex-end;">
+                                    <label style="display:flex; align-items:center; gap:8px; font-size:0.85rem;">
+                                        <input type="checkbox" id="settings-https-toggle" onchange="togglePanelHttps(this)">
+                                        Ativar HTTPS no painel
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:center;">
+                                <label style="display:flex; align-items:center; gap:8px; font-size:0.85rem;">
+                                    <input type="checkbox" id="settings-ext-ipv4">
+                                    Habilitar consulta IPv4 externo
+                                </label>
+                                <label style="display:flex; align-items:center; gap:8px; font-size:0.85rem;">
+                                    <input type="checkbox" id="settings-ext-ipv6">
+                                    Habilitar consulta IPv6 externo
+                                </label>
+                                <button class="btn btn-primary btn-sm" type="button" onclick="saveExternalAccessSettings()">Salvar IPv4/IPv6</button>
+                            </div>
+                        </div>
+
+                        <h4 style="margin-bottom:12px; font-size:1rem; border-bottom:1px solid var(--border-color); padding-bottom:6px;">1. Escolha o modo de HTTPS</h4>
+                        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 24px;">
+                            <div style="background:var(--bg-secondary); padding:16px; border-radius:6px; border:1px solid var(--border-color);">
+                                <h5 style="color:var(--success); margin-bottom:8px; display:flex; align-items:center;"><i data-lucide="upload-cloud" style="width:16px; margin-right:6px;"></i> Upload Manual</h5>
+                                <ul style="font-size:0.75rem; color:var(--text-muted); margin-bottom:12px; padding-left:16px;">
+                                    <li>Mais compatível</li>
+                                    <li>Não exige porta 80</li>
+                                    <li>Requer gerar fora do painel (ZeroSSL)</li>
+                                </ul>
+                                <button class="btn btn-secondary btn-sm btn-block" onclick="openModal('modal-ssl-manual')">Configurar Manual</button>
+                            </div>
+
+                            <div style="background:var(--bg-secondary); padding:16px; border-radius:6px; border:1px solid var(--border-color);">
+                                <h5 style="color:var(--primary); margin-bottom:8px; display:flex; align-items:center;"><i data-lucide="zap" style="width:16px; margin-right:6px;"></i> DNS Automático (DuckDNS)</h5>
+                                <ul style="font-size:0.75rem; color:var(--text-muted); margin-bottom:12px; padding-left:16px;">
+                                    <li>100% Automático</li>
+                                    <li>Não exige porta 80 (Funciona no 4G/CGNAT)</li>
+                                    <li>Requer Token DuckDNS</li>
+                                </ul>
+                                <button class="btn btn-primary btn-sm btn-block" onclick="openModal('modal-ssl-duckdns')">Configurar DuckDNS</button>
+                            </div>
+
+                            <div style="background:var(--bg-secondary); padding:16px; border-radius:6px; border:1px solid var(--border-color);">
+                                <h5 style="color:var(--warning); margin-bottom:8px; display:flex; align-items:center;"><i data-lucide="lock" style="width:16px; margin-right:6px;"></i> Autoassinado</h5>
+                                <ul style="font-size:0.75rem; color:var(--text-muted); margin-bottom:12px; padding-left:16px;">
+                                    <li>Funciona offline / Rápido</li>
+                                    <li>Avisa "site inseguro" no navegador</li>
+                                    <li>Ideal para testes/uso pessoal</li>
+                                </ul>
+                                <button class="btn btn-secondary btn-sm btn-block" onclick="openModal('modal-ssl-selfsigned')">Gerar Local</button>
+                            </div>
+                        </div>
+
+                        <h4 style="margin-bottom:12px; font-size:1rem; border-bottom:1px solid var(--border-color); padding-bottom:6px;">2. Cloudflare Tunnel & Proxy Reverso</h4>
+                        <div style="background:var(--bg-secondary); border-radius:6px; border:1px solid var(--border-color); padding:16px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                                <p style="font-size:0.85rem; color:var(--text-muted); margin:0;">
+                                    Gerencie regras e serviços locais expostos para a internet. Alterações não derrubam túneis ativos.
+                                </p>
+                                <button class="btn btn-primary btn-sm" onclick="openModal('modal-cloudflare-rule')"><i data-lucide="plus" style="width:14px;"></i> Nova Regra / Túnel</button>
+                            </div>
+                            <div class="table-responsive" style="margin-bottom: 0;">
+                                <table class="table" style="font-size:0.85rem;">
+                                    <thead>
+                                        <tr>
+                                            <th>Nome da Regra</th>
+                                            <th>Domínio / Rota</th>
+                                            <th>Serviço Local</th>
+                                            <th>Status</th>
+                                            <th>Ações</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="cloudflare-rules-list">
+                                        <tr><td colspan="5" class="text-center text-muted">Carregando regras...</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- === TAB: SETTINGS === -->
             <div id="tab-settings" class="tab-pane">
                 <div class="page-header">
@@ -1643,130 +1770,6 @@
                         </div>
                     </div>
 
-                    <!-- MÓDULO: REDE, SSL & CLOUDFLARE -->
-                    <div class="card" style="grid-column: 1 / -1;">
-                        <h3 class="card-title" style="margin-bottom:8px; display:flex; align-items:center;">
-                            <i data-lucide="globe" style="color:var(--info); margin-right:8px;"></i> Rede, SSL & Acesso Externo
-                        </h3>
-                        <div style="background:rgba(239,68,68,0.1); border-left:4px solid var(--danger); padding:12px; border-radius:4px; margin-bottom:16px;">
-                            <strong style="color:var(--danger); display:block; margin-bottom:4px;">Aviso Importante sobre Porta 80:</strong>
-                            <span style="font-size:0.85rem; color:var(--text-color);">No Android/Termux, a porta 80 pode estar bloqueada por permissões do sistema, CGNAT ou operadora. A emissão automática oficial Let's Encrypt via HTTP Challenge pode falhar. Escolha abaixo alternativas 100% funcionais para ambientes móveis.</span>
-                        </div>
-
-                        <div style="background:var(--bg-secondary); border-radius:6px; border:1px solid var(--border-color); padding:14px; margin-bottom:16px;">
-                            <h4 style="margin-bottom:10px; font-size:0.96rem;">Rede Externa e Porta do Painel</h4>
-                            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; margin-bottom:12px;">
-                                <div style="padding:10px; border:1px solid var(--border-color); border-radius:6px; background:var(--surface2);">
-                                    <span style="font-size:0.78rem; color:var(--text-muted);">IPv4 Externo</span>
-                                    <div id="network-ipv4-display" style="font-family:var(--font-mono); font-size:0.9rem; margin-top:4px;">--</div>
-                                </div>
-                                <div style="padding:10px; border:1px solid var(--border-color); border-radius:6px; background:var(--surface2);">
-                                    <span style="font-size:0.78rem; color:var(--text-muted);">IPv6 Externo</span>
-                                    <div id="network-ipv6-display" style="font-family:var(--font-mono); font-size:0.9rem; margin-top:4px;">--</div>
-                                </div>
-                            </div>
-
-                            <div id="network-cgnat-warning" class="hidden" style="font-size:0.8rem; color:var(--warning); margin-bottom:10px;">
-                                Atenção: sua rede pode estar sob CGNAT ou bloqueios de operadora.
-                            </div>
-
-                            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; margin-bottom:12px;">
-                                <div>
-                                    <label class="form-label">Porta do Painel</label>
-                                    <div style="display:flex; gap:8px;">
-                                        <input type="number" id="settings-port-input" placeholder="8088" style="width:100%;">
-                                        <button class="btn btn-secondary btn-sm" type="button" onclick="savePanelPort()">Salvar Porta</button>
-                                    </div>
-                                </div>
-                                <div style="display:flex; align-items:flex-end;">
-                                    <label style="display:flex; align-items:center; gap:8px; font-size:0.85rem;">
-                                        <input type="checkbox" id="settings-https-toggle" onchange="togglePanelHttps(this)">
-                                        Ativar HTTPS no painel
-                                    </label>
-                                </div>
-                            </div>
-
-                            <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:center;">
-                                <label style="display:flex; align-items:center; gap:8px; font-size:0.85rem;">
-                                    <input type="checkbox" id="settings-ext-ipv4">
-                                    Habilitar consulta IPv4 externo
-                                </label>
-                                <label style="display:flex; align-items:center; gap:8px; font-size:0.85rem;">
-                                    <input type="checkbox" id="settings-ext-ipv6">
-                                    Habilitar consulta IPv6 externo
-                                </label>
-                                <button class="btn btn-primary btn-sm" type="button" onclick="saveExternalAccessSettings()">Salvar IPv4/IPv6</button>
-                            </div>
-                        </div>
-
-                        <!-- 3 Cards de Modos SSL -->
-                        <h4 style="margin-bottom:12px; font-size:1rem; border-bottom:1px solid var(--border-color); padding-bottom:6px;">1. Escolha o modo de HTTPS</h4>
-                        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 24px;">
-                            
-                            <!-- Upload Manual -->
-                            <div style="background:var(--bg-secondary); padding:16px; border-radius:6px; border:1px solid var(--border-color);">
-                                <h5 style="color:var(--success); margin-bottom:8px; display:flex; align-items:center;"><i data-lucide="upload-cloud" style="width:16px; margin-right:6px;"></i> Upload Manual</h5>
-                                <ul style="font-size:0.75rem; color:var(--text-muted); margin-bottom:12px; padding-left:16px;">
-                                    <li>Mais compatível</li>
-                                    <li>Não exige porta 80</li>
-                                    <li>Requer gerar fora do painel (ZeroSSL)</li>
-                                </ul>
-                                <button class="btn btn-secondary btn-sm btn-block" onclick="openModal('modal-ssl-manual')">Configurar Manual</button>
-                            </div>
-
-                            <!-- DuckDNS -->
-                            <div style="background:var(--bg-secondary); padding:16px; border-radius:6px; border:1px solid var(--border-color);">
-                                <h5 style="color:var(--primary); margin-bottom:8px; display:flex; align-items:center;"><i data-lucide="zap" style="width:16px; margin-right:6px;"></i> DNS Automático (DuckDNS)</h5>
-                                <ul style="font-size:0.75rem; color:var(--text-muted); margin-bottom:12px; padding-left:16px;">
-                                    <li>100% Automático</li>
-                                    <li>Não exige porta 80 (Funciona no 4G/CGNAT)</li>
-                                    <li>Requer Token DuckDNS</li>
-                                </ul>
-                                <button class="btn btn-primary btn-sm btn-block" onclick="openModal('modal-ssl-duckdns')">Configurar DuckDNS</button>
-                            </div>
-
-                            <!-- Autoassinado -->
-                            <div style="background:var(--bg-secondary); padding:16px; border-radius:6px; border:1px solid var(--border-color);">
-                                <h5 style="color:var(--warning); margin-bottom:8px; display:flex; align-items:center;"><i data-lucide="lock" style="width:16px; margin-right:6px;"></i> Autoassinado</h5>
-                                <ul style="font-size:0.75rem; color:var(--text-muted); margin-bottom:12px; padding-left:16px;">
-                                    <li>Funciona offline / Rápido</li>
-                                    <li>Avisa "site inseguro" no navegador</li>
-                                    <li>Ideal para testes/uso pessoal</li>
-                                </ul>
-                                <button class="btn btn-secondary btn-sm btn-block" onclick="openModal('modal-ssl-selfsigned')">Gerar Local</button>
-                            </div>
-                        </div>
-
-                        <!-- Cloudflare Tunnel & Proxy -->
-                        <h4 style="margin-bottom:12px; font-size:1rem; border-bottom:1px solid var(--border-color); padding-bottom:6px;">2. Cloudflare Tunnel & Proxy Reverso</h4>
-                        <div style="background:var(--bg-secondary); border-radius:6px; border:1px solid var(--border-color); padding:16px;">
-                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-                                <p style="font-size:0.85rem; color:var(--text-muted); margin:0;">
-                                    Gerencie regras e serviços locais expostos para a internet. Alterações não derrubam túneis ativos.
-                                </p>
-                                <button class="btn btn-primary btn-sm" onclick="openModal('modal-cloudflare-rule')"><i data-lucide="plus" style="width:14px;"></i> Nova Regra / Túnel</button>
-                            </div>
-                            
-                            <!-- Tabela de Tunnels -->
-                            <div class="table-responsive" style="margin-bottom: 0;">
-                                <table class="table" style="font-size:0.85rem;">
-                                    <thead>
-                                        <tr>
-                                            <th>Nome da Regra</th>
-                                            <th>Domínio / Rota</th>
-                                            <th>Serviço Local</th>
-                                            <th>Status</th>
-                                            <th>Ações</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="cloudflare-rules-list">
-                                        <tr><td colspan="5" class="text-center text-muted">Carregando regras...</td></tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                    
                     <!-- Admin Auth Card -->
                     <div class="card" style="display:flex; flex-direction:column; justify-content:space-between; height: 100%;">
                         <div>
@@ -1912,7 +1915,7 @@
 <div class="fm-toast-container" id="fm-toast-container"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.139"></script>
+<script src="filemanager.js?v=0.2.140"></script>
 <script src="app.js?v=4.5"></script>
 
     <!-- MODAL: SSL MANUAL -->
