@@ -225,11 +225,7 @@ function switchTab(targetId) {
         }
     }
     if (targetId === 'tab-docs')     loadDocumentation();
-    if (targetId === 'tab-network')  loadSettings();
-    if (targetId === 'tab-settings') {
-        loadSettings();
-        checkSystemUpdates();
-    }
+    if (targetId === 'tab-settings') loadSettings();
 }
 
 function initMobileNav() {

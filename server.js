@@ -162,9 +162,7 @@ const updateRoutes = require('./src/routes/updateRoutes');
 app.use('/', updateRoutes);
 
 const networkRoutes = require('./src/routes/networkRoutes');
-const sslRoutes = require('./src/routes/sslRoutes');
 app.use('/', networkRoutes);
-app.use('/', sslRoutes);
 
 const speedtestRoutes = require('./src/routes/speedtestRoutes');
 app.use('/api', speedtestRoutes);

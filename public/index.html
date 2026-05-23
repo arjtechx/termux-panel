@@ -121,9 +121,6 @@
                 <a href="#" class="nav-link" data-target="tab-settings">
                     <i data-lucide="settings"></i> Ajustes / Senha / Porta
                 </a>
-                <a href="#" class="nav-link" data-target="tab-network">
-                    <i data-lucide="globe"></i> Rede, SSL & Acesso Externo
-                </a>
             </nav>
         </aside>
 
@@ -1524,24 +1521,19 @@
                 </div>
             </div>
 
-            <!-- === TAB: NETWORK === -->
-            <div id="tab-network" class="tab-pane">
+            <!-- === TAB: SETTINGS === -->
+            <div id="tab-settings" class="tab-pane">
                 <div class="page-header">
-                    <h1>Rede, SSL & Acesso Externo</h1>
+                    <h1>Configuracoes</h1>
                 </div>
+
                 <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; margin-bottom: 20px;">
-                    <!-- MÓDULO: REDE, SSL & CLOUDFLARE -->
                     <div class="card" style="grid-column: 1 / -1;">
                         <h3 class="card-title" style="margin-bottom:8px; display:flex; align-items:center;">
-                            <i data-lucide="globe" style="color:var(--info); margin-right:8px;"></i> Rede, SSL & Acesso Externo
+                            <i data-lucide="globe" style="color:var(--info); margin-right:8px;"></i> Rede Externa e Porta do Painel
                         </h3>
-                        <div style="background:rgba(239,68,68,0.1); border-left:4px solid var(--danger); padding:12px; border-radius:4px; margin-bottom:16px;">
-                            <strong style="color:var(--danger); display:block; margin-bottom:4px;">Aviso Importante sobre Porta 80:</strong>
-                            <span style="font-size:0.85rem; color:var(--text-color);">No Android/Termux, a porta 80 pode estar bloqueada por permissões do sistema, CGNAT ou operadora. A emissão automática oficial Let's Encrypt via HTTP Challenge pode falhar. Escolha abaixo alternativas 100% funcionais para ambientes móveis.</span>
-                        </div>
 
                         <div style="background:var(--bg-secondary); border-radius:6px; border:1px solid var(--border-color); padding:14px; margin-bottom:16px;">
-                            <h4 style="margin-bottom:10px; font-size:0.96rem;">Rede Externa e Porta do Painel</h4>
                             <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; margin-bottom:12px;">
                                 <div style="padding:10px; border:1px solid var(--border-color); border-radius:6px; background:var(--surface2);">
                                     <span style="font-size:0.78rem; color:var(--text-muted);">IPv4 Externo</span>
@@ -1554,7 +1546,7 @@
                             </div>
 
                             <div id="network-cgnat-warning" class="hidden" style="font-size:0.8rem; color:var(--warning); margin-bottom:10px;">
-                                Atenção: sua rede pode estar sob CGNAT ou bloqueios de operadora.
+                                Atencao: sua rede pode estar sob CGNAT ou bloqueios de operadora.
                             </div>
 
                             <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; margin-bottom:12px;">
@@ -1585,240 +1577,6 @@
                                 <button class="btn btn-primary btn-sm" type="button" onclick="saveExternalAccessSettings()">Salvar IPv4/IPv6</button>
                             </div>
                         </div>
-
-                        <h4 style="margin-bottom:12px; font-size:1rem; border-bottom:1px solid var(--border-color); padding-bottom:6px;">1. Escolha o modo de HTTPS</h4>
-                        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 24px;">
-                            <div style="background:var(--bg-secondary); padding:16px; border-radius:6px; border:1px solid var(--border-color);">
-                                <h5 style="color:var(--success); margin-bottom:8px; display:flex; align-items:center;"><i data-lucide="upload-cloud" style="width:16px; margin-right:6px;"></i> Upload Manual</h5>
-                                <ul style="font-size:0.75rem; color:var(--text-muted); margin-bottom:12px; padding-left:16px;">
-                                    <li>Mais compatível</li>
-                                    <li>Não exige porta 80</li>
-                                    <li>Requer gerar fora do painel (ZeroSSL)</li>
-                                </ul>
-                                <button class="btn btn-secondary btn-sm btn-block" onclick="openModal('modal-ssl-manual')">Configurar Manual</button>
-                            </div>
-
-                            <div style="background:var(--bg-secondary); padding:16px; border-radius:6px; border:1px solid var(--border-color);">
-                                <h5 style="color:var(--primary); margin-bottom:8px; display:flex; align-items:center;"><i data-lucide="zap" style="width:16px; margin-right:6px;"></i> DNS Automático (DuckDNS)</h5>
-                                <ul style="font-size:0.75rem; color:var(--text-muted); margin-bottom:12px; padding-left:16px;">
-                                    <li>100% Automático</li>
-                                    <li>Não exige porta 80 (Funciona no 4G/CGNAT)</li>
-                                    <li>Requer Token DuckDNS</li>
-                                </ul>
-                                <button class="btn btn-primary btn-sm btn-block" onclick="openModal('modal-ssl-duckdns')">Configurar DuckDNS</button>
-                            </div>
-
-                            <div style="background:var(--bg-secondary); padding:16px; border-radius:6px; border:1px solid var(--border-color);">
-                                <h5 style="color:var(--warning); margin-bottom:8px; display:flex; align-items:center;"><i data-lucide="lock" style="width:16px; margin-right:6px;"></i> Autoassinado</h5>
-                                <ul style="font-size:0.75rem; color:var(--text-muted); margin-bottom:12px; padding-left:16px;">
-                                    <li>Funciona offline / Rápido</li>
-                                    <li>Avisa "site inseguro" no navegador</li>
-                                    <li>Ideal para testes/uso pessoal</li>
-                                </ul>
-                                <button class="btn btn-secondary btn-sm btn-block" onclick="openModal('modal-ssl-selfsigned')">Gerar Local</button>
-                            </div>
-                        </div>
-
-                        <h4 style="margin-bottom:12px; font-size:1rem; border-bottom:1px solid var(--border-color); padding-bottom:6px;">2. Cloudflare Tunnel & Proxy Reverso</h4>
-                        <div style="background:var(--bg-secondary); border-radius:6px; border:1px solid var(--border-color); padding:16px;">
-                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-                                <p style="font-size:0.85rem; color:var(--text-muted); margin:0;">
-                                    Gerencie regras e serviços locais expostos para a internet. Alterações não derrubam túneis ativos.
-                                </p>
-                                <button class="btn btn-primary btn-sm" onclick="openModal('modal-cloudflare-rule')"><i data-lucide="plus" style="width:14px;"></i> Nova Regra / Túnel</button>
-                            </div>
-                            <div class="table-responsive" style="margin-bottom: 0;">
-                                <table class="table" style="font-size:0.85rem;">
-                                    <thead>
-                                        <tr>
-                                            <th>Nome da Regra</th>
-                                            <th>Domínio / Rota</th>
-                                            <th>Serviço Local</th>
-                                            <th>Status</th>
-                                            <th>Ações</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="cloudflare-rules-list">
-                                        <tr><td colspan="5" class="text-center text-muted">Carregando regras...</td></tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- === TAB: SETTINGS === -->
-            <div id="tab-settings" class="tab-pane">
-                <div class="page-header">
-                    <h1>Configurações do Painel</h1>
-                </div>
-
-                <!-- Card de Atualização do Painel -->
-                <div class="card" style="margin-bottom:20px;">
-                    <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
-                        <div>
-                            <h3 class="card-title" style="margin-bottom:4px;">🔄 Atualização Automática</h3>
-                            <p style="font-size:0.85rem; color:var(--text-muted);">
-                                Versão instalada: <strong id="update-current-version">v1.0.0</strong> &nbsp;|&nbsp;
-                                Disponível: <strong id="update-latest-version">—</strong> &nbsp;|&nbsp;
-                                Status: <span id="update-status-text" style="font-weight:600;">Carregando...</span>
-                            </p>
-                        </div>
-                        <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                            <button class="btn btn-success btn-sm hidden" id="btn-run-update" onclick="runSystemUpdate()">
-                                <i data-lucide="download-cloud"></i> Atualizar Agora
-                            </button>
-                            <button class="btn btn-secondary btn-sm" id="btn-check-update" onclick="checkSystemUpdates()">
-                                <i data-lucide="refresh-cw"></i> Verificar
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Configuração do Repositório GitHub -->
-                    <div style="background:var(--bg-secondary); border-radius:8px; padding:14px; margin-bottom:14px;">
-                        <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:8px;">
-                            <i data-lucide="git-branch" style="width:14px;height:14px;vertical-align:middle;"></i>
-                            Repositório GitHub para atualização automática:
-                        </p>
-                        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-                            <input type="text" id="github-repo-input"
-                                placeholder="usuario/nome-do-repositorio"
-                                style="flex:1; min-width:220px; font-family:monospace; font-size:0.875rem;">
-                            <button class="btn btn-primary btn-sm" onclick="saveGithubRepo()">
-                                <i data-lucide="save"></i> Salvar
-                            </button>
-                        </div>
-                        <p style="font-size:0.75rem; color:var(--text-muted); margin-top:6px;">
-                            Após cada <code>.\auto-push.ps1</code> no Windows, o GitHub Actions empacota o código automaticamente.
-                        </p>
-                    </div>
-
-                    <!-- Seleção Manual de Versão (Downgrade/Upgrade) -->
-                    <div id="manual-version-selector-wrapper" class="hidden" style="background:var(--bg-secondary); border-radius:8px; padding:14px; margin-bottom:14px;">
-                        <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:8px;">
-                            <i data-lucide="git-branch" style="width:14px;height:14px;vertical-align:middle;margin-right:4px;"></i>
-                            Instalar Versão Específica (Upgrade/Downgrade/Rollback):
-                        </p>
-                        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-                            <select id="github-versions-select" style="flex:1; min-width:220px; padding:8px 12px; font-size:0.875rem;" onchange="onVersionSelected()">
-                                <option value="">Buscando versões disponíveis...</option>
-                            </select>
-                            <button class="btn btn-warning btn-sm" id="btn-run-manual-update" onclick="runManualSystemUpdate()">
-                                <i data-lucide="download-cloud"></i> Instalar Versão
-                            </button>
-                        </div>
-                        <div id="version-compatibility-info" style="font-size:0.78rem; font-weight:600; margin-top:8px; display:flex; align-items:center; gap:6px;"></div>
-                    </div>
-
-                    <!-- Notas de release -->
-                    <div id="update-release-notes-wrapper" class="hidden" style="background:var(--bg-secondary); border-radius:8px; padding:14px; margin-bottom:14px; font-size:0.82rem; color:var(--text-muted); white-space:pre-wrap; max-height:120px; overflow-y:auto;"></div>
-
-                    <!-- Terminal de atualização -->
-                    <div id="update-terminal-wrapper" class="hidden">
-                        <div class="update-progress-panel" id="update-progress-panel">
-                            <div class="update-progress-head">
-                                <span id="update-progress-label">Preparando atualização...</span>
-                                <strong id="update-progress-percent">0%</strong>
-                            </div>
-                            <div class="update-progress-track" aria-hidden="true">
-                                <div class="update-progress-fill" id="update-progress-fill"></div>
-                            </div>
-                        </div>
-                        <div id="update-terminal" class="terminal-box" style="height:260px; overflow-y:auto; font-size:13px; font-family:monospace; white-space:pre-wrap; background:#0d1117; color:#c9d1d9; padding:16px; border-radius:6px;">
-                            [Aguardando início da atualização...]
-                        </div>
-                    </div>
-                </div>
-
-
-                <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; margin-bottom: 20px;">
-                    <!-- Auto-Start Card -->
-                    <div class="card" style="display:flex; flex-direction:column; justify-content:space-between; height: 100%;">
-                        <div>
-                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
-                                <h3 class="card-title" style="margin-bottom:0; display:flex; align-items:center;"><i data-lucide="power" style="color:var(--success); margin-right:8px;"></i>Regras de Boot</h3>
-                            </div>
-                            
-                            <!-- Opção 1: Abrir Termux -->
-                            <div style="padding:12px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:12px;">
-                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                                    <span style="font-weight:600; font-size:0.85rem;">1. Ao abrir o Termux</span>
-                                    <span id="autostart-status-badge" class="badge badge-danger">Inativo</span>
-                                </div>
-                                <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:10px;">
-                                    Inicia o painel e os serviços automaticamente no momento em que você abre o app Termux.
-                                </p>
-                                <button class="btn btn-secondary btn-block btn-sm" id="btn-toggle-autostart" onclick="toggleBootAutostart()">
-                                    Ativar
-                                </button>
-                            </div>
-
-                            <!-- Opção 2: Ligar Aparelho (Termux:Boot) -->
-                            <div style="padding:12px; background:var(--surface2); border:1px solid var(--border); border-radius:6px;">
-                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                                    <span style="font-weight:600; font-size:0.85rem;">2. Ao ligar o Celular</span>
-                                    <span id="autostart-boot-badge" class="badge badge-danger">Inativo</span>
-                                </div>
-                                <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:10px;">
-                                    Inicia silenciosamente ao ligar o celular. Requer o aplicativo auxiliar <a href="https://f-droid.org/packages/com.termux.boot/" target="_blank" style="color:var(--primary); text-decoration:underline;">Termux:Boot</a>.
-                                </p>
-                                <button class="btn btn-secondary btn-block btn-sm" id="btn-toggle-autostart-boot" onclick="toggleTermuxBoot()">
-                                    Ativar
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Admin Auth Card -->
-                    <div class="card" style="display:flex; flex-direction:column; justify-content:space-between; height: 100%;">
-                        <div>
-                            <h3 class="card-title" style="margin-bottom:14px; display:flex; align-items:center;"><i data-lucide="shield-check" style="color:var(--warning); margin-right:8px;"></i>Credenciais de Acesso</h3>
-                            <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:16px;">
-                                Altere o usuário e senha de administrador para fazer login no painel web.
-                            </p>
-                            <div class="form-row" style="display:flex; flex-direction:column; gap:10px; margin-bottom: 16px;">
-                                <input type="text" id="settings-user-input" placeholder="Novo Usuário Admin" style="width:100%;">
-                                <input type="password" id="settings-pass-input" placeholder="Nova Senha" style="width:100%;">
-                            </div>
-                        </div>
-                        <button class="btn btn-warning btn-block" onclick="savePanelAuth()">
-                            <i data-lucide="lock"></i> Salvar Acesso
-                        </button>
-                    </div>
-
-                    <!-- Card de Controle de Processos & Memória -->
-                    <div class="card" style="display:flex; flex-direction:column; justify-content:space-between; height: 100%;">
-                        <div>
-                            <h3 class="card-title" style="margin-bottom:14px; display:flex; align-items:center;"><i data-lucide="cpu" style="color:var(--primary); margin-right:8px;"></i>Processos & Memória (Moto G52)</h3>
-                            <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px;">
-                                Gerencie a alocação de memória RAM para o Node.js e previna processos duplicados.
-                            </p>
-                            
-                            <!-- Seletor de Memória -->
-                            <div style="background:var(--surface2); border:1px solid var(--border); border-radius:6px; padding:10px; margin-bottom:12px;">
-                                <label class="form-label" style="font-size:0.8rem; font-weight:600; margin-bottom:6px; display:block;">Modo de Memória Node.js:</label>
-                                <select id="settings-memory-mode" style="width:100%; padding:8px 12px; font-size:0.875rem;" onchange="changeNodeMemoryMode()">
-                                    <option value="safe">Seguro (128 MB) - Menor consumo RAM</option>
-                                    <option value="balanced" selected>Balanceado (256 MB) - Recomendado</option>
-                                    <option value="performance">Desempenho (512 MB) - Testes/Alta carga</option>
-                                </select>
-                                <span id="memory-restart-badge" class="badge badge-warning hidden" style="margin-top:6px; display:inline-block; font-size:0.7rem;">⚠️ Requer Reinício Seguro</span>
-                            </div>
-
-                            <!-- Ações -->
-                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:12px;">
-                                <button class="btn btn-secondary btn-sm" onclick="diagnoseProcesses()">
-                                    <i data-lucide="refresh-cw"></i> Diagnosticar
-                                </button>
-                                <button class="btn btn-danger btn-sm" onclick="stopDuplicatePanel()">
-                                    <i data-lucide="trash-2"></i> Limpar Duplicados
-                                </button>
-                            </div>
-                        </div>
-                        <button class="btn btn-primary btn-block" onclick="safeRestartPanel()">
-                            <i data-lucide="power"></i> Reinício Seguro (Stop/Start)
-                        </button>
                     </div>
                 </div>
             </div>
@@ -1915,145 +1673,8 @@
 <div class="fm-toast-container" id="fm-toast-container"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.140"></script>
+<script src="filemanager.js?v=0.2.141"></script>
 <script src="app.js?v=4.5"></script>
-
-    <!-- MODAL: SSL MANUAL -->
-    <div id="modal-ssl-manual" class="modal">
-        <div class="modal-content" style="max-width:500px;">
-            <div class="modal-header">
-                <h3><i data-lucide="upload-cloud"></i> Upload Manual de Certificado</h3>
-                <button class="close-btn" onclick="closeModal('modal-ssl-manual')"><i data-lucide="x"></i></button>
-            </div>
-            <div class="modal-body">
-                <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px;">Cole o conteúdo do seu Certificado e Chave gerados externamente (ex: ZeroSSL).</p>
-                
-                <div class="form-row" style="margin-bottom:12px;">
-                    <label class="form-label">Certificado (.crt / .pem)</label>
-                    <textarea id="ssl-manual-cert" rows="6" style="width:100%; font-family:monospace; font-size:0.75rem;" placeholder="-----BEGIN CERTIFICATE-----"></textarea>
-                </div>
-
-                <div class="form-row" style="margin-bottom:12px;">
-                    <label class="form-label">Chave Privada (.key / .pem)</label>
-                    <textarea id="ssl-manual-key" rows="6" style="width:100%; font-family:monospace; font-size:0.75rem;" placeholder="-----BEGIN PRIVATE KEY-----"></textarea>
-                </div>
-                
-                <div id="ssl-manual-status" style="margin-top:10px; font-size:0.85rem;"></div>
-            </div>
-            <div class="modal-footer" style="display:flex; justify-content:space-between;">
-                <button class="btn btn-secondary" onclick="openModal('modal-ssl-manual')">Validar Certificado</button>
-                <button class="btn btn-primary" onclick="openModal('modal-ssl-manual')">Salvar e Aplicar</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- MODAL: SSL DUCKDNS -->
-    <div id="modal-ssl-duckdns" class="modal">
-        <div class="modal-content" style="max-width:500px;">
-            <div class="modal-header">
-                <h3><i data-lucide="zap"></i> Certificado Automático DuckDNS</h3>
-                <button class="close-btn" onclick="closeModal('modal-ssl-duckdns')"><i data-lucide="x"></i></button>
-            </div>
-            <div class="modal-body">
-                <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px;">Validação DNS-01 sem precisar abrir porta 80. O painel se comunica direto com o DuckDNS.</p>
-                
-                <div class="form-row" style="margin-bottom:12px;">
-                    <label class="form-label">Subdomínio (ex: meupainel.duckdns.org)</label>
-                    <input type="text" id="ssl-duckdns-domain" style="width:100%;">
-                </div>
-
-                <div class="form-row" style="margin-bottom:12px;">
-                    <label class="form-label">Token do DuckDNS</label>
-                    <input type="password" id="ssl-duckdns-token" style="width:100%;" placeholder="abcd-1234-efgh...">
-                </div>
-
-                <div class="form-row" style="margin-bottom:12px;">
-                    <label class="form-label">E-mail (para alertas de expiração)</label>
-                    <input type="email" id="ssl-duckdns-email" style="width:100%;">
-                </div>
-                
-                <div id="ssl-duckdns-status" style="margin-top:10px; font-size:0.85rem;"></div>
-            </div>
-            <div class="modal-footer" style="display:flex; justify-content:space-between;">
-                <button class="btn btn-secondary" onclick="openModal('modal-ssl-duckdns')">Testar Token</button>
-                <button class="btn btn-primary" onclick="openModal('modal-ssl-duckdns')">Gerar Certificado</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- MODAL: SSL AUTOASSINADO -->
-    <div id="modal-ssl-selfsigned" class="modal">
-        <div class="modal-content" style="max-width:400px;">
-            <div class="modal-header">
-                <h3><i data-lucide="lock"></i> Certificado Autoassinado</h3>
-                <button class="close-btn" onclick="closeModal('modal-ssl-selfsigned')"><i data-lucide="x"></i></button>
-            </div>
-            <div class="modal-body">
-                <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px;">Gera um par de chaves usando OpenSSL localmente. Rápido e não depende de internet.</p>
-                
-                <div class="form-row" style="margin-bottom:12px;">
-                    <label class="form-label">Domínio ou IP</label>
-                    <input type="text" id="ssl-self-domain" value="localhost" style="width:100%;">
-                </div>
-                <div class="form-row" style="margin-bottom:12px;">
-                    <label class="form-label">Validade (Dias)</label>
-                    <input type="number" id="ssl-self-days" value="365" style="width:100%;">
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-warning btn-block" onclick="createSelfSignedSSL()">Gerar e Aplicar Localmente</button>
-            </div>
-        </div>
-    </div>
-
-
-    <!-- MODAL: CLOUDFLARE RULE -->
-    <div id="modal-cloudflare-rule" class="modal">
-        <div class="modal-content" style="max-width:600px;">
-            <div class="modal-header">
-                <h3><i data-lucide="plus"></i> Nova Regra / Túnel Cloudflare</h3>
-                <button class="close-btn" onclick="closeModal('modal-cloudflare-rule')"><i data-lucide="x"></i></button>
-            </div>
-            <div class="modal-body">
-                <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px;">Crie uma regra de proxy reverso. O Cloudflared vai rotear o tráfego externo para o serviço local.</p>
-                
-                <div class="form-row" style="margin-bottom:12px;">
-                    <label class="form-label">Nome da Regra</label>
-                    <input type="text" id="cf-rule-name" placeholder="ex: Meu App Web" style="width:100%;">
-                </div>
-
-                <div class="form-row" style="margin-bottom:12px;">
-                    <label class="form-label">Domínio Externo (Opcional)</label>
-                    <input type="text" id="cf-rule-domain" placeholder="ex: app.meudominio.com" style="width:100%;">
-                </div>
-
-                <div style="display:grid; grid-template-columns: 1fr 2fr; gap:12px; margin-bottom:12px;">
-                    <div class="form-row">
-                        <label class="form-label">Protocolo Interno</label>
-                        <select id="cf-rule-protocol" style="width:100%;">
-                            <option value="http">HTTP</option>
-                            <option value="https">HTTPS</option>
-                            <option value="tcp">TCP (SSH/MariaDB)</option>
-                        </select>
-                    </div>
-                    <div class="form-row">
-                        <label class="form-label">Destino Local (Host:Porta)</label>
-                        <input type="text" id="cf-rule-dest" placeholder="ex: 127.0.0.1:8088" style="width:100%;">
-                    </div>
-                </div>
-
-                <div class="form-row" style="margin-bottom:12px;">
-                    <label class="form-label">Caminho Público (Opcional, ex: /phpmyadmin)</label>
-                    <input type="text" id="cf-rule-path" placeholder="/" style="width:100%;">
-                </div>
-            </div>
-            <div class="modal-footer" style="display:flex; justify-content:flex-end; gap:10px;">
-                <button class="btn btn-secondary" onclick="closeModal('modal-cloudflare-rule')">Cancelar</button>
-                <button class="btn btn-primary" onclick="saveCloudflareRule()">Criar Regra</button>
-            </div>
-        </div>
-    </div>
 
 </body>
 </html>
-
