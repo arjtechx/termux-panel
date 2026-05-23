@@ -10,6 +10,7 @@ const { runCmd } = require('../utils/shell');
 const SERVER_CONFIG_FILE = path.join(__dirname, '..', '..', 'config', 'server.json');
 const AUTH_FILE = path.join(__dirname, '..', '..', 'config', 'auth.json');
 const NETWORK_ACCESS_FILE = path.join(__dirname, '..', '..', 'config', 'network-access.json');
+const README_FILE = path.join(__dirname, '..', '..', 'README.md');
 
 // --- Power and Services Controls ---
 router.post('/api/reboot', async (req, res) => {
@@ -228,6 +229,16 @@ router.post('/api/system/settings/autostart-boot/toggle', (req, res) => {
         res.json({ success: true, active });
     } catch(err) {
         res.status(500).json({ error: err.message });
+    }
+});
+
+// --- Documentation ---
+router.get('/api/readme', (req, res) => {
+    try {
+        const content = fs.readFileSync(README_FILE, 'utf8');
+        res.json({ success: true, content });
+    } catch (err) {
+        res.status(404).json({ success: false, error: 'README não encontrado.' });
     }
 });
 

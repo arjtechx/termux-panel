@@ -2416,7 +2416,15 @@ async function safeFetch(url, method = 'GET', body = null, timeoutMs = 8000) {
         const res = await fetch(url, opts);
         clearTimeout(timer);
         const text = await res.text();
-        const data = text ? JSON.parse(text) : {};
+        let data = {};
+        if (text) {
+            try {
+                data = JSON.parse(text);
+            } catch (_) {
+                const snippet = text.slice(0, 120).replace(/\s+/g, ' ').trim();
+                throw new Error(`Resposta não-JSON (${res.status}): ${snippet}`);
+            }
+        }
         if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
         return data;
     } catch(e) {
@@ -2720,6 +2728,7 @@ function toggleHostingTunnelFields() {
         }
     }
 }
+window.toggleHostingTunnelFields = toggleHostingTunnelFields;
 
 function toggleHostingTunnelActionFields() {
     const action = document.getElementById('hsTunnelAction')?.value;
@@ -2734,6 +2743,7 @@ function toggleHostingTunnelActionFields() {
         existingGroup?.classList.remove('hidden');
     }
 }
+window.toggleHostingTunnelActionFields = toggleHostingTunnelActionFields;
 
 async function populateExistingTunnelsDropdown() {
     const select = document.getElementById('hsTunnelExistingId');

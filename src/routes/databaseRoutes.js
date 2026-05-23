@@ -325,6 +325,20 @@ router.get('/api/db/details', async (req, res) => {
     if (!dbName) return res.status(400).json({ error: 'Nome do banco é obrigatório.' });
 
     try {
+        if (isSystemDb(dbName)) {
+            return res.json({
+                success: true,
+                tablesCount: 0,
+                totalRows: 0,
+                totalSizeMb: 0,
+                engine: 'System',
+                collation: 'N/A',
+                largestTable: 'N/A',
+                tables: [],
+                readonly: true
+            });
+        }
+
         const conn = await getDbConn();
         
         // Count tables & rows
