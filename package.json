@@ -1,6 +1,6 @@
 {
   "name": "termux-panel",
-  "version": "0.2.137",
+  "version": "0.2.138",
   "description": "",
   "main": "index.js",
   "scripts": {

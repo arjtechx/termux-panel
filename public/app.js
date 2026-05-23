@@ -60,7 +60,6 @@ async function runBootSequence() {
     bootProgress(15, 'Inicializando interface...');
     bootLog('Mapeando elementos DOM...');
     initElements();
-    initNetworkSettingsAccordion();
     initMonitorCards();
     initNavigation();
     initMobileNav();
@@ -2434,49 +2433,6 @@ function logout() { window.location.href = '/login.html'; }
 // ============================================================
 //  REDE E ACESSO (IPs / HTTPS)
 // ============================================================
-function initNetworkSettingsAccordion() {
-    const headers = document.querySelectorAll('#network-access-settings .network-settings-header[data-collapse-target]');
-    headers.forEach((header) => {
-        if (header.dataset.bound === '1') return;
-        header.dataset.bound = '1';
-        updateNetworkHeaderState(header, false);
-        header.addEventListener('click', () => {
-            const targetId = header.getAttribute('data-collapse-target');
-            const body = document.getElementById(targetId);
-            if (!body) return;
-            const item = header.closest('.network-settings-item');
-            if (!item) return;
-            item.classList.toggle('is-open');
-            updateNetworkHeaderState(header, item.classList.contains('is-open'));
-        });
-    });
-}
-
-function updateNetworkHeaderState(header, isOpen) {
-    const textEl = header.querySelector('span');
-    if (!textEl) return;
-    const raw = textEl.textContent.replace(/^\[\+\]\s*|^\[-\]\s*/g, '');
-    textEl.textContent = `${isOpen ? '[-]' : '[+]'} ${raw}`;
-}
-
-function expandAllNetworkSettings() {
-    document.querySelectorAll('#network-access-settings .network-settings-item').forEach((item) => {
-        item.classList.add('is-open');
-        const header = item.querySelector('.network-settings-header');
-        if (header) updateNetworkHeaderState(header, true);
-    });
-    if (window.lucide) lucide.createIcons();
-}
-
-function collapseAllNetworkSettings() {
-    document.querySelectorAll('#network-access-settings .network-settings-item').forEach((item) => {
-        item.classList.remove('is-open');
-        const header = item.querySelector('.network-settings-header');
-        if (header) updateNetworkHeaderState(header, false);
-    });
-    if (window.lucide) lucide.createIcons();
-}
-
 async function fetchNetworkInfo() {
     const ipv4El = document.getElementById('network-ipv4-display');
     const ipv6El = document.getElementById('network-ipv6-display');
