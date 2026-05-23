@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Preview README - Termux Professional cPanel</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        :root {
+            --bg-color: #0a0c10;
+            --surface-color: #0d1117;
+            --primary-color: #00f2ff;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --border-color: #30363d;
+            --radius: 8px;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            line-height: 1.6;
+            margin: 0;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: var(--surface-color);
+            padding: 40px;
+            border-radius: var(--radius);
+            border: 1px solid var(--border-color);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+
+        h1, h2, h3 { color: var(--primary-color); margin-top: 2rem; }
+        p { margin-bottom: 1rem; }
+        
+        .code-wrapper {
+            position: relative;
+            margin: 1.5rem 0;
+            background: #000;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+        }
+
+        pre {
+            padding: 20px;
+            margin: 0;
+            overflow-x: auto;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.9rem;
+        }
+
+        .btn-copy {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: #fff;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .btn-copy:hover { background: var(--primary-color); color: #000; }
+
+        blockquote {
+            border-left: 4px solid var(--primary-color);
+            padding: 10px 20px;
+            background: rgba(0, 242, 255, 0.05);
+            margin: 20px 0;
+        }
+
+        ul { margin-left: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container" id="content">
+        Carregando documentação...
+    </div>
+
+    <script>
+        async function load() {
+            // No preview local, vamos simular o fetch ou colar o conteúdo
+            const markdown = `
+# 📱 Termux Professional cPanel
+
+O **Termux Professional cPanel** é um painel de gerenciamento web completo projetado para transformar seu dispositivo Android (via Termux) em um servidor profissional. Com uma interface moderna, responsiva e cheia de recursos, ele permite gerenciar arquivos, processos, bancos de dados e serviços com a facilidade de um "Web OS".
+
+## 🚀 Principais Funcionalidades
+
+### 📂 Gerenciador de Arquivos Profissional
+- **Operações**: Criar pastas, renomear, mover, copiar e excluir.
+- **Compressão**: Suporte completo para arquivos \`.zip\` e \`.tar.gz\`.
+- **Extração**: Extraia archives com um único clique.
+- **Upload**: Envie arquivos do seu celular diretamente para o diretório do servidor.
+- **Visualização**: Ícones coloridos por tipo de arquivo e visualizador de texto integrado.
+
+### 📊 Monitoramento de Sistema
+- **Dashboard Real-time**: Gráficos de CPU, RAM, Armazenamento e Temperatura.
+- **Rede**: Monitoramento de tráfego (Download/Upload total e atual).
+- **Processos**: Gerenciador de tarefas integrado para visualizar e encerrar (kill) processos.
+
+### 🌐 Gerenciamento de Serviços
+- **MariaDB (MySQL)**: Controle de estado e gerenciador de bancos de dados/usuários.
+- **NGINX**: Configuração rápida de Proxy Reverso para seus domínios.
+- **Cloudflare Tunnel**: Gerencie seus túneis para acesso externo seguro.
+- **NO-IP**: Atualizador dinâmico de DNS integrado.
+- **Cronjobs**: Editor visual de tarefas agendadas.
+
+### 🛠️ Controles de Sistema
+- **Reiniciar**: Reinicia o Termux (requer Root).
+- **Wake Lock**: Mantém o Termux ativo em segundo plano.
+- **SSHD**: Liga/Desliga o servidor SSH nativo.
+
+## 🎨 Design & UX
+- **Dual Theme**: Alterne entre o modo **Light Pro** (clean) e **Dark Neon** (Cyberpunk).
+- **App Look**: Navegação otimizada para mobile.
+- **Performance**: Construído com Vanilla JS para máxima velocidade.
+
+## 📥 Instalação e Gerenciamento
+
+O painel inclui um script automatizado (\`install.sh\`).
+
+### 🚀 Instalação via Pacote
+1. Mova o arquivo para o seu diretório home no Termux.
+2. Descompacte:
+   \`\`\`bash
+   tar -xzvf termux-panel-dist.tar.gz
+   \`\`\`
+3. Entre na pasta, execute o instalador e volte:
+   \`\`\`bash
+   cd termux-panel && chmod +x install.sh && ./install.sh && cd ..
+   \`\`\`
+
+## 🔐 Acesso ao Painel
+
+- **Usuário Padrão**: \`admin\`
+- **Senha Padrão**: \`admin\`
+- **URL**: \`http://localhost:8088\`
+
+---
+*Desenvolvido para oferecer a melhor experiência de servidor mobile.*
+            `;
+
+            document.getElementById('content').innerHTML = marked.parse(markdown);
+            
+            document.querySelectorAll('pre').forEach(pre => {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'code-wrapper';
+                pre.parentNode.insertBefore(wrapper, pre);
+                wrapper.appendChild(pre);
+                
+                const btn = document.createElement('button');
+                btn.className = 'btn-copy';
+                btn.innerHTML = '<i data-lucide="copy"></i> Copiar';
+                btn.onclick = () => {
+                    navigator.clipboard.writeText(pre.innerText);
+                    btn.innerHTML = '<i data-lucide="check"></i> Copiado!';
+                    setTimeout(() => { btn.innerHTML = '<i data-lucide="copy"></i> Copiar'; lucide.createIcons(); }, 2000);
+                    lucide.createIcons();
+                };
+                wrapper.appendChild(btn);
+            });
+            lucide.createIcons();
+        }
+        load();
+    </script>
+</body>
+</html>

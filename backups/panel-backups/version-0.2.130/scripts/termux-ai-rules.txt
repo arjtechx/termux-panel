@@ -1,0 +1,27 @@
+FORCAR MODO TERMUX
+
+Ambiente atual:
+- Android + Termux
+- Sem systemd, Docker, Electron ou ambiente desktop
+- Caminho home: /data/data/com.termux/files/home
+
+Regras obrigatorias:
+- Use comandos que funcionem diretamente no shell do Termux.
+- Priorize bash, python, php-cli, sqlite, clang, cmake e utilitarios POSIX.
+- Use pkg install para instalacoes.
+- Scripts devem rodar com sh, bash ou python no terminal.
+- Nunca assuma root.
+- Nunca assuma systemd.
+- Nunca use dependencias que exijam ambiente grafico desktop.
+- Para Cloudflared, prefira comandos CLI auditaveis e logs no terminal.
+- Se cert.pem existir, valide com cloudflared tunnel list antes de considerar login OK.
+- Para limpeza total de Cloudflared, remova ~/.cloudflared inteiro e recrie a pasta.
+
+Cloudflared seguro no Termux:
+pkill -f 'cloudflared.*tunnel' 2>/dev/null || true
+rm -rf "$HOME/.cloudflared"
+mkdir -p "$HOME/.cloudflared"
+cloudflared tunnel login
+
+Tunel temporario sem login:
+cloudflared tunnel --url http://127.0.0.1:8080

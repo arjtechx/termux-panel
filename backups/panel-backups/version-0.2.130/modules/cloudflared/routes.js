@@ -1,7 +1,6 @@
 const express = require('express');
 const manager = require('./manager');
 const processManager = require('./process');
-const { upsertCloudflareRouteFromHosting } = require('./hostingIntegration');
 
 module.exports = function createCloudflaredRoutes() {
     const router = express.Router();
@@ -169,16 +168,6 @@ module.exports = function createCloudflaredRoutes() {
             res.json(result);
         } catch (err) {
             res.status(500).json({ success: false, error: err.message });
-        }
-    });
-
-    // Integração central para aba Hospedagem
-    router.post('/cloudflared/routes/from-hosting', (req, res) => {
-        try {
-            const result = upsertCloudflareRouteFromHosting(req.body || {});
-            res.json(result);
-        } catch (err) {
-            res.status(400).json({ success: false, error: err.message });
         }
     });
 
