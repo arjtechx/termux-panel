@@ -1653,6 +1653,52 @@
                             <span style="font-size:0.85rem; color:var(--text-color);">No Android/Termux, a porta 80 pode estar bloqueada por permissões do sistema, CGNAT ou operadora. A emissão automática oficial Let's Encrypt via HTTP Challenge pode falhar. Escolha abaixo alternativas 100% funcionais para ambientes móveis.</span>
                         </div>
 
+                        <div style="background:var(--bg-secondary); border-radius:6px; border:1px solid var(--border-color); padding:14px; margin-bottom:16px;">
+                            <h4 style="margin-bottom:10px; font-size:0.96rem;">Rede Externa e Porta do Painel</h4>
+                            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; margin-bottom:12px;">
+                                <div style="padding:10px; border:1px solid var(--border-color); border-radius:6px; background:var(--surface2);">
+                                    <span style="font-size:0.78rem; color:var(--text-muted);">IPv4 Externo</span>
+                                    <div id="network-ipv4-display" style="font-family:var(--font-mono); font-size:0.9rem; margin-top:4px;">--</div>
+                                </div>
+                                <div style="padding:10px; border:1px solid var(--border-color); border-radius:6px; background:var(--surface2);">
+                                    <span style="font-size:0.78rem; color:var(--text-muted);">IPv6 Externo</span>
+                                    <div id="network-ipv6-display" style="font-family:var(--font-mono); font-size:0.9rem; margin-top:4px;">--</div>
+                                </div>
+                            </div>
+
+                            <div id="network-cgnat-warning" class="hidden" style="font-size:0.8rem; color:var(--warning); margin-bottom:10px;">
+                                Atenção: sua rede pode estar sob CGNAT ou bloqueios de operadora.
+                            </div>
+
+                            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; margin-bottom:12px;">
+                                <div>
+                                    <label class="form-label">Porta do Painel</label>
+                                    <div style="display:flex; gap:8px;">
+                                        <input type="number" id="settings-port-input" placeholder="8088" style="width:100%;">
+                                        <button class="btn btn-secondary btn-sm" type="button" onclick="savePanelPort()">Salvar Porta</button>
+                                    </div>
+                                </div>
+                                <div style="display:flex; align-items:flex-end;">
+                                    <label style="display:flex; align-items:center; gap:8px; font-size:0.85rem;">
+                                        <input type="checkbox" id="settings-https-toggle" onchange="togglePanelHttps(this)">
+                                        Ativar HTTPS no painel
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:center;">
+                                <label style="display:flex; align-items:center; gap:8px; font-size:0.85rem;">
+                                    <input type="checkbox" id="settings-ext-ipv4">
+                                    Habilitar consulta IPv4 externo
+                                </label>
+                                <label style="display:flex; align-items:center; gap:8px; font-size:0.85rem;">
+                                    <input type="checkbox" id="settings-ext-ipv6">
+                                    Habilitar consulta IPv6 externo
+                                </label>
+                                <button class="btn btn-primary btn-sm" type="button" onclick="saveExternalAccessSettings()">Salvar IPv4/IPv6</button>
+                            </div>
+                        </div>
+
                         <!-- 3 Cards de Modos SSL -->
                         <h4 style="margin-bottom:12px; font-size:1rem; border-bottom:1px solid var(--border-color); padding-bottom:6px;">1. Escolha o modo de HTTPS</h4>
                         <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 24px;">
@@ -1866,7 +1912,7 @@
 <div class="fm-toast-container" id="fm-toast-container"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.138"></script>
+<script src="filemanager.js?v=0.2.139"></script>
 <script src="app.js?v=4.5"></script>
 
     <!-- MODAL: SSL MANUAL -->
