@@ -1167,13 +1167,13 @@
 
                             <div style="border-top: 1px dashed var(--border-color); margin-top: 12px; padding-top: 12px;">
                                 <label style="display:flex; align-items:center; gap:8px; font-size:0.85rem; font-weight:600; cursor:pointer;" id="hsCreateTunnelLabel">
-                                    <input type="checkbox" id="hsCreateTunnel" onchange="toggleHostingTunnelFields()"> ☁️ Criar/Vincular Túnel Cloudflare junto
+                                    <input type="checkbox" id="hsCreateTunnel" onchange="window.toggleHostingTunnelFields && window.toggleHostingTunnelFields()"> ☁️ Criar/Vincular Túnel Cloudflare junto
                                 </label>
                                 
                                 <div id="hsTunnelFields" class="hidden" style="margin-top: 10px; display: flex; flex-direction: column; gap: 10px; background: rgba(255,255,255,0.02); padding: 12px; border-radius: 6px; border: 1px solid var(--border-color);">
                                     <div>
                                         <label class="form-label" style="font-size: 0.8rem;">Ação do Túnel</label>
-                                        <select id="hsTunnelAction" onchange="toggleHostingTunnelActionFields()" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-lighter); color:var(--text-color);">
+                                        <select id="hsTunnelAction" onchange="window.toggleHostingTunnelActionFields && window.toggleHostingTunnelActionFields()" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-lighter); color:var(--text-color);">
                                             <option value="new">🆕 Criar Novo Túnel Dedicado</option>
                                             <option value="existing">🔗 Vincular a um Túnel Existente</option>
                                         </select>
@@ -1800,8 +1800,31 @@
 <div class="fm-toast-container" id="fm-toast-container"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.143"></script>
-<script src="app.js?v=4.5"></script>
+<script src="filemanager.js?v=0.2.144"></script>
+<script>
+window.toggleHostingTunnelFields = window.toggleHostingTunnelFields || function () {
+    var checked = document.getElementById('hsCreateTunnel') && document.getElementById('hsCreateTunnel').checked;
+    var fieldsDiv = document.getElementById('hsTunnelFields');
+    if (!fieldsDiv) return;
+    if (checked) fieldsDiv.classList.remove('hidden');
+    else fieldsDiv.classList.add('hidden');
+};
+window.toggleHostingTunnelActionFields = window.toggleHostingTunnelActionFields || function () {
+    var actionEl = document.getElementById('hsTunnelAction');
+    var action = actionEl ? actionEl.value : 'new';
+    var newGroup = document.getElementById('hsTunnelNewGroup');
+    var existingGroup = document.getElementById('hsTunnelExistingGroup');
+    if (!newGroup || !existingGroup) return;
+    if (action === 'new') {
+        newGroup.classList.remove('hidden');
+        existingGroup.classList.add('hidden');
+    } else {
+        newGroup.classList.add('hidden');
+        existingGroup.classList.remove('hidden');
+    }
+};
+</script>
+<script src="app.js?v=4.7"></script>
 
 </body>
 </html>
