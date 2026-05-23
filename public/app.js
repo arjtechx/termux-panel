@@ -2425,6 +2425,7 @@ function initNetworkSettingsAccordion() {
     headers.forEach((header) => {
         if (header.dataset.bound === '1') return;
         header.dataset.bound = '1';
+        updateNetworkHeaderState(header, false);
         header.addEventListener('click', () => {
             const targetId = header.getAttribute('data-collapse-target');
             const body = document.getElementById(targetId);
@@ -2432,13 +2433,23 @@ function initNetworkSettingsAccordion() {
             const item = header.closest('.network-settings-item');
             if (!item) return;
             item.classList.toggle('is-open');
+            updateNetworkHeaderState(header, item.classList.contains('is-open'));
         });
     });
+}
+
+function updateNetworkHeaderState(header, isOpen) {
+    const textEl = header.querySelector('span');
+    if (!textEl) return;
+    const raw = textEl.textContent.replace(/^\[\+\]\s*|^\[-\]\s*/g, '');
+    textEl.textContent = `${isOpen ? '[-]' : '[+]'} ${raw}`;
 }
 
 function expandAllNetworkSettings() {
     document.querySelectorAll('#network-access-settings .network-settings-item').forEach((item) => {
         item.classList.add('is-open');
+        const header = item.querySelector('.network-settings-header');
+        if (header) updateNetworkHeaderState(header, true);
     });
     if (window.lucide) lucide.createIcons();
 }
@@ -2446,6 +2457,8 @@ function expandAllNetworkSettings() {
 function collapseAllNetworkSettings() {
     document.querySelectorAll('#network-access-settings .network-settings-item').forEach((item) => {
         item.classList.remove('is-open');
+        const header = item.querySelector('.network-settings-header');
+        if (header) updateNetworkHeaderState(header, false);
     });
     if (window.lucide) lucide.createIcons();
 }
@@ -3701,7 +3714,14 @@ setInterval(() => {
 // ============================================================
 //  START
 // ============================================================
+function forceCloseAllModalsOnBoot() {
+    document.querySelectorAll('.modal').forEach((modal) => {
+        modal.classList.add('hidden');
+    });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+    forceCloseAllModalsOnBoot();
     runBootSequence();
     initFileBrowserShortcuts();
 });

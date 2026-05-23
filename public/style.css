@@ -566,32 +566,44 @@ table { width: 100%; border-collapse: collapse; }
 /* Configuracoes > Rede & Acesso Externo (accordion, sem alterar tema global) */
 #network-access-settings {
   display: grid;
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+  align-items: start;
 }
 
 .network-settings-item {
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface2);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
 }
 
 .network-settings-header {
   width: 100%;
   border: 0;
-  background: transparent;
-  color: var(--text-color);
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), transparent);
+  color: var(--text);
   cursor: pointer;
   text-align: left;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px;
-  font-weight: 600;
+  gap: 8px;
+  padding: 12px 14px;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.network-settings-header:hover {
+  background: rgba(59, 130, 246, 0.08);
 }
 
 .network-settings-body {
   display: none;
-  padding: 0 12px 12px 12px;
+  padding: 0 14px 14px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
 }
 
 .network-settings-item.is-open .network-settings-body {
@@ -599,11 +611,29 @@ table { width: 100%; border-collapse: collapse; }
 }
 
 .network-collapse-icon {
+  opacity: 0.8;
   transition: transform 0.2s ease;
 }
 
 .network-settings-item.is-open .network-collapse-icon {
   transform: rotate(180deg);
+}
+
+#network-access-settings .table-responsive {
+  overflow-x: auto;
+}
+
+#network-access-settings textarea,
+#network-access-settings input,
+#network-access-settings select {
+  width: 100%;
+  max-width: 100%;
+}
+
+@media (max-width: 768px) {
+  #network-access-settings {
+    grid-template-columns: 1fr;
+  }
 }
 
 th {
@@ -1025,9 +1055,12 @@ input:focus, textarea:focus { outline: none; border-color: var(--primary); }
     position: fixed; inset: 0;
     background: rgba(0,0,0,0.6);
     z-index: 500;
-    display: flex;
+    display: none;
     align-items: center;
     justify-content: center;
+}
+.modal:not(.hidden) {
+    display: flex;
 }
 .modal-box {
     background: var(--surface);
