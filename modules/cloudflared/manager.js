@@ -141,7 +141,7 @@ function generateYamlForInstance(instance, tempNext = false) {
     // Catch-all obrigatorio
     yaml += `  - service: http_status:404\n`;
     
-    const configName = tempNext ? `${instance.id}.next.yml` : `${instance.id}.yml`;
+    const configName = tempNext ? `${instance.id}.yml.next.yml` : `${instance.id}.yml`;
     const configPath = path.join(HOME_DIR, '.cloudflared', configName);
     
     if (!fs.existsSync(path.dirname(configPath))) {

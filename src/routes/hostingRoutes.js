@@ -169,7 +169,7 @@ router.get('/', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-    const { name, domain, type, listenPort, targetPort, path: sitePath, startCmd, autoRestart, createIndex } = req.body;
+    const { name, domain, type, listenPort, targetPort, path: sitePath, startCmd, autoRestart, createIndex, createTunnel, tunnelAction, tunnelName, tunnelExistingId, tunnelHostname } = req.body;
     
     const id = Date.now().toString();
     let parsedListenPort;
@@ -344,6 +344,98 @@ router.post('/', async (req, res) => {
             activeStatus = 'online';
         }
         
+        let cfWarning = null;
+        if (createTunnel && tunnelHostname) {
+            try {
+                const cfManager = require('../../modules/cloudflared/manager');
+                const cfProcess = require('../../modules/cloudflared/process');
+                
+                if (tunnelAction === 'new') {
+                    // Create new Cloudflare instance
+                    const instName = tunnelName ? tunnelName.trim() : `Túnel ${name.trim()}`;
+                    const newInst = cfManager.createInstance({
+                        name: instName,
+                        type: 'service',
+                        protected: false,
+                        autoRestartOnSave: true,
+                        createCloudflareTunnel: true, // CLI creates tunnel
+                        routes: [
+                            {
+                                name: name.trim(),
+                                hostname: tunnelHostname.trim(),
+                                path: '/',
+                                targetProtocol: 'http',
+                                targetHost: '127.0.0.1',
+                                targetPort: parsedListenPort,
+                                routeType: 'http'
+                            }
+                        ]
+                    });
+                    
+                    // Start the newly created instance
+                    try {
+                        cfProcess.startInstance(newInst);
+                    } catch (startErr) {
+                        console.error(`[Hosting - Tunnel] Falha ao iniciar novo túnel:`, startErr.message);
+                        cfWarning = `Serviço criado, mas falhou ao iniciar o processo do túnel: ${startErr.message}`;
+                    }
+                } else if (tunnelAction === 'existing' && tunnelExistingId) {
+                    // Fetch existing instance
+                    const instances = cfManager.getInstances();
+                    const existingInst = instances.find(i => i.id === tunnelExistingId);
+                    
+                    if (existingInst) {
+                        const updatedRoutes = [...(existingInst.routes || [])];
+                        // Avoid duplicates
+                        const routeExists = updatedRoutes.some(r => r.hostname === tunnelHostname.trim());
+                        if (!routeExists) {
+                            updatedRoutes.push({
+                                name: name.trim(),
+                                hostname: tunnelHostname.trim(),
+                                path: '/',
+                                targetProtocol: 'http',
+                                targetHost: '127.0.0.1',
+                                targetPort: parsedListenPort,
+                                routeType: 'http'
+                            });
+                            
+                            // Save updated instance which recreates configuration yaml
+                            const updatedInst = cfManager.updateInstance(existingInst.id, {
+                                routes: updatedRoutes
+                            });
+                            
+                            // Check if instance is running, and if so, perform Zero Downtime reload
+                            const status = await cfProcess.getInstanceStatus(existingInst.id);
+                            if (status.running) {
+                                try {
+                                    // Generate the temporary next.yml for validation & safe reload
+                                    cfManager.generateYamlForInstance(updatedInst, true);
+                                    const reloadResult = await cfProcess.reloadSafeInstance(updatedInst);
+                                    if (!reloadResult.success) {
+                                        throw new Error(reloadResult.error || 'Reload falhou');
+                                    }
+                                } catch (reloadErr) {
+                                    console.error(`[Hosting - Tunnel] Falha ao atualizar túnel com Zero Downtime. Tentando restart simples...`, reloadErr.message);
+                                    // Fallback to stop and start
+                                    try {
+                                        cfProcess.stopInstance(updatedInst.id);
+                                        cfProcess.startInstance(updatedInst);
+                                    } catch (restartErr) {
+                                        cfWarning = `Serviço criado, mas falhou ao reiniciar o túnel existente para aplicar a nova rota: ${restartErr.message}`;
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        cfWarning = 'Túnel existente selecionado não foi encontrado.';
+                    }
+                }
+            } catch (cfErr) {
+                console.error(`[Hosting - Cloudflared Integration Error]:`, cfErr.message);
+                cfWarning = `Não foi possível criar/vincular o túnel: ${cfErr.message}`;
+            }
+        }
+
         const services = JSON.parse(fs.readFileSync(HOSTING_FILE, 'utf8'));
         const newService = {
             id,
@@ -362,13 +454,18 @@ router.post('/', async (req, res) => {
             nginxConf,
             logFile,
             errorLog,
+            cloudflareTunnel: createTunnel && tunnelHostname ? {
+                action: tunnelAction,
+                hostname: tunnelHostname,
+                tunnelId: tunnelAction === 'existing' ? tunnelExistingId : 'new'
+            } : null,
             createdAt: new Date().toISOString()
         };
         
         services.push(newService);
         fs.writeFileSync(HOSTING_FILE, JSON.stringify(services, null, 2));
         
-        res.json({ success: true, service: newService });
+        res.json({ success: true, service: newService, cfWarning });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

@@ -1,6 +1,6 @@
 {
   "name": "termux-panel",
-  "version": "0.2.131",
+  "version": "0.2.132",
   "description": "",
   "main": "index.js",
   "scripts": {
@@ -11,6 +11,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "acme-client": "^5.4.0",
     "axios": "^1.16.1",
     "cors": "^2.8.6",
     "express": "^5.2.1",

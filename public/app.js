@@ -2665,6 +2665,25 @@ function openHostingModal() {
     document.getElementById('hsAutoRestart').checked = true;
     document.getElementById('hsCreateIndex').checked = true;
 
+    // Reset tunnel fields
+    const hsCreateTunnel = document.getElementById('hsCreateTunnel');
+    if (hsCreateTunnel) {
+        hsCreateTunnel.checked = false;
+        toggleHostingTunnelFields();
+    }
+    const hsTunnelName = document.getElementById('hsTunnelName');
+    if (hsTunnelName) hsTunnelName.value = '';
+    const hsTunnelHostname = document.getElementById('hsTunnelHostname');
+    if (hsTunnelHostname) hsTunnelHostname.value = '';
+    const hsTunnelAction = document.getElementById('hsTunnelAction');
+    if (hsTunnelAction) {
+        hsTunnelAction.value = 'new';
+        toggleHostingTunnelActionFields();
+    }
+
+    // Populate existing tunnels dropdown
+    populateExistingTunnelsDropdown();
+
     // Trigger dynamic visible fields logic
     toggleHostingFormFields();
 
@@ -2673,6 +2692,56 @@ function openHostingModal() {
     if (modal) {
         modal.classList.remove('hidden');
         lucide.createIcons();
+    }
+}
+
+function toggleHostingTunnelFields() {
+    const checked = document.getElementById('hsCreateTunnel')?.checked;
+    const fieldsDiv = document.getElementById('hsTunnelFields');
+    if (fieldsDiv) {
+        if (checked) {
+            fieldsDiv.classList.remove('hidden');
+        } else {
+            fieldsDiv.classList.add('hidden');
+        }
+    }
+}
+
+function toggleHostingTunnelActionFields() {
+    const action = document.getElementById('hsTunnelAction')?.value;
+    const newGroup = document.getElementById('hsTunnelNewGroup');
+    const existingGroup = document.getElementById('hsTunnelExistingGroup');
+    
+    if (action === 'new') {
+        newGroup?.classList.remove('hidden');
+        existingGroup?.classList.add('hidden');
+    } else {
+        newGroup?.classList.add('hidden');
+        existingGroup?.classList.remove('hidden');
+    }
+}
+
+async function populateExistingTunnelsDropdown() {
+    const select = document.getElementById('hsTunnelExistingId');
+    if (!select) return;
+    
+    try {
+        select.innerHTML = '<option value="">Carregando túneis...</option>';
+        const res = await fetch(`${API_BASE}/cloudflared/instances`);
+        const data = await res.json();
+        if (data.success && data.instances) {
+            if (data.instances.length === 0) {
+                select.innerHTML = '<option value="">Nenhum túnel cadastrado</option>';
+            } else {
+                select.innerHTML = data.instances.map(inst => 
+                    `<option value="${inst.id}">${inst.name} (${inst.tunnelId ? inst.tunnelId.slice(0, 8) : 'Sem ID'})</option>`
+                ).join('');
+            }
+        } else {
+            select.innerHTML = '<option value="">Erro ao buscar instâncias</option>';
+        }
+    } catch (e) {
+        select.innerHTML = '<option value="">Falha ao listar instâncias</option>';
     }
 }
 
@@ -2827,6 +2896,12 @@ function renderHostingGrid(filterType = 'all') {
                         <span class="hosting-card-info-value" style="font-family:var(--font-mono); color:var(--success); font-weight:600;">${svc.pid}</span>
                     </div>
                     ` : ''}
+                    ${svc.cloudflareTunnel ? `
+                    <div class="hosting-card-info-item" style="background: rgba(46, 204, 113, 0.05); padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(46, 204, 113, 0.2); margin-top: 4px;">
+                        <span class="hosting-card-info-label" style="color: var(--success); font-weight: 600;">☁️ Túnel Cloudflare</span>
+                        <span class="hosting-card-info-value" style="font-family:var(--font-mono); font-size:0.75rem;"><a href="https://${svc.cloudflareTunnel.hostname}" target="_blank" style="color: var(--success); text-decoration: none;">${svc.cloudflareTunnel.hostname} <i data-lucide="external-link" style="width:10px; height:10px; display:inline-block; vertical-align:middle;"></i></a></span>
+                    </div>
+                    ` : ''}
                 </div>
 
                 <div class="hosting-card-actions">
@@ -2873,9 +2948,31 @@ async function createHostingService(e) {
     const autoRestart = document.getElementById('hsAutoRestart').checked;
     const createIndex = document.getElementById('hsCreateIndex').checked;
 
+    // Tunnel integration
+    const createTunnel = document.getElementById('hsCreateTunnel')?.checked || false;
+    const tunnelAction = document.getElementById('hsTunnelAction')?.value || 'new';
+    const tunnelName = document.getElementById('hsTunnelName')?.value?.trim() || '';
+    const tunnelExistingId = document.getElementById('hsTunnelExistingId')?.value || '';
+    const tunnelHostname = document.getElementById('hsTunnelHostname')?.value?.trim() || '';
+
     if (!name || !listenPort) {
         showToast('Nome e Porta Pública são obrigatórios!', 'warning');
         return;
+    }
+
+    if (createTunnel) {
+        if (!tunnelHostname) {
+            showToast('Hostname Público é obrigatório para configurar o túnel!', 'warning');
+            return;
+        }
+        if (tunnelAction === 'new' && !tunnelName) {
+            showToast('Nome do Novo Túnel é obrigatório!', 'warning');
+            return;
+        }
+        if (tunnelAction === 'existing' && !tunnelExistingId) {
+            showToast('Selecione um túnel existente!', 'warning');
+            return;
+        }
     }
 
     const submitBtn = e.target.querySelector('button[type="submit"]');
@@ -2885,11 +2982,31 @@ async function createHostingService(e) {
     lucide.createIcons();
 
     try {
-        const payload = { name, domain, type, listenPort, targetPort, path, startCmd, autoRestart, createIndex };
+        const payload = { 
+            name, 
+            domain, 
+            type, 
+            listenPort, 
+            targetPort, 
+            path, 
+            startCmd, 
+            autoRestart, 
+            createIndex,
+            createTunnel,
+            tunnelAction,
+            tunnelName,
+            tunnelExistingId,
+            tunnelHostname
+        };
         const res = await safeFetch(`${API_BASE}/hosting`, 'POST', payload);
         
         if (res?.success) {
             showToast('Serviço de Hospedagem criado com sucesso!', 'success');
+            if (res.cfWarning) {
+                setTimeout(() => {
+                    showToast(`Aviso: ${res.cfWarning}`, 'warning');
+                }, 1000);
+            }
             closeHostingModal();
             fetchHostingServices();
         } else {
@@ -5385,3 +5502,40 @@ async function cfMigrateLegacy() {
     }
 }
 window.cfMigrateLegacy = cfMigrateLegacy;
+
+
+async function saveCloudflareRule() {
+    const name = document.getElementById('cf-rule-name').value || 'Nova Regra';
+    const domain = document.getElementById('cf-rule-domain').value || '';
+    const protocol = document.getElementById('cf-rule-protocol').value || 'http';
+    const dest = document.getElementById('cf-rule-dest').value || '127.0.0.1:8088';
+    const path = document.getElementById('cf-rule-path').value || '/';
+
+    const [host, port] = dest.split(':');
+
+    const newInst = {
+        name,
+        type: 'service',
+        createCloudflareTunnel: true,
+        routes: [{
+            hostname: domain,
+            path: path,
+            targetProtocol: protocol,
+            targetHost: host || '127.0.0.1',
+            targetPort: parseInt(port) || (protocol === 'https' ? 443 : 80),
+            routeType: protocol
+        }]
+    };
+
+    const res = await safeFetch(`${API_BASE}/cloudflared/instances`, 'POST', newInst);
+    if (res && res.success) {
+        showToast('Regra de Cloudflare criada com sucesso!', 'success');
+        closeModal('modal-cloudflare-rule');
+        loadCloudflareTunnelsTable();
+        // start instance immediately
+        await safeFetch(`${API_BASE}/cloudflared/instances/${res.instance.id}/start`, 'POST');
+        loadCloudflareTunnelsTable();
+    } else {
+        showToast(res?.error || 'Erro ao criar regra', 'error');
+    }
+}

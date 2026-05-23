@@ -1164,6 +1164,45 @@
                                     <input type="checkbox" id="hsCreateIndex" checked> Criar arquivo inicial de cortesia (index.html / index.php)
                                 </label>
                             </div>
+
+                            <div style="border-top: 1px dashed var(--border-color); margin-top: 12px; padding-top: 12px;">
+                                <label style="display:flex; align-items:center; gap:8px; font-size:0.85rem; font-weight:600; cursor:pointer;" id="hsCreateTunnelLabel">
+                                    <input type="checkbox" id="hsCreateTunnel" onchange="toggleHostingTunnelFields()"> ☁️ Criar/Vincular Túnel Cloudflare junto
+                                </label>
+                                
+                                <div id="hsTunnelFields" class="hidden" style="margin-top: 10px; display: flex; flex-direction: column; gap: 10px; background: rgba(255,255,255,0.02); padding: 12px; border-radius: 6px; border: 1px solid var(--border-color);">
+                                    <div>
+                                        <label class="form-label" style="font-size: 0.8rem;">Ação do Túnel</label>
+                                        <select id="hsTunnelAction" onchange="toggleHostingTunnelActionFields()" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-lighter); color:var(--text-color);">
+                                            <option value="new">🆕 Criar Novo Túnel Dedicado</option>
+                                            <option value="existing">🔗 Vincular a um Túnel Existente</option>
+                                        </select>
+                                    </div>
+                                    
+                                    <div id="hsTunnelNewGroup">
+                                        <label class="form-label" style="font-size: 0.8rem;">Nome do Novo Túnel</label>
+                                        <input type="text" id="hsTunnelName" placeholder="ex: wordpress-tunel" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-lighter); color:var(--text-color);">
+                                        <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">
+                                            Requer login concluído no Cloudflared Manager. O túnel será criado automaticamente via CLI.
+                                        </p>
+                                    </div>
+                                    
+                                    <div id="hsTunnelExistingGroup" class="hidden">
+                                        <label class="form-label" style="font-size: 0.8rem;">Selecionar Túnel Existente</label>
+                                        <select id="hsTunnelExistingId" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-lighter); color:var(--text-color);">
+                                            <option value="">Carregando túneis...</option>
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label class="form-label" style="font-size: 0.8rem;">Hostname Público (Domínio completo)</label>
+                                        <input type="text" id="hsTunnelHostname" placeholder="ex: wordpress.meudominio.com" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-lighter); color:var(--text-color);">
+                                        <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">
+                                            O tráfego enviado a este domínio será direcionado para a porta pública deste serviço.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <div class="modal-actions" style="margin-top:20px; display:flex; justify-content:flex-end; gap:10px;">
@@ -1604,71 +1643,84 @@
                         </div>
                     </div>
 
-                    <!-- Rede & Acesso Externo Card -->
-                    <div class="card" style="display:flex; flex-direction:column; justify-content:space-between; height: 100%; grid-column: span 2;">
-                        <div>
-                            <h3 class="card-title" style="margin-bottom:14px; display:flex; align-items:center;">
-                                <i data-lucide="globe" style="color:var(--info); margin-right:8px;"></i> Rede & Acesso Externo
-                            </h3>
-                            <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:16px;">
-                                Gerencie a porta do painel, descubra seus IPs públicos e habilite comunicação segura (HTTPS).
-                            </p>
+                    <!-- MÓDULO: REDE, SSL & CLOUDFLARE -->
+                    <div class="card" style="grid-column: 1 / -1;">
+                        <h3 class="card-title" style="margin-bottom:8px; display:flex; align-items:center;">
+                            <i data-lucide="globe" style="color:var(--info); margin-right:8px;"></i> Rede, SSL & Acesso Externo
+                        </h3>
+                        <div style="background:rgba(239,68,68,0.1); border-left:4px solid var(--danger); padding:12px; border-radius:4px; margin-bottom:16px;">
+                            <strong style="color:var(--danger); display:block; margin-bottom:4px;">Aviso Importante sobre Porta 80:</strong>
+                            <span style="font-size:0.85rem; color:var(--text-color);">No Android/Termux, a porta 80 pode estar bloqueada por permissões do sistema, CGNAT ou operadora. A emissão automática oficial Let's Encrypt via HTTP Challenge pode falhar. Escolha abaixo alternativas 100% funcionais para ambientes móveis.</span>
+                        </div>
+
+                        <!-- 3 Cards de Modos SSL -->
+                        <h4 style="margin-bottom:12px; font-size:1rem; border-bottom:1px solid var(--border-color); padding-bottom:6px;">1. Escolha o modo de HTTPS</h4>
+                        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 24px;">
                             
-                            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px;">
-                                <!-- Porta -->
-                                <div style="background:var(--bg-secondary); padding:12px; border-radius:6px; border:1px solid var(--border-color);">
-                                    <h4 style="font-size:0.9rem; margin-bottom:8px; display:flex; align-items:center;"><i data-lucide="network" style="width:16px; margin-right:6px; color:var(--primary)"></i>Porta de Acesso</h4>
-                                    <div class="form-row" style="margin-bottom: 8px;">
-                                        <input type="number" id="settings-port-input" placeholder="Nova Porta (Ex: 8089)" min="1" max="65535" style="width:100%;">
-                                    </div>
-                                    <button class="btn btn-primary btn-sm btn-block" onclick="savePanelPort()">
-                                        Salvar Porta
-                                    </button>
-                                </div>
-
-                                <!-- SSL -->
-                                <div style="background:var(--bg-secondary); padding:12px; border-radius:6px; border:1px solid var(--border-color);">
-                                    <h4 style="font-size:0.9rem; margin-bottom:8px; display:flex; align-items:center;"><i data-lucide="lock" style="width:16px; margin-right:6px; color:var(--success)"></i>Segurança (HTTPS)</h4>
-                                    <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:10px;">
-                                        Gera um certificado autoassinado local. (Atenção: o navegador emitirá aviso de segurança).
-                                    </p>
-                                    <label style="display:flex; align-items:center; gap:8px; font-weight:600; cursor:pointer;">
-                                        <input type="checkbox" id="settings-https-toggle" onchange="togglePanelHttps(this)" style="width:18px; height:18px;">
-                                        Habilitar HTTPS Seguro
-                                    </label>
-                                </div>
+                            <!-- Upload Manual -->
+                            <div style="background:var(--bg-secondary); padding:16px; border-radius:6px; border:1px solid var(--border-color);">
+                                <h5 style="color:var(--success); margin-bottom:8px; display:flex; align-items:center;"><i data-lucide="upload-cloud" style="width:16px; margin-right:6px;"></i> Upload Manual</h5>
+                                <ul style="font-size:0.75rem; color:var(--text-muted); margin-bottom:12px; padding-left:16px;">
+                                    <li>Mais compatível</li>
+                                    <li>Não exige porta 80</li>
+                                    <li>Requer gerar fora do painel (ZeroSSL)</li>
+                                </ul>
+                                <button class="btn btn-secondary btn-sm btn-block" onclick="openModal('modal-ssl-manual')">Configurar Manual</button>
                             </div>
 
-                            <!-- IPv4/IPv6 Info -->
-                            <div style="background:var(--bg-secondary); padding:12px; border-radius:6px; border:1px solid var(--border-color); margin-top:16px;">
-                                <h4 style="font-size:0.9rem; margin-bottom:8px; display:flex; align-items:center;"><i data-lucide="map-pin" style="width:16px; margin-right:6px; color:var(--warning)"></i>Seus IPs Públicos</h4>
-                                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-color); padding-bottom:6px; margin-bottom:6px;">
-                                    <strong style="font-size:0.85rem;">IPv4 Real:</strong>
-                                    <span id="network-ipv4-display" style="font-family:monospace; font-size:0.9rem;">Carregando...</span>
-                                </div>
-                                <div style="display:flex; justify-content:space-between; align-items:center;">
-                                    <strong style="font-size:0.85rem;">IPv6 Real:</strong>
-                                    <span id="network-ipv6-display" style="font-family:monospace; font-size:0.9rem;">Carregando...</span>
-                                </div>
-                                <div id="network-cgnat-warning" class="hidden" style="margin-top:10px; font-size:0.75rem; color:var(--danger); background:rgba(239,68,68,0.1); padding:8px; border-radius:4px;">
-                                    <i data-lucide="alert-triangle" style="width:12px; display:inline-block; margin-right:4px;"></i>Aviso: IPv4 em zona CGNAT. Apenas o IPv6 ou Cloudflare Tunnel estarão abertos para o mundo.
-                                </div>
-                                <div style="margin-top:12px; font-size:0.8rem;">
-                                    <label style="display:flex; align-items:center; gap:8px; margin-bottom:6px; cursor:pointer;">
-                                        <input type="checkbox" id="settings-ext-ipv4" onchange="saveExternalAccessSettings()"> Ativar Verificação IPv4
-                                    </label>
-                                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
-                                        <input type="checkbox" id="settings-ext-ipv6" onchange="saveExternalAccessSettings()"> Ativar Verificação IPv6
-                                    </label>
-                                </div>
-                                <div style="margin-top:10px; text-align:right;">
-                                    <button class="btn btn-secondary btn-sm" onclick="fetchNetworkInfo()"><i data-lucide="refresh-cw" style="width:14px;"></i> Atualizar IPs</button>
-                                </div>
+                            <!-- DuckDNS -->
+                            <div style="background:var(--bg-secondary); padding:16px; border-radius:6px; border:1px solid var(--border-color);">
+                                <h5 style="color:var(--primary); margin-bottom:8px; display:flex; align-items:center;"><i data-lucide="zap" style="width:16px; margin-right:6px;"></i> DNS Automático (DuckDNS)</h5>
+                                <ul style="font-size:0.75rem; color:var(--text-muted); margin-bottom:12px; padding-left:16px;">
+                                    <li>100% Automático</li>
+                                    <li>Não exige porta 80 (Funciona no 4G/CGNAT)</li>
+                                    <li>Requer Token DuckDNS</li>
+                                </ul>
+                                <button class="btn btn-primary btn-sm btn-block" onclick="openModal('modal-ssl-duckdns')">Configurar DuckDNS</button>
                             </div>
 
+                            <!-- Autoassinado -->
+                            <div style="background:var(--bg-secondary); padding:16px; border-radius:6px; border:1px solid var(--border-color);">
+                                <h5 style="color:var(--warning); margin-bottom:8px; display:flex; align-items:center;"><i data-lucide="lock" style="width:16px; margin-right:6px;"></i> Autoassinado</h5>
+                                <ul style="font-size:0.75rem; color:var(--text-muted); margin-bottom:12px; padding-left:16px;">
+                                    <li>Funciona offline / Rápido</li>
+                                    <li>Avisa "site inseguro" no navegador</li>
+                                    <li>Ideal para testes/uso pessoal</li>
+                                </ul>
+                                <button class="btn btn-secondary btn-sm btn-block" onclick="openModal('modal-ssl-selfsigned')">Gerar Local</button>
+                            </div>
+                        </div>
+
+                        <!-- Cloudflare Tunnel & Proxy -->
+                        <h4 style="margin-bottom:12px; font-size:1rem; border-bottom:1px solid var(--border-color); padding-bottom:6px;">2. Cloudflare Tunnel & Proxy Reverso</h4>
+                        <div style="background:var(--bg-secondary); border-radius:6px; border:1px solid var(--border-color); padding:16px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                                <p style="font-size:0.85rem; color:var(--text-muted); margin:0;">
+                                    Gerencie regras e serviços locais expostos para a internet. Alterações não derrubam túneis ativos.
+                                </p>
+                                <button class="btn btn-primary btn-sm" onclick="openModal('modal-cloudflare-rule')"><i data-lucide="plus" style="width:14px;"></i> Nova Regra / Túnel</button>
+                            </div>
+                            
+                            <!-- Tabela de Tunnels -->
+                            <div class="table-responsive" style="margin-bottom: 0;">
+                                <table class="table" style="font-size:0.85rem;">
+                                    <thead>
+                                        <tr>
+                                            <th>Nome da Regra</th>
+                                            <th>Domínio / Rota</th>
+                                            <th>Serviço Local</th>
+                                            <th>Status</th>
+                                            <th>Ações</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="cloudflare-rules-list">
+                                        <tr><td colspan="5" class="text-center text-muted">Carregando regras...</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
-
+                    
                     <!-- Admin Auth Card -->
                     <div class="card" style="display:flex; flex-direction:column; justify-content:space-between; height: 100%;">
                         <div>
@@ -1814,8 +1866,145 @@
 <div class="fm-toast-container" id="fm-toast-container"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.131"></script>
+<script src="filemanager.js?v=0.2.132"></script>
 <script src="app.js?v=4.5"></script>
+
+    <!-- MODAL: SSL MANUAL -->
+    <div id="modal-ssl-manual" class="modal">
+        <div class="modal-content" style="max-width:500px;">
+            <div class="modal-header">
+                <h3><i data-lucide="upload-cloud"></i> Upload Manual de Certificado</h3>
+                <button class="close-btn" onclick="closeModal('modal-ssl-manual')"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px;">Cole o conteúdo do seu Certificado e Chave gerados externamente (ex: ZeroSSL).</p>
+                
+                <div class="form-row" style="margin-bottom:12px;">
+                    <label class="form-label">Certificado (.crt / .pem)</label>
+                    <textarea id="ssl-manual-cert" rows="6" style="width:100%; font-family:monospace; font-size:0.75rem;" placeholder="-----BEGIN CERTIFICATE-----"></textarea>
+                </div>
+
+                <div class="form-row" style="margin-bottom:12px;">
+                    <label class="form-label">Chave Privada (.key / .pem)</label>
+                    <textarea id="ssl-manual-key" rows="6" style="width:100%; font-family:monospace; font-size:0.75rem;" placeholder="-----BEGIN PRIVATE KEY-----"></textarea>
+                </div>
+                
+                <div id="ssl-manual-status" style="margin-top:10px; font-size:0.85rem;"></div>
+            </div>
+            <div class="modal-footer" style="display:flex; justify-content:space-between;">
+                <button class="btn btn-secondary" onclick="validateManualSSL()">Validar Certificado</button>
+                <button class="btn btn-primary" onclick="saveManualSSL()">Salvar e Aplicar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: SSL DUCKDNS -->
+    <div id="modal-ssl-duckdns" class="modal">
+        <div class="modal-content" style="max-width:500px;">
+            <div class="modal-header">
+                <h3><i data-lucide="zap"></i> Certificado Automático DuckDNS</h3>
+                <button class="close-btn" onclick="closeModal('modal-ssl-duckdns')"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px;">Validação DNS-01 sem precisar abrir porta 80. O painel se comunica direto com o DuckDNS.</p>
+                
+                <div class="form-row" style="margin-bottom:12px;">
+                    <label class="form-label">Subdomínio (ex: meupainel.duckdns.org)</label>
+                    <input type="text" id="ssl-duckdns-domain" style="width:100%;">
+                </div>
+
+                <div class="form-row" style="margin-bottom:12px;">
+                    <label class="form-label">Token do DuckDNS</label>
+                    <input type="password" id="ssl-duckdns-token" style="width:100%;" placeholder="abcd-1234-efgh...">
+                </div>
+
+                <div class="form-row" style="margin-bottom:12px;">
+                    <label class="form-label">E-mail (para alertas de expiração)</label>
+                    <input type="email" id="ssl-duckdns-email" style="width:100%;">
+                </div>
+                
+                <div id="ssl-duckdns-status" style="margin-top:10px; font-size:0.85rem;"></div>
+            </div>
+            <div class="modal-footer" style="display:flex; justify-content:space-between;">
+                <button class="btn btn-secondary" onclick="testDuckDNSToken()">Testar Token</button>
+                <button class="btn btn-primary" onclick="issueDuckDNSCert()">Gerar Certificado</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: SSL AUTOASSINADO -->
+    <div id="modal-ssl-selfsigned" class="modal">
+        <div class="modal-content" style="max-width:400px;">
+            <div class="modal-header">
+                <h3><i data-lucide="lock"></i> Certificado Autoassinado</h3>
+                <button class="close-btn" onclick="closeModal('modal-ssl-selfsigned')"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px;">Gera um par de chaves usando OpenSSL localmente. Rápido e não depende de internet.</p>
+                
+                <div class="form-row" style="margin-bottom:12px;">
+                    <label class="form-label">Domínio ou IP</label>
+                    <input type="text" id="ssl-self-domain" value="localhost" style="width:100%;">
+                </div>
+                <div class="form-row" style="margin-bottom:12px;">
+                    <label class="form-label">Validade (Dias)</label>
+                    <input type="number" id="ssl-self-days" value="365" style="width:100%;">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-warning btn-block" onclick="createSelfSignedSSL()">Gerar e Aplicar Localmente</button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- MODAL: CLOUDFLARE RULE -->
+    <div id="modal-cloudflare-rule" class="modal">
+        <div class="modal-content" style="max-width:600px;">
+            <div class="modal-header">
+                <h3><i data-lucide="plus"></i> Nova Regra / Túnel Cloudflare</h3>
+                <button class="close-btn" onclick="closeModal('modal-cloudflare-rule')"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px;">Crie uma regra de proxy reverso. O Cloudflared vai rotear o tráfego externo para o serviço local.</p>
+                
+                <div class="form-row" style="margin-bottom:12px;">
+                    <label class="form-label">Nome da Regra</label>
+                    <input type="text" id="cf-rule-name" placeholder="ex: Meu App Web" style="width:100%;">
+                </div>
+
+                <div class="form-row" style="margin-bottom:12px;">
+                    <label class="form-label">Domínio Externo (Opcional)</label>
+                    <input type="text" id="cf-rule-domain" placeholder="ex: app.meudominio.com" style="width:100%;">
+                </div>
+
+                <div style="display:grid; grid-template-columns: 1fr 2fr; gap:12px; margin-bottom:12px;">
+                    <div class="form-row">
+                        <label class="form-label">Protocolo Interno</label>
+                        <select id="cf-rule-protocol" style="width:100%;">
+                            <option value="http">HTTP</option>
+                            <option value="https">HTTPS</option>
+                            <option value="tcp">TCP (SSH/MariaDB)</option>
+                        </select>
+                    </div>
+                    <div class="form-row">
+                        <label class="form-label">Destino Local (Host:Porta)</label>
+                        <input type="text" id="cf-rule-dest" placeholder="ex: 127.0.0.1:8088" style="width:100%;">
+                    </div>
+                </div>
+
+                <div class="form-row" style="margin-bottom:12px;">
+                    <label class="form-label">Caminho Público (Opcional, ex: /phpmyadmin)</label>
+                    <input type="text" id="cf-rule-path" placeholder="/" style="width:100%;">
+                </div>
+            </div>
+            <div class="modal-footer" style="display:flex; justify-content:flex-end; gap:10px;">
+                <button class="btn btn-secondary" onclick="closeModal('modal-cloudflare-rule')">Cancelar</button>
+                <button class="btn btn-primary" onclick="saveCloudflareRule()">Criar Regra</button>
+            </div>
+        </div>
+    </div>
+
 </body>
 </html>
 
