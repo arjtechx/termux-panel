@@ -175,4 +175,90 @@ function resolveTunnelContext() {
   };
 }
 
-module.exports = { detect, generate, validate, apply, restoreLastBackup, normalizeMode };
+function deriveSshHostname(domain) {
+  const clean = String(domain || '').trim().toLowerCase();
+  if (!clean) return '';
+  const parts = clean.split('.').filter(Boolean);
+  if (parts.length < 2) return `ssh.${clean}`;
+  if (parts[0] === 'ssh') return clean;
+  return `ssh.${parts.slice(1).join('.')}`;
+}
+
+function buildSshRoute(hostname) {
+  return {
+    name: 'SSH Termux',
+    hostname,
+    path: '',
+    routeType: 'ssh',
+    targetProtocol: 'ssh',
+    targetHost: 'localhost',
+    targetPort: 8022
+  };
+}
+
+function upsertSshRouteInInstance(inst, sshHostname) {
+  const currentRoutes = Array.isArray(inst.routes) ? inst.routes : [];
+  const sshRoute = buildSshRoute(sshHostname);
+  const kept = currentRoutes.filter((r) => {
+    const isSsh = String(r?.targetProtocol || '').toLowerCase() === 'ssh' || String(r?.routeType || '').toLowerCase() === 'ssh';
+    const sameHost = String(r?.hostname || '').toLowerCase() === sshHostname.toLowerCase();
+    return !(isSsh && sameHost);
+  });
+  return [...kept, sshRoute];
+}
+
+function ensureAutoconfigBaseInstance(domain, tunnelContext) {
+  const instances = cloudflaredManager.getInstances();
+  const existing = instances.find(i => i.id === AUTOCONFIG_INSTANCE_ID);
+  if (existing) return existing;
+  return cloudflaredManager.createInstance({
+    id: AUTOCONFIG_INSTANCE_ID,
+    name: AUTOCONFIG_INSTANCE_NAME,
+    type: 'service',
+    protected: true,
+    autoRestartOnSave: !!tunnelContext.tunnelId,
+    hostname: domain,
+    tunnelId: tunnelContext.tunnelId,
+    credentialsFile: tunnelContext.credentialsFile,
+    routes: []
+  });
+}
+
+function generateSshAccess({ domain }) {
+  const cleanDomain = String(domain || '').trim();
+  if (!cleanDomain) throw new Error('Domínio principal é obrigatório.');
+
+  const tunnelContext = resolveTunnelContext();
+  const sshHostname = deriveSshHostname(cleanDomain);
+  const base = ensureAutoconfigBaseInstance(cleanDomain, tunnelContext);
+  const nextRoutes = upsertSshRouteInInstance(base, sshHostname);
+
+  const payload = {
+    id: AUTOCONFIG_INSTANCE_ID,
+    name: AUTOCONFIG_INSTANCE_NAME,
+    type: 'service',
+    protected: true,
+    autoRestartOnSave: !!(base.tunnelId || tunnelContext.tunnelId),
+    hostname: base.hostname || cleanDomain,
+    tunnelId: base.tunnelId || tunnelContext.tunnelId,
+    credentialsFile: base.credentialsFile || tunnelContext.credentialsFile,
+    routes: nextRoutes
+  };
+
+  const updated = cloudflaredManager.updateInstance(AUTOCONFIG_INSTANCE_ID, payload);
+  logLine('services', `Acesso SSH gerado: ${sshHostname} -> ssh://localhost:8022`);
+
+  return {
+    success: true,
+    ssh: {
+      hostname: sshHostname,
+      service: 'ssh://localhost:8022',
+      cloudflaredAccessSsh: `cloudflared access ssh --hostname ${sshHostname}`,
+      proxyCommand: `ssh -o ProxyCommand=\"cloudflared access ssh --hostname ${sshHostname}\" USUARIO@${sshHostname}`,
+      termiusBridge: `cloudflared access tcp --hostname ${sshHostname} --url 127.0.0.1:2222`
+    },
+    instance: updated
+  };
+}
+
+module.exports = { detect, generate, validate, apply, restoreLastBackup, normalizeMode, generateSshAccess };

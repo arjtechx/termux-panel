@@ -27,6 +27,16 @@ router.post('/generate', async (req, res) => {
   }
 });
 
+router.post('/generate-ssh', async (req, res) => {
+  try {
+    const domain = String(req.body.domain || '').trim();
+    if (!domain) throw new Error('Domínio principal é obrigatório.');
+    res.json(autoConfig.generateSshAccess({ domain }));
+  } catch (e) {
+    res.status(400).json({ success: false, error: e.message });
+  }
+});
+
 router.post('/validate', async (req, res) => {
   try {
     const current = readJson(FILES.tunnelConfig, {});

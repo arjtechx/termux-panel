@@ -3829,6 +3829,41 @@ async function acGenerateRoutes() {
     }
 }
 
+async function acGenerateSshAccess() {
+    const payload = acGetPayload();
+    if (!payload.domain) return showToast('Informe o domínio principal.', 'warning');
+    try {
+        const res = await fetch(`${API_BASE}/autoconfig/generate-ssh`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ domain: payload.domain })
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Falha ao gerar acesso SSH.');
+
+        const ssh = data.ssh || {};
+        const logs = [
+            `SSH Hostname: ${ssh.hostname || '-'}`,
+            `Destino: ${ssh.service || 'ssh://localhost:8022'}`,
+            '',
+            'Cloudflare Access (terminal):',
+            ssh.cloudflareAccessSsh || '',
+            '',
+            'SSH com ProxyCommand:',
+            ssh.proxyCommand || '',
+            '',
+            'Bridge para Termius:',
+            ssh.termiusBridge || '',
+            'No Termius: Host 127.0.0.1 | Porta 2222'
+        ].join('\n');
+        acSetLogs(logs);
+        showToast(`Acesso SSH gerado para ${ssh.hostname || payload.domain}.`, 'success');
+        try { await cfFetchInstances(); } catch (_) {}
+    } catch (e) {
+        showToast('Erro ao gerar acesso SSH: ' + e.message, 'error');
+    }
+}
+
 async function acValidateConfig() {
     try {
         const res = await fetch(`${API_BASE}/autoconfig/validate`, { method:'POST' });
@@ -3912,6 +3947,7 @@ window.cfCloudflareLogin = cfCloudflareLogin;
 window.cfRemoveLoginConfig = cfRemoveLoginConfig;
 window.acDetectServices = acDetectServices;
 window.acGenerateRoutes = acGenerateRoutes;
+window.acGenerateSshAccess = acGenerateSshAccess;
 window.acValidateConfig = acValidateConfig;
 window.acApplyConfig = acApplyConfig;
 window.acRestoreBackup = acRestoreBackup;
