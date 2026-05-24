@@ -3313,6 +3313,33 @@ function cfBuildServicePreview(route) {
     return `${protocol}://${host}:${port}`;
 }
 
+function cfIsSshRoute(route) {
+    const routeType = (route?.routeType || '').toLowerCase();
+    const protocol = (route?.targetProtocol || '').toLowerCase();
+    return routeType === 'ssh' || protocol === 'ssh';
+}
+
+function cfBuildPublicAccessPreview(route) {
+    const hostname = route?.hostname || 'seu-host.com';
+    const routeType = (route?.routeType || '').toLowerCase();
+    const protocol = (route?.targetProtocol || 'http').toLowerCase();
+    const isHttp = routeType === 'http' || routeType === 'https' || protocol === 'http' || protocol === 'https';
+    if (cfIsSshRoute(route)) return hostname;
+    if (!isHttp) return hostname;
+    return `https://${hostname}${route.path || '/'}`;
+}
+
+function cfCopyToClipboard(text, okMessage = 'Comando copiado!') {
+    if (!text) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text)
+            .then(() => showToast(okMessage, 'success'))
+            .catch(() => showToast('Falha ao copiar comando.', 'warning'));
+        return;
+    }
+    showToast('Clipboard indisponível neste navegador.', 'warning');
+}
+
 function cfNormalizeRouteForEditor(route) {
     if (!route) return route;
     const protocol = (route.targetProtocol || 'http').toLowerCase();
@@ -3326,6 +3353,10 @@ function cfNormalizeRouteForEditor(route) {
         routeType: cfNormalizeRouteType(route.routeType, protocol),
         service: route.service || ''
     };
+    if (cfIsSshRoute(normalized)) {
+        normalized.path = '';
+        if (!normalized.targetPort || Number(normalized.targetPort) <= 0) normalized.targetPort = 8022;
+    }
     normalized.service = cfBuildServicePreview(normalized);
     return normalized;
 }
@@ -3446,10 +3477,14 @@ function cfRenderTempRoutes() {
         const routeType = r.routeType || 'http';
         const isHttpRoute = routeType === 'http' || routeType === 'https';
         const isTcpRoute = !isHttpRoute;
+        const isSshRoute = cfIsSshRoute(r);
         const pathDisabled = isTcpRoute ? 'disabled' : '';
         const pathStyle = isTcpRoute ? 'opacity:0.6; cursor:not-allowed;' : '';
         const servicePreview = cfBuildServicePreview(r);
-        const publicPreview = `https://${r.hostname || 'seu-host.com'}${isTcpRoute ? '/' : (r.path || '/')}`;
+        const publicPreview = cfBuildPublicAccessPreview(r);
+        const sshHost = r.hostname || 'ssh.seu-dominio.com';
+        const sshCmd = `ssh -o ProxyCommand="cloudflared access ssh --hostname ${sshHost}" USUARIO@${sshHost}`;
+        const sshTcpCmd = `cloudflared access tcp --hostname ${sshHost} --url 127.0.0.1:2222`;
 
         return `
         <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:10px; background:var(--bg-primary); padding:10px; border-radius:6px; border:1px solid var(--border-color);">
@@ -3467,7 +3502,7 @@ function cfRenderTempRoutes() {
             </div>
             <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
                 <input type="text" placeholder="Host publico (ex: panel.arjtechbr.site)" value="${cfEscape(r.hostname || '')}" onchange="cfUpdateTempRoute(${index}, 'hostname', this.value)" style="flex:2; min-width:220px; padding:6px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
-                <input type="text" placeholder="Path publico (ex: /api/)" value="${cfEscape(r.path || '/')}" onchange="cfUpdateTempRoute(${index}, 'path', this.value)" ${pathDisabled} style="flex:1; min-width:140px; padding:6px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color); ${pathStyle}">
+                <input type="text" placeholder="${isSshRoute ? 'Path não aplicável para SSH' : 'Path publico (ex: /api/)'}" value="${cfEscape(isSshRoute ? '' : (r.path || '/'))}" onchange="cfUpdateTempRoute(${index}, 'path', this.value)" ${pathDisabled} style="flex:1; min-width:140px; padding:6px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color); ${pathStyle}">
             </div>
             <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
                 <select onchange="cfUpdateTempRoute(${index}, 'targetProtocol', this.value)" style="flex:1; min-width:120px; padding:6px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
@@ -3478,7 +3513,22 @@ function cfRenderTempRoutes() {
             </div>
             <div style="display:flex; flex-direction:column; gap:4px;">
                 <div style="font-size:0.8rem; color:var(--text-muted);">Destino final: <code>${cfEscape(servicePreview)}</code></div>
-                <div style="font-size:0.78rem; color:var(--text-muted);">URL publica: <code>${cfEscape(publicPreview)}</code> (sem porta interna)</div>
+                ${
+                    isSshRoute
+                        ? `<div style="font-size:0.78rem; color:var(--warning);">Hostname público: <code>${cfEscape(publicPreview)}</code></div>
+                           <div style="font-size:0.78rem; color:var(--danger);">SSH via Cloudflare Tunnel não é acessado pelo navegador. Não use <code>https://${cfEscape(publicPreview)}/</code> nem porta 22 direta no Termius.</div>
+                           <div style="font-size:0.78rem; color:var(--text-muted);">Use Cloudflare Access com:</div>
+                           <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+                               <code style="font-size:0.75rem;">${cfEscape(sshCmd)}</code>
+                               <button type="button" class="btn btn-secondary btn-sm" onclick="cfCopyToClipboard('${cfEscapeAttr(sshCmd)}', 'Comando SSH copiado!')">Copiar</button>
+                           </div>
+                           <div style="font-size:0.78rem; color:var(--text-muted); margin-top:4px;">Para Termius: execute localmente e conecte em 127.0.0.1:2222</div>
+                           <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+                               <code style="font-size:0.75rem;">${cfEscape(sshTcpCmd)}</code>
+                               <button type="button" class="btn btn-secondary btn-sm" onclick="cfCopyToClipboard('${cfEscapeAttr(sshTcpCmd)}', 'Comando Termius copiado!')">Copiar</button>
+                           </div>`
+                        : `<div style="font-size:0.78rem; color:var(--text-muted);">URL publica: <code>${cfEscape(publicPreview)}</code> (sem porta interna)</div>`
+                }
             </div>
         </div>
         `;
@@ -3506,14 +3556,20 @@ function cfUpdateTempRoute(index, field, value) {
             const protocolFromType = (value || 'http').toLowerCase();
             cfTempRoutes[index].targetProtocol = protocolFromType;
             if (protocolFromType !== 'http' && protocolFromType !== 'https') {
-                cfTempRoutes[index].path = '/';
+                cfTempRoutes[index].path = protocolFromType === 'ssh' ? '' : '/';
+            }
+            if (protocolFromType === 'ssh' && (!cfTempRoutes[index].targetPort || Number(cfTempRoutes[index].targetPort) <= 0)) {
+                cfTempRoutes[index].targetPort = 8022;
             }
         }
         if (field === 'targetProtocol') {
             const protocol = (value || '').toLowerCase();
             cfTempRoutes[index].routeType = protocol || 'http';
             if (protocol !== 'http' && protocol !== 'https') {
-                cfTempRoutes[index].path = '/';
+                cfTempRoutes[index].path = protocol === 'ssh' ? '' : '/';
+            }
+            if (protocol === 'ssh' && (!cfTempRoutes[index].targetPort || Number(cfTempRoutes[index].targetPort) <= 0)) {
+                cfTempRoutes[index].targetPort = 8022;
             }
         }
         cfTempRoutes[index] = cfNormalizeRouteForEditor(cfTempRoutes[index]);
@@ -3547,6 +3603,9 @@ async function cfSubmitInstance(e) {
         if (!route.targetHost) return showToast('Cada rota precisa de host interno.', 'warning');
         if (!route.targetPort || Number(route.targetPort) < 1 || Number(route.targetPort) > 65535) {
             return showToast('Cada rota precisa de porta interna valida (1-65535).', 'warning');
+        }
+        if (cfIsSshRoute(route)) {
+            route.path = '';
         }
     }
 
@@ -3673,6 +3732,15 @@ async function cfRemoveLoginConfig() {
 
 function cfEscape(str) {
     return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function cfEscapeAttr(str) {
+    return (str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
 }
 
 function cfShowLogsModal(id, name) {
@@ -4734,8 +4802,14 @@ function cfrRenderRoutes(routes) {
     const sorted = [...routes].sort((a, b) => (a.order || 0) - (b.order || 0));
 
     listEl.innerHTML = sorted.map((r, idx) => {
-        const localUrl = `${r.targetProtocol}://${r.targetHost}:${r.targetPort}${r.path}`;
-        const publicUrl = `https://${r.hostname}${r.path}`;
+        const protocol = (r.targetProtocol || 'http').toLowerCase();
+        const isSsh = protocol === 'ssh';
+        const isHttpLike = protocol === 'http' || protocol === 'https';
+        const localUrl = `${r.targetProtocol}://${r.targetHost}:${r.targetPort}${isHttpLike ? (r.path || '/') : ''}`;
+        const publicUrl = isSsh ? '' : `https://${r.hostname}${r.path || '/'}`;
+        const publicAccessLabel = isSsh
+            ? `<span style="font-family: monospace; font-size: 0.85rem; font-weight: 600;">${cfEscape(r.hostname)}</span><div style="font-size: 0.72rem; color: var(--text-muted);">Uso: SSH via Cloudflare Access</div>`
+            : `<a href="${publicUrl}" target="_blank" class="text-primary" style="text-decoration: none; font-family: monospace; font-size: 0.85rem; font-weight: 600;">${cfEscape(r.hostname)}</a>`;
 
         const isFirst = idx === 0;
         const isLast = idx === sorted.length - 1;
@@ -4744,7 +4818,9 @@ function cfrRenderRoutes(routes) {
         const downBtn = `<button class="btn btn-secondary btn-sm" style="padding: 3px 6px;" onclick="cfrMoveRouteDown('${r.id}')" ${isLast ? 'disabled style="opacity:0.4; cursor:not-allowed;"' : ''} title="Mover para Baixo">â–¼</button>`;
 
         const testLocalBtn = `<button class="btn btn-secondary btn-sm" style="padding: 4px 8px;" id="btn-test-local-${r.id}" onclick="cfrTestRoute('${r.id}', '${localUrl}')" title="Testar ConexÃ£o Local"><i data-lucide="activity"></i> Local</button>`;
-        const testPublicBtn = `<button class="btn btn-secondary btn-sm" style="padding: 4px 8px;" id="btn-test-pub-${r.id}" onclick="cfrTestPublicUrl('${r.id}', '${publicUrl}')" title="Testar URL PÃºblica"><i data-lucide="globe"></i> PÃºblica</button>`;
+        const testPublicBtn = isSsh
+            ? ''
+            : `<button class="btn btn-secondary btn-sm" style="padding: 4px 8px;" id="btn-test-pub-${r.id}" onclick="cfrTestPublicUrl('${r.id}', '${publicUrl}')" title="Testar URL PÃºblica"><i data-lucide="globe"></i> PÃºblica</button>`;
 
         const editBtn = `<button class="btn btn-secondary btn-sm" style="padding: 4px 8px;" onclick="cfrOpenRouteModal('${r.id}')" title="Editar"><i data-lucide="edit-2"></i></button>`;
         const deleteBtn = `<button class="btn btn-danger btn-sm" style="padding: 4px 8px;" onclick="cfrDeleteRoute('${r.id}')" title="Excluir"><i data-lucide="trash-2"></i></button>`;
@@ -4770,14 +4846,11 @@ function cfrRenderRoutes(routes) {
                     </div>
                 </td>
                 <td style="padding: 12px 16px; font-weight: 500; vertical-align: middle;">${cfEscape(r.name)}</td>
-                <td style="padding: 12px 16px; vertical-align: middle;">
-                    <a href="${publicUrl}" target="_blank" class="text-primary" style="text-decoration: none; font-family: monospace; font-size: 0.85rem; font-weight: 600;">
-                        ${cfEscape(r.hostname)}
-                    </a>
-                </td>
-                <td style="padding: 12px 16px; vertical-align: middle;"><code style="background: var(--bg-secondary); padding: 2px 6px; border-radius: 4px; font-size: 0.85rem;">${cfEscape(r.path)}</code></td>
+                <td style="padding: 12px 16px; vertical-align: middle;">${publicAccessLabel}</td>
+                <td style="padding: 12px 16px; vertical-align: middle;"><code style="background: var(--bg-secondary); padding: 2px 6px; border-radius: 4px; font-size: 0.85rem;">${cfEscape(isSsh ? 'N/A (SSH)' : (r.path || '/'))}</code></td>
                 <td style="padding: 12px 16px; font-family: monospace; font-size: 0.85rem; vertical-align: middle;">
                     ${localUrl}
+                    ${isSsh ? `<div style="margin-top: 6px; font-size: 0.72rem; color: var(--warning);">Não use https://${cfEscape(r.hostname)}/ nem porta 22 direta.</div>` : ''}
                     <div id="cfr-test-result-${r.id}" style="margin-top: 4px; font-size: 0.75rem;"></div>
                 </td>
                 <td style="padding: 12px 16px; vertical-align: middle;">${statusToggle}</td>
@@ -4858,7 +4931,15 @@ function cfrUpdateUrlPreview() {
     
     const previewEl = document.getElementById('cfrUrlPreview');
     if (previewEl) {
-        previewEl.value = `${protocol}://127.0.0.1:${port}${path}`;
+        const isHttpLike = protocol === 'http' || protocol === 'https';
+        previewEl.value = `${protocol}://127.0.0.1:${port}${isHttpLike ? path : ''}`;
+    }
+    const pathInput = document.getElementById('cfrPath');
+    if (pathInput) {
+        const isSsh = protocol === 'ssh';
+        pathInput.disabled = isSsh;
+        pathInput.placeholder = isSsh ? 'Path não aplicável para SSH' : 'Ex: / ou /phpmyadmin/';
+        if (isSsh) pathInput.value = '';
     }
 }
 
@@ -4879,8 +4960,13 @@ async function cfrSubmitRoute(event) {
 
     if (!payload.name) return showToast('Insira o nome do serviÃ§o.', 'warning');
     if (!payload.hostname) return showToast('Insira o domÃ­nio pÃºblico.', 'warning');
-    if (!payload.path) return showToast('Insira o caminho (path).', 'warning');
+    if ((payload.targetProtocol === 'http' || payload.targetProtocol === 'https') && !payload.path) {
+        return showToast('Insira o caminho (path).', 'warning');
+    }
     if (!payload.targetPort) return showToast('Insira a porta local alvo.', 'warning');
+    if (payload.targetProtocol === 'ssh') {
+        payload.path = '';
+    }
 
     if (payload.hostname.includes(':')) {
         return showToast('O domÃ­nio pÃºblico nÃ£o deve conter portas (:8080, etc).', 'warning');
@@ -5172,13 +5258,18 @@ async function cfrApplyConfigYml() {
         setTimeout(async () => {
             const activeRoutes = cfrRoutesListCached.filter(r => r.enabled);
             for (const r of activeRoutes) {
-                const localUrl = `${r.targetProtocol}://${r.targetHost}:${r.targetPort}${r.path}`;
-                const publicUrl = `https://${r.hostname}${r.path}`;
+                const protocol = String(r.targetProtocol || '').toLowerCase();
+                const isHttpLike = protocol === 'http' || protocol === 'https';
+                const isSsh = protocol === 'ssh';
+                const localUrl = `${r.targetProtocol}://${r.targetHost}:${r.targetPort}${isHttpLike ? (r.path || '/') : ''}`;
+                const publicUrl = `https://${r.hostname}${r.path || '/'}`;
                 
                 // Test local connection
                 await cfrTestRoute(r.id, localUrl);
                 // Test public connection
-                await cfrTestPublicUrl(r.id, publicUrl);
+                if (!isSsh) {
+                    await cfrTestPublicUrl(r.id, publicUrl);
+                }
             }
             // Run status check again to update the final warning/success display
             cfrCheckStatus();
