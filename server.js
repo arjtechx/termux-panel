@@ -89,6 +89,42 @@ app.use(session({
 const { checkAuth } = require('./src/utils/auth');
 
 app.use(checkAuth);
+
+// Proxy local do phpMyAdmin para evitar 404 em /phpmyadmin no painel/tunel.
+app.use('/phpmyadmin', (req, res) => {
+    const upstreamHost = '127.0.0.1';
+    const upstreamPort = 8080;
+    const targetPath = req.originalUrl || req.url || '/phpmyadmin';
+
+    const proxyReq = http.request({
+        host: upstreamHost,
+        port: upstreamPort,
+        method: req.method,
+        path: targetPath,
+        headers: {
+            ...req.headers,
+            host: `${upstreamHost}:${upstreamPort}`
+        }
+    }, (proxyRes) => {
+        res.status(proxyRes.statusCode || 502);
+        Object.entries(proxyRes.headers || {}).forEach(([key, value]) => {
+            if (value !== undefined) res.setHeader(key, value);
+        });
+        proxyRes.pipe(res);
+    });
+
+    proxyReq.on('error', (error) => {
+        if (!res.headersSent) {
+            res.status(502).json({
+                error: 'phpMyAdmin local indisponivel em 127.0.0.1:8080',
+                details: error.message
+            });
+        }
+    });
+
+    req.pipe(proxyReq);
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 // --- Auth Routes ---
 app.post('/api/login', (req, res) => {
