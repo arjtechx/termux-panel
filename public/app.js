@@ -3873,6 +3873,8 @@ async function acGenerateSshAccessFromModal() {
         const logs = [
             `SSH Hostname: ${ssh.hostname || '-'}`,
             `Destino: ${ssh.service || 'ssh://localhost:8022'}`,
+            `Instância: ${data.instance?.name || 'Autoconfiguração do Sistema'} (${data.started ? 'iniciada' : 'salva'})`,
+            `Status start: ${data.startMessage || (data.started ? 'Iniciada automaticamente.' : 'Sem início automático.')}`,
             '',
             'Cloudflare Access (terminal):',
             ssh.cloudflaredAccessSsh || '',
@@ -3885,7 +3887,7 @@ async function acGenerateSshAccessFromModal() {
             'No Termius: Host 127.0.0.1 | Porta 2222'
         ].join('\n');
         acSetLogs(logs);
-        showToast(`Acesso SSH gerado para ${ssh.hostname || domain}.`, 'success');
+        showToast(`Acesso SSH gerado para ${ssh.hostname || domain}${data.started ? ' e instância iniciada.' : '.'}`, data.started ? 'success' : 'warning');
         acCloseSshAssistModal();
         try { await cfFetchInstances(); } catch (_) {}
     } catch (e) {

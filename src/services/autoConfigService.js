@@ -5,6 +5,7 @@ const { buildNginxConfig, writeNginxConfig } = require('./nginxService');
 const { validateAll, run } = require('./validationService');
 const { createBackup, restoreLastBackup } = require('./backupService');
 const cloudflaredManager = require('../../modules/cloudflared/manager');
+const cloudflaredProcess = require('../../modules/cloudflared/process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -262,8 +263,24 @@ function generateSshAccess({ domain, sshHostname, targetHost, targetPort }) {
   const updated = cloudflaredManager.updateInstance(AUTOCONFIG_INSTANCE_ID, payload);
   logLine('services', `Acesso SSH gerado: ${desiredHostname} -> ssh://${desiredTargetHost}:${desiredTargetPort}`);
 
+  let started = false;
+  let startMessage = '';
+  if (updated.tunnelId || updated.tunnelName) {
+    try {
+      const startRes = cloudflaredProcess.startInstance(updated);
+      started = !!startRes?.success;
+      startMessage = started ? 'Instância iniciada automaticamente.' : (startRes?.error || 'Não foi possível iniciar a instância.');
+    } catch (e) {
+      startMessage = e.message;
+    }
+  } else {
+    startMessage = 'Instância salva, mas sem tunnelId/tunnelName para iniciar automaticamente.';
+  }
+
   return {
     success: true,
+    started,
+    startMessage,
     ssh: {
       hostname: desiredHostname,
       service: `ssh://${desiredTargetHost}:${desiredTargetPort}`,
