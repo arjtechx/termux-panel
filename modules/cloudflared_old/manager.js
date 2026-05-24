@@ -397,7 +397,7 @@ function getTunnel(id) {
 
 function updateTunnel(id, input) {
     const current = readJson(metaPath(id), null);
-    if (!current) throw new Error('TÃºnel nÃ£o encontrado.');
+    if (!current) throw new Error('Túnel não encontrado.');
 
     const wasOnline = getStatus(id).online;
     if (wasOnline) stopTunnel(id);
@@ -410,7 +410,7 @@ function updateTunnel(id, input) {
     };
 
     saveTunnel(next);
-    appendLog(logPath(id), `ConfiguraÃ§Ã£o atualizada: ${next.publicUrl} -> ${next.localService}`);
+    appendLog(logPath(id), `Configuração atualizada: ${next.publicUrl} -> ${next.localService}`);
     if (wasOnline) startTunnel(id);
 
     return { ...next, ...getStatus(id), wasOnline };
@@ -468,7 +468,7 @@ async function startLogin(io, options = {}) {
 
     const version = await runCommand('cloudflared', ['--version']);
     if (version.code !== 0) {
-        const message = `cloudflared nÃ£o encontrado ou nÃ£o executou corretamente: ${version.stderr || version.stdout || 'verifique a instalacao'}`;
+        const message = `cloudflared não encontrado ou não executou corretamente: ${version.stderr || version.stdout || 'verifique a instalacao'}`;
         emitLoginText(io, `${message}\n`);
         emitLoginStatus(io, {
             state: 'error',

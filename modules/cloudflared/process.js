@@ -130,8 +130,9 @@ function startInstance(instance, isTempReplica = false) {
     
     if (instance.configPath) {
         // cloudflared exige tunnelId no config ou como argumento final do "tunnel run".
-        if (instance.tunnelId) {
-            args.push('--config', configToRun, 'tunnel', 'run', instance.tunnelId);
+        const tunnelRef = instance.tunnelId || instance.tunnelName;
+        if (tunnelRef) {
+            args.push('--config', configToRun, 'tunnel', 'run', tunnelRef);
         } else {
             return { success: false, error: 'Instância sem tunnelId. Faça login e vincule/crie o túnel antes de iniciar.' };
         }

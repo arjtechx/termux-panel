@@ -42,7 +42,7 @@ function runCmdTimeout(cmd, timeoutMs = 5000, needsRoot = false) {
     return new Promise((resolve, reject) => {
         if (needsRoot) {
             if (!systemConfig.has_root) {
-                return reject(new Error('Esta aÃ§Ã£o requer privilÃ©gios de SuperusuÃ¡rio (Root).'));
+                return reject(new Error('Esta ação requer privilégios de Superusuário (Root).'));
             }
             if (systemConfig.is_termux) {
                 cmd = `su -c ${JSON.stringify(cmd)}`;

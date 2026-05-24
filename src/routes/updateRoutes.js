@@ -446,7 +446,7 @@ function getCompatInfo(tag, installed) {
     if (tagClean === installed) {
         return {
             compatStatus: 'compatible',
-            compatMessage: 'Esta Ã© a sua versÃ£o ativa atual.'
+            compatMessage: 'Esta é a sua versão ativa atual.'
         };
     }
 
@@ -454,13 +454,13 @@ function getCompatInfo(tag, installed) {
     if (cmp < 0) {
         return {
             compatStatus: 'breaking',
-            compatMessage: 'Aviso: Downgrade. Recursos novos do painel poderÃ£o ficar indisponÃ­veis.'
+            compatMessage: 'Aviso: Downgrade. Recursos novos do painel poderão ficar indisponíveis.'
         };
     }
 
     return {
         compatStatus: 'compatible',
-        compatMessage: 'Upgrade compatÃ­vel e recomendado.'
+        compatMessage: 'Upgrade compatível e recomendado.'
     };
 }
 
@@ -521,7 +521,7 @@ async function getRemoteVersions(repo, installed) {
     }
 
     if (!releases.length && !tags.length && releaseError && tagError) {
-        throw new Error(`GitHub indisponÃ­vel: ${releaseError.message}; tags indisponÃ­veis: ${tagError.message}`);
+        throw new Error(`GitHub indisponível: ${releaseError.message}; tags indisponíveis: ${tagError.message}`);
     }
 
     const byTag = new Map();
@@ -546,7 +546,7 @@ async function getRemoteVersions(repo, installed) {
             tag,
             name: `Termux Panel ${tag}`,
             publishedAt: null,
-            body: 'VersÃ£o encontrada nas tags do GitHub.',
+            body: 'Versão encontrada nas tags do GitHub.',
             source: 'tag',
             hasRelease: false,
             ...getCompatInfo(tag, installed)
@@ -1012,7 +1012,7 @@ router.get('/api/update/install', async (req, res) => {
                     sendLog('OK', `Tag mais recente encontrada: ${resolvedTag}`);
                 }
             } catch(e) {
-                sendLog('WARN', `NÃ£o foi possÃ­vel listar tags: ${e.message}`);
+                sendLog('WARN', `Não foi possível listar tags: ${e.message}`);
             }
         }
         
@@ -1084,7 +1084,7 @@ router.get('/api/update/install', async (req, res) => {
                 return res.end();
             }
 
-            sendLog('WARN', `Asset da release indisponÃ­vel. Tentando baixar o tarball da tag ${resolvedTag}...`);
+            sendLog('WARN', `Asset da release indisponível. Tentando baixar o tarball da tag ${resolvedTag}...`);
             try {
                 const writer = fs.createWriteStream(tempTarPath);
                 const response = await axios({

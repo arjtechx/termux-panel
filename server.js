@@ -78,6 +78,10 @@ function readAuthConfig() {
 
 app.use(cors());
 app.use(express.json());
+app.use((req, res, next) => {
+    res.charset = 'utf-8';
+    next();
+});
 app.use(session({
     secret: 'termux-cpanel-secret',
     resave: false,
