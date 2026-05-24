@@ -3156,6 +3156,15 @@ async function createHostingService(e) {
                     showToast(`Aviso: ${res.cfWarning}`, 'warning');
                 }, 1000);
             }
+            if (res.dnsStatus && tunnelUrl) {
+                setTimeout(() => {
+                    if (res.dnsStatus.ok) {
+                        showToast(`DNS OK para ${res.dnsStatus.host}`, 'success');
+                    } else {
+                        showToast(`DNS ainda não propagou para ${res.dnsStatus.host}: ${res.dnsStatus.message || 'aguarde alguns minutos.'}`, 'warning');
+                    }
+                }, 1400);
+            }
             closeHostingModal();
             fetchHostingServices();
         } else {
@@ -3837,7 +3846,55 @@ document.addEventListener('DOMContentLoaded', () => {
     forceCloseAllModalsOnBoot();
     runBootSequence();
     initFileBrowserShortcuts();
+    installMojibakeFixes();
 });
+
+function normalizeMojibakeText(input) {
+    if (typeof input !== 'string' || !input) return input;
+    let s = input;
+    const fixes = [
+        ['Ã¡', 'á'], ['Ã¢', 'â'], ['Ã£', 'ã'], ['Ã©', 'é'], ['Ãª', 'ê'], ['Ã­', 'í'], ['Ã³', 'ó'], ['Ã´', 'ô'], ['Ãµ', 'õ'], ['Ãº', 'ú'], ['Ã§', 'ç'],
+        ['Ã', 'Á'], ['Ã‰', 'É'], ['Ã“', 'Ó'], ['Ãš', 'Ú'], ['Ã‡', 'Ç'],
+        ['NÃ£o', 'Não'], ['nÃ£o', 'não'], ['jÃ¡', 'já'], ['estÃ¡', 'está'], ['serÃ¡', 'será'],
+        ['configuraÃ§Ã£o', 'configuração'], ['conexÃ£o', 'conexão'], ['domÃ­nio', 'domínio'], ['pÃºblico', 'público'],
+        ['invÃ¡lido', 'inválido'], ['serviÃ§o', 'serviço'], ['ServiÃ§o', 'Serviço'], ['instÃ¢ncia', 'instância'], ['InstÃ¢ncia', 'Instância'],
+        ['usuÃ¡rio', 'usuário'], ['UsuÃ¡rio', 'Usuário'], ['validaÃ§Ã£o', 'validação'], ['aplicaÃ§Ã£o', 'aplicação'], ['inicializaÃ§Ã£o', 'inicialização'],
+        ['â€”', '—'], ['â€“', '–'], ['â€˜', '‘'], ['â€™', '’'], ['â€œ', '“'], ['â€', '”'], ['â€¢', '•'], ['â€¦', '…'],
+        ['Â°', '°'], ['Âº', 'º'], ['Âª', 'ª'],
+        ['ðŸš€', '🚀'], ['ðŸŒ', '🌐'], ['ðŸ“œ', '📜'], ['âœ…', '✅'], ['âŒ', '❌'], ['âš ï¸', '⚠️']
+    ];
+    for (const [from, to] of fixes) s = s.split(from).join(to);
+    return s;
+}
+
+function fixDomTextMojibake(root) {
+    if (!root) return;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) {
+        if (!node.nodeValue) continue;
+        const fixed = normalizeMojibakeText(node.nodeValue);
+        if (fixed !== node.nodeValue) node.nodeValue = fixed;
+    }
+}
+
+function installMojibakeFixes() {
+    fixDomTextMojibake(document.body);
+
+    const patchToast = () => {
+        if (typeof window.showToast !== 'function' || window.showToast.__mojibakePatched) return;
+        const original = window.showToast;
+        const wrapped = function(message, type, duration) {
+            return original.call(this, normalizeMojibakeText(message), type, duration);
+        };
+        wrapped.__mojibakePatched = true;
+        window.showToast = wrapped;
+    };
+
+    patchToast();
+    setTimeout(patchToast, 800);
+    setTimeout(() => fixDomTextMojibake(document.body), 1000);
+}
 
 // ============================================================
 //  FILEBROWSER DYNAMIC SHORTCUTS & LOADING SEQUENCE

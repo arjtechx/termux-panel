@@ -93,6 +93,22 @@ function normalizeRoutes(routes) {
     return routes.map(r => normalizeRoute(r || {}));
 }
 
+function applyDnsRoutesForInstance(inst) {
+    const warnings = [];
+    if (!inst || !inst.tunnelId) return warnings;
+    const binary = processManager.getCloudflaredBinaryPath();
+    if (!inst.routes || !Array.isArray(inst.routes)) return warnings;
+    inst.routes.forEach(route => {
+        if (!route || !route.hostname) return;
+        try {
+            execSync(`"${binary}" tunnel route dns "${inst.tunnelId}" "${route.hostname}"`, { stdio: 'ignore' });
+        } catch (e) {
+            warnings.push(`Falha ao vincular DNS ${route.hostname}: ${e.message}`);
+        }
+    });
+    return warnings;
+}
+
 function generateYamlForInstance(instance, tempNext = false) {
     let yaml = `# Configuração automática gerada pelo Termux Panel - Instância: ${instance.name}\n`;
     
@@ -186,6 +202,10 @@ function createInstance(data) {
     }
 
     generateYamlForInstance(newInstance);
+    const dnsWarnings = applyDnsRoutesForInstance(newInstance);
+    if (dnsWarnings.length) {
+        newInstance.dnsWarnings = dnsWarnings;
+    }
     instances.push(newInstance);
     saveInstances(instances);
     return newInstance;
@@ -211,18 +231,8 @@ function updateInstance(id, data) {
     generateYamlForInstance(inst); // Regenerate yaml
     
     // Roteamento DNS automático para novas rotas
-    if (inst.tunnelId) {
-        const binary = processManager.getCloudflaredBinaryPath();
-        if (inst.routes && Array.isArray(inst.routes)) {
-            inst.routes.forEach(route => {
-                if (route.hostname) {
-                    try {
-                        execSync(`"${binary}" tunnel route dns "${inst.tunnelId}" "${route.hostname}"`, { stdio: 'ignore' });
-                    } catch (e) {}
-                }
-            });
-        }
-    }
+    const dnsWarnings = applyDnsRoutesForInstance(inst);
+    if (dnsWarnings.length) inst.dnsWarnings = dnsWarnings;
 
     instances[idx] = inst;
     saveInstances(instances);

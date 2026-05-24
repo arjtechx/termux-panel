@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { exec, spawn } = require('child_process');
 const net = require('net');
+const dns = require('dns').promises;
 const systemConfig = require('../utils/env');
 const { runCmd, chownToUser } = require('../utils/shell');
 
@@ -149,6 +150,23 @@ function safeServerName(value) {
 
 function nginxPath(value) {
     return `"${String(value).replace(/\\/g, '/').replace(/"/g, '\\"')}"`;
+}
+
+async function resolveDnsStatus(hostname) {
+    const host = String(hostname || '').trim().toLowerCase();
+    if (!host) return { ok: false, host, message: 'Hostname vazio.' };
+    try {
+        const [a4, a6] = await Promise.allSettled([dns.resolve4(host), dns.resolve6(host)]);
+        const ipv4 = a4.status === 'fulfilled' ? (a4.value || []) : [];
+        const ipv6 = a6.status === 'fulfilled' ? (a6.value || []) : [];
+        const records = [...ipv4, ...ipv6];
+        if (records.length > 0) {
+            return { ok: true, host, records };
+        }
+        return { ok: false, host, message: 'Sem registros A/AAAA ainda.' };
+    } catch (e) {
+        return { ok: false, host, message: e.message };
+    }
 }
 
 async function reloadOrStartNginx(requireRoot = false) {
@@ -428,6 +446,11 @@ router.post('/', async (req, res) => {
                         ]
                     });
                     cfTunnelInstanceId = newInst.id;
+                    if (!newInst.tunnelId) {
+                        cfWarning = 'Serviço criado, mas o túnel não recebeu tunnelId. Verifique login Cloudflare e permissões DNS da zona.';
+                    } else if (newInst.dnsWarnings && newInst.dnsWarnings.length) {
+                        cfWarning = `Serviço criado, mas houve falha ao criar DNS: ${newInst.dnsWarnings.join(' | ')}`;
+                    }
                     
                     // Start the newly created instance
                     try {
@@ -533,7 +556,10 @@ router.post('/', async (req, res) => {
         // Responde imediatamente para evitar timeout em acesso via domínio tunelado.
         // Pós-ações rodam assíncronas em background.
         const postActions = { scheduled: true, nginxRestarted: false, tunnelRestarted: false };
-        res.json({ success: true, service: newService, cfWarning, postActions });
+        const dnsStatus = (newService.cloudflareTunnel && newService.cloudflareTunnel.hostname)
+            ? await resolveDnsStatus(newService.cloudflareTunnel.hostname)
+            : null;
+        res.json({ success: true, service: newService, cfWarning, postActions, dnsStatus });
 
         setTimeout(async () => {
             try {
@@ -623,6 +649,17 @@ router.delete('/:id', async (req, res) => {
         res.json({ success: true, cloudflare });
     } catch (err) {
         res.status(500).json({ error: err.message });
+    }
+});
+
+router.get('/dns-check', async (req, res) => {
+    try {
+        const host = String(req.query.host || '').trim();
+        if (!host) return res.status(400).json({ success: false, error: 'Informe o parâmetro host.' });
+        const status = await resolveDnsStatus(host);
+        return res.json({ success: true, status });
+    } catch (e) {
+        return res.status(500).json({ success: false, error: e.message });
     }
 });
 
