@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const router = express.Router();
 const fs = require('fs');
 const path = require('path');
@@ -233,12 +233,12 @@ router.post('/', async (req, res) => {
         parsedTargetPort = targetPort ? validatePort(targetPort, 'Porta interna') : null;
 
         if (await isPortListening(parsedListenPort) && !await isNginxAlreadyUsingPort(parsedListenPort)) {
-            return res.status(400).json({ error: `A porta pública ${parsedListenPort} já está em uso por outro serviço.` });
+            return res.status(400).json({ error: `A porta pÃºblica ${parsedListenPort} jÃ¡ estÃ¡ em uso por outro serviÃ§o.` });
         }
         
         if (parsedTargetPort && (type === 'node' || type === 'python')) {
             if (await isPortListening(parsedTargetPort)) {
-                return res.status(400).json({ error: `A porta interna ${parsedTargetPort} já está em uso por outra aplicação.` });
+                return res.status(400).json({ error: `A porta interna ${parsedTargetPort} jÃ¡ estÃ¡ em uso por outra aplicaÃ§Ã£o.` });
             }
         }
         
@@ -274,10 +274,10 @@ router.post('/', async (req, res) => {
             
             if (createIndex) {
                 if (type === 'php') {
-                    const phpWelcome = `<?php\nheader('Content-Type: text/html; charset=utf-8');\n?>\n<!DOCTYPE html>\n<html>\n<head><title>Bem-vindo ao ${name}</title><style>body{font-family:sans-serif;background:#1e1e2e;color:#cdd6f4;text-align:center;padding:50px;}h1{color:#a6e3a1;}</style></head>\n<body><h1>🚀 Website PHP rodando com sucesso no Termux!</h1><p>Pasta: <code>${resolvedPath}</code></p><p><?php echo "Versão do PHP: " . phpversion(); ?></p></body>\n</html>`;
+                    const phpWelcome = `<?php\nheader('Content-Type: text/html; charset=utf-8');\n?>\n<!DOCTYPE html>\n<html>\n<head><title>Bem-vindo ao ${name}</title><style>body{font-family:sans-serif;background:#1e1e2e;color:#cdd6f4;text-align:center;padding:50px;}h1{color:#a6e3a1;}</style></head>\n<body><h1>ðŸš€ Website PHP rodando com sucesso no Termux!</h1><p>Pasta: <code>${resolvedPath}</code></p><p><?php echo "VersÃ£o do PHP: " . phpversion(); ?></p></body>\n</html>`;
                     fs.writeFileSync(path.join(resolvedPath, 'index.php'), phpWelcome);
                 } else if (type === 'static') {
-                    const htmlWelcome = `<!DOCTYPE html>\n<html>\n<head><title>Bem-vindo ao ${name}</title><style>body{font-family:sans-serif;background:#1e1e2e;color:#cdd6f4;text-align:center;padding:50px;}h1{color:#89b4fa;}</style></head>\n<body><h1>🌐 Website Estático rodando com sucesso no NGINX!</h1><p>Pasta: <code>${resolvedPath}</code></p></body>\n</html>`;
+                    const htmlWelcome = `<!DOCTYPE html>\n<html>\n<head><title>Bem-vindo ao ${name}</title><style>body{font-family:sans-serif;background:#1e1e2e;color:#cdd6f4;text-align:center;padding:50px;}h1{color:#89b4fa;}</style></head>\n<body><h1>ðŸŒ Website EstÃ¡tico rodando com sucesso no NGINX!</h1><p>Pasta: <code>${resolvedPath}</code></p></body>\n</html>`;
                     fs.writeFileSync(path.join(resolvedPath, 'index.html'), htmlWelcome);
                 }
             }
@@ -403,7 +403,7 @@ router.post('/', async (req, res) => {
                 const cfProcess = require('../../modules/cloudflared/process');
                 const publicHostname = String(tunnelHostname || '').trim().toLowerCase();
                 if (!isValidHostname(publicHostname)) {
-                    throw new Error('Hostname público inválido.');
+                    throw new Error('Hostname pÃºblico invÃ¡lido.');
                 }
                 
                 if (tunnelAction === 'new') {
@@ -433,8 +433,8 @@ router.post('/', async (req, res) => {
                     try {
                         cfProcess.startInstance(newInst);
                     } catch (startErr) {
-                        console.error(`[Hosting - Tunnel] Falha ao iniciar novo túnel:`, startErr.message);
-                        cfWarning = `Serviço criado, mas falhou ao iniciar o processo do túnel: ${startErr.message}`;
+                        console.error(`[Hosting - Tunnel] Falha ao iniciar novo tÃºnel:`, startErr.message);
+                        cfWarning = `ServiÃ§o criado, mas falhou ao iniciar o processo do tÃºnel: ${startErr.message}`;
                     }
                 } else if (tunnelAction === 'existing' && tunnelExistingId) {
                     // Fetch existing instance
@@ -473,24 +473,24 @@ router.post('/', async (req, res) => {
                                         throw new Error(reloadResult.error || 'Reload falhou');
                                     }
                                 } catch (reloadErr) {
-                                    console.error(`[Hosting - Tunnel] Falha ao atualizar túnel com Zero Downtime. Tentando restart simples...`, reloadErr.message);
+                                    console.error(`[Hosting - Tunnel] Falha ao atualizar tÃºnel com Zero Downtime. Tentando restart simples...`, reloadErr.message);
                                     // Fallback to stop and start
                                     try {
                                         cfProcess.stopInstance(updatedInst.id);
                                         cfProcess.startInstance(updatedInst);
                                     } catch (restartErr) {
-                                        cfWarning = `Serviço criado, mas falhou ao reiniciar o túnel existente para aplicar a nova rota: ${restartErr.message}`;
+                                        cfWarning = `ServiÃ§o criado, mas falhou ao reiniciar o tÃºnel existente para aplicar a nova rota: ${restartErr.message}`;
                                     }
                                 }
                             }
                         }
                     } else {
-                        cfWarning = 'Túnel existente selecionado não foi encontrado.';
+                        cfWarning = 'TÃºnel existente selecionado nÃ£o foi encontrado.';
                     }
                 }
             } catch (cfErr) {
                 console.error(`[Hosting - Cloudflared Integration Error]:`, cfErr.message);
-                cfWarning = `Não foi possível criar/vincular o túnel: ${cfErr.message}`;
+                cfWarning = `NÃ£o foi possÃ­vel criar/vincular o tÃºnel: ${cfErr.message}`;
             }
         }
 
@@ -527,14 +527,14 @@ router.post('/', async (req, res) => {
         services.push(newService);
         fs.writeFileSync(HOSTING_FILE, JSON.stringify(services, null, 2));
         
-        // Pós-criação: reinicia NGINX após 3s e reinicia apenas o túnel desse serviço
+        // PÃ³s-criaÃ§Ã£o: reinicia NGINX apÃ³s 3s e reinicia apenas o tÃºnel desse serviÃ§o
         let postActions = { nginxRestarted: false, tunnelRestarted: false };
         await new Promise(r => setTimeout(r, 3000));
         try {
             await reloadOrStartNginx(requireRoot);
             postActions.nginxRestarted = true;
         } catch (e) {
-            cfWarning = cfWarning || `Serviço criado, mas houve falha ao reiniciar NGINX: ${e.message}`;
+            cfWarning = cfWarning || `ServiÃ§o criado, mas houve falha ao reiniciar NGINX: ${e.message}`;
         }
 
         if (newService.cloudflareTunnel && newService.cloudflareTunnel.tunnelId && newService.cloudflareTunnel.tunnelId !== 'new') {
@@ -549,7 +549,7 @@ router.post('/', async (req, res) => {
                     postActions.tunnelRestarted = true;
                 }
             } catch (e) {
-                cfWarning = cfWarning || `Serviço criado, mas falhou ao reiniciar o túnel deste serviço: ${e.message}`;
+                cfWarning = cfWarning || `ServiÃ§o criado, mas falhou ao reiniciar o tÃºnel deste serviÃ§o: ${e.message}`;
             }
         }
 
@@ -563,22 +563,23 @@ router.delete('/:id', async (req, res) => {
     try {
         const services = JSON.parse(fs.readFileSync(HOSTING_FILE, 'utf8'));
         const svc = services.find(s => s.id === req.params.id);
-        
+        let cloudflare = { removed: false };
+
         if (!svc) {
             return res.status(404).json({ error: 'Serviço não encontrado' });
         }
-        
+
         if (svc.pid) {
             try {
                 process.kill(svc.pid, 'SIGKILL');
             } catch (e) {}
         }
-        
+
         const confPath = path.join(NGINX_CONF_DIR, svc.nginxConf);
         if (fs.existsSync(confPath)) {
             fs.unlinkSync(confPath);
         }
-        
+
         const requireRoot = (svc.listenPort < 1024);
         try {
             await repairNginxBootstrap();
@@ -587,17 +588,33 @@ router.delete('/:id', async (req, res) => {
             if (requireRoot) {
                 await chownToUser([NGINX_CONF_DIR, HOSTING_LOGS_DIR]);
             }
-        } catch(e) { console.error("Nginx reload failed", e); }
-        
+        } catch (e) {
+            console.error('Nginx reload failed', e);
+        }
+
         const fullLogPath = path.join(__dirname, '..', '..', svc.logFile);
         const fullErrorLogPath = path.join(__dirname, '..', '..', svc.errorLog);
         if (fs.existsSync(fullLogPath)) fs.unlinkSync(fullLogPath);
         if (fs.existsSync(fullErrorLogPath)) fs.unlinkSync(fullErrorLogPath);
-        
+
         const filtered = services.filter(s => s.id !== req.params.id);
         fs.writeFileSync(HOSTING_FILE, JSON.stringify(filtered, null, 2));
-        
-        res.json({ success: true });
+
+        try {
+            if (svc.cloudflareTunnel && svc.cloudflareTunnel.hostname) {
+                const { removeCloudflareRouteFromHosting } = require('../../modules/cloudflared/hostingIntegration');
+                cloudflare = removeCloudflareRouteFromHosting({
+                    serviceName: svc.name,
+                    publicHost: svc.cloudflareTunnel.hostname,
+                    routePath: '/',
+                    tunnelName: svc.cloudflareTunnel.tunnelName || ''
+                }) || { removed: false };
+            }
+        } catch (cfErr) {
+            cloudflare = { removed: false, warning: cfErr.message };
+        }
+
+        res.json({ success: true, cloudflare });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -609,18 +626,18 @@ router.post('/:id/toggle', async (req, res) => {
         const services = JSON.parse(fs.readFileSync(HOSTING_FILE, 'utf8'));
         const index = services.findIndex(s => s.id === req.params.id);
         if (index === -1) {
-            return res.status(404).json({ error: 'Serviço não encontrado' });
+            return res.status(404).json({ error: 'ServiÃ§o nÃ£o encontrado' });
         }
         
         const svc = services[index];
         
         if (active) {
             if (svc.type !== 'node' && svc.type !== 'python') {
-                return res.status(400).json({ error: 'Este tipo de serviço não possui processos associados.' });
+                return res.status(400).json({ error: 'Este tipo de serviÃ§o nÃ£o possui processos associados.' });
             }
             
             if (svc.targetPort && await isPortListening(svc.targetPort)) {
-                return res.status(400).json({ error: `A porta interna ${svc.targetPort} já está ocupada.` });
+                return res.status(400).json({ error: `A porta interna ${svc.targetPort} jÃ¡ estÃ¡ ocupada.` });
             }
             
             const fullLogPath = path.join(__dirname, '..', '..', svc.logFile);
@@ -664,7 +681,7 @@ router.get('/:id/logs', (req, res) => {
         const services = JSON.parse(fs.readFileSync(HOSTING_FILE, 'utf8'));
         const svc = services.find(s => s.id === req.params.id);
         if (!svc) {
-            return res.status(404).json({ error: 'Serviço não encontrado' });
+            return res.status(404).json({ error: 'ServiÃ§o nÃ£o encontrado' });
         }
         
         const fullLogPath = path.join(__dirname, '..', '..', svc.logFile);
@@ -706,7 +723,7 @@ setInterval(async () => {
                 }
                 
                 if (!processAlive || !portListening) {
-                    console.log(`[Daemon] Detectada queda do serviço ${svc.name} (PID: ${svc.pid}, Porta: ${svc.targetPort}). Reiniciando...`);
+                    console.log(`[Daemon] Detectada queda do serviÃ§o ${svc.name} (PID: ${svc.pid}, Porta: ${svc.targetPort}). Reiniciando...`);
                     
                     if (svc.pid) {
                         try { process.kill(svc.pid, 'SIGKILL'); } catch(e) {}
@@ -748,3 +765,4 @@ setInterval(async () => {
 }, 15000);
 
 module.exports = router;
+

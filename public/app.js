@@ -1,6 +1,6 @@
-'use strict';
+﻿'use strict';
 // ============================================================
-//  TERMUX CPANEL — app.js v4.0
+//  TERMUX CPANEL â€” app.js v4.0
 //  Boot Sequence + All Modules
 // ============================================================
 
@@ -49,12 +49,12 @@ function bootDone() {
 async function runBootSequence() {
     // Failsafe: garante que o boot SEMPRE termina mesmo que alguma API trave
     const bootFailsafe = setTimeout(() => {
-        bootLog('Aviso: timeout global — forçando abertura do painel.');
+        bootLog('Aviso: timeout global â€” forÃ§ando abertura do painel.');
         bootDone();
     }, 12000);
 
-    bootProgress(5,  'Iniciando núcleo...');
-    bootLog('Buscando configurações de tema...');
+    bootProgress(5,  'Iniciando nÃºcleo...');
+    bootLog('Buscando configuraÃ§Ãµes de tema...');
     initTheme();
 
     bootProgress(15, 'Inicializando interface...');
@@ -68,15 +68,15 @@ async function runBootSequence() {
 
     bootProgress(35, 'Conectando ao servidor...');
     bootLog('Solicitando status do hardware...');
-    try { await fetchStatus(); } catch(e) { bootLog('Aviso: status indisponível.'); }
+    try { await fetchStatus(); } catch(e) { bootLog('Aviso: status indisponÃ­vel.'); }
 
-    bootProgress(55, 'Carregando aplicações...');
-    bootLog('Verificando serviços ativos...');
-    try { await fetchApps(); } catch(e) { bootLog('Aviso: apps indisponíveis.'); }
+    bootProgress(55, 'Carregando aplicaÃ§Ãµes...');
+    bootLog('Verificando serviÃ§os ativos...');
+    try { await fetchApps(); } catch(e) { bootLog('Aviso: apps indisponÃ­veis.'); }
 
     bootProgress(72, 'Analisando processos...');
-    bootLog('Mapeando árvore de processos...');
-    try { await fetchProcesses(); } catch(e) { bootLog('Aviso: processos indisponíveis.'); }
+    bootLog('Mapeando Ã¡rvore de processos...');
+    try { await fetchProcesses(); } catch(e) { bootLog('Aviso: processos indisponÃ­veis.'); }
 
     bootProgress(88, 'Finalizando interface...');
     bootLog('Renderizando componentes visuais...');
@@ -84,15 +84,15 @@ async function runBootSequence() {
     clearTimeout(bootFailsafe);
     setTimeout(() => {
         bootDone();
-        // Inicia polling após o boot
+        // Inicia polling apÃ³s o boot
         checkNetworkAccess();
         updateNetworkStatus();
         updateCpuStatus();
-        setInterval(updateNetworkStatus, 1000);
-        setInterval(updateCpuStatus, 1000);
+        setInterval(updateNetworkStatus, 1500);
+        setInterval(updateCpuStatus, 3000);
         updateTemperatureHistory();
         setInterval(updateTemperatureHistory, 30000);
-        setInterval(fetchStatus,    5000);
+        setInterval(fetchStatus,    8000);
         setInterval(fetchApps,     15000);
         setInterval(fetchProcesses, 10000);
         
@@ -169,7 +169,7 @@ function initElements() {
 }
 
 // ============================================================
-//  NAVEGAÇÃO
+//  NAVEGAÃ‡ÃƒO
 // ============================================================
 function initNavigation() {
     document.querySelectorAll('[data-target]').forEach(link => {
@@ -191,7 +191,7 @@ function switchTab(targetId) {
     document.querySelectorAll('.tab-pane').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('[data-target]').forEach(l => l.classList.remove('active'));
 
-    // Limpa o loop do Cloudflared se o usuário mudar de aba
+    // Limpa o loop do Cloudflared se o usuÃ¡rio mudar de aba
     if (window.cfTabInterval) {
         clearInterval(window.cfTabInterval);
         window.cfTabInterval = null;
@@ -204,7 +204,7 @@ function switchTab(targetId) {
     // Marca links ativos
     document.querySelectorAll(`[data-target="${targetId}"]`).forEach(l => l.classList.add('active'));
 
-    // Loaders específicos
+    // Loaders especÃ­ficos
     if (targetId === 'tab-dashboard') {
         fetchStatus();
         fetchApps();
@@ -232,7 +232,7 @@ function switchTab(targetId) {
 }
 
 function initMobileNav() {
-    // já tratado pelo initNavigation via [data-target]
+    // jÃ¡ tratado pelo initNavigation via [data-target]
 }
 
 // ============================================================
@@ -252,23 +252,23 @@ function toggleSidebar() {
 function initSocket() {
     try {
         socket = io();
-        // Eventos do servidor — nomes corretos
+        // Eventos do servidor â€” nomes corretos
         socket.on('noip-log',      data => appendNoipLog(data));
         socket.on('log-data',      line => appendLogLine(line));
         socket.on('cloudflared-login-log', data => appendCloudflaredLoginLog(data));
         socket.on('cloudflared-login-url', url => openCloudflaredAuthUrl(url));
         socket.on('cloudflared-login-status', data => updateCloudflaredLoginUi(data));
-        // Terminal SSH — recebe dados do shell remoto
+        // Terminal SSH â€” recebe dados do shell remoto
         socket.on('terminal-data', data => {
             if (window._term) window._term.write(data);
         });
     } catch(e) {
-        console.warn('Socket.io não disponível:', e);
+        console.warn('Socket.io nÃ£o disponÃ­vel:', e);
     }
 }
 
 // ============================================================
-//  TERMINAL SSH — usa xterm.js + socket 'terminal-connect'
+//  TERMINAL SSH â€” usa xterm.js + socket 'terminal-connect'
 // ============================================================
 let _termInstance = null;
 
@@ -296,7 +296,7 @@ function initTerminal() {
 }
 
 function connectTerminal() {
-    // Lê campos do formulário SSH
+    // LÃª campos do formulÃ¡rio SSH
     const host = document.getElementById('sshHost')?.value || '127.0.0.1';
     const port = parseInt(document.getElementById('sshPort')?.value) || 8022;
     const username = document.getElementById('sshUser')?.value;
@@ -304,7 +304,7 @@ function connectTerminal() {
     const saveCheck = document.getElementById('sshSaveDetails')?.checked;
 
     if (!username || !password) {
-        showToast('Preencha usuário e senha SSH!', 'warning');
+        showToast('Preencha usuÃ¡rio e senha SSH!', 'warning');
         return;
     }
 
@@ -330,7 +330,7 @@ function connectTerminal() {
     container.innerHTML = '';
     if (_termInstance) { try { _termInstance.dispose(); } catch(e) {} }
 
-    // Verifica se xterm.js está disponível
+    // Verifica se xterm.js estÃ¡ disponÃ­vel
     if (!window.Terminal) {
         // Fallback: terminal simples sem xterm
         container.style.cssText = 'background:#000;color:#0f0;padding:16px;height:500px;overflow-y:auto;font-family:monospace;font-size:13px;';
@@ -384,7 +384,7 @@ function connectTerminal() {
 
     term.writeln(`\x1b[32mConectando a ${host}:${port}...\x1b[0m`);
 
-    // Envia evento de conexão ao servidor
+    // Envia evento de conexÃ£o ao servidor
     socket.emit('terminal-connect', { host, port, username, password });
 
     // Envia teclas digitadas ao servidor
@@ -392,7 +392,7 @@ function connectTerminal() {
 }
 
 let tempUnit = 'C';
-let lastTemperatureStr = '--°C';
+let lastTemperatureStr = '--Â°C';
 
 function toggleTempUnit(e) {
     if (e) {
@@ -401,20 +401,20 @@ function toggleTempUnit(e) {
     }
     tempUnit = tempUnit === 'C' ? 'F' : 'C';
     const btn = document.getElementById('temp-unit-btn');
-    if (btn) btn.textContent = '°' + tempUnit;
+    if (btn) btn.textContent = 'Â°' + tempUnit;
     updateTemperatureDisplay();
     renderTempChart();
 }
 
 function updateTemperatureDisplay() {
     if (!el.temp) return;
-    if (lastTemperatureStr === '--°C' || lastTemperatureStr === 'N/A' || !lastTemperatureStr) {
-        el.temp.textContent = lastTemperatureStr || '--°C';
-        if (el.tempExpanded) el.tempExpanded.textContent = lastTemperatureStr || '--°C';
+    if (lastTemperatureStr === '--Â°C' || lastTemperatureStr === 'N/A' || !lastTemperatureStr) {
+        el.temp.textContent = lastTemperatureStr || '--Â°C';
+        if (el.tempExpanded) el.tempExpanded.textContent = lastTemperatureStr || '--Â°C';
         return;
     }
     
-    // Extract number from string like "45.0°C"
+    // Extract number from string like "45.0Â°C"
     const val = parseFloat(lastTemperatureStr);
     if (isNaN(val)) {
         el.temp.textContent = lastTemperatureStr;
@@ -424,11 +424,11 @@ function updateTemperatureDisplay() {
     
     if (tempUnit === 'F') {
         const f = (val * 9/5) + 32;
-        el.temp.textContent = `${f.toFixed(1)}°F`;
-        if (el.tempExpanded) el.tempExpanded.textContent = `${f.toFixed(1)}°F`;
+        el.temp.textContent = `${f.toFixed(1)}Â°F`;
+        if (el.tempExpanded) el.tempExpanded.textContent = `${f.toFixed(1)}Â°F`;
     } else {
-        el.temp.textContent = `${val.toFixed(1)}°C`;
-        if (el.tempExpanded) el.tempExpanded.textContent = `${val.toFixed(1)}°C`;
+        el.temp.textContent = `${val.toFixed(1)}Â°C`;
+        if (el.tempExpanded) el.tempExpanded.textContent = `${val.toFixed(1)}Â°C`;
     }
 }
 
@@ -470,7 +470,7 @@ function updateNetDisplay() {
 }
 
 // ============================================================
-//  STATUS DO SISTEMA — alinhado com os campos reais da API
+//  STATUS DO SISTEMA â€” alinhado com os campos reais da API
 // ============================================================
 async function fetchStatus() {
     const data = await safeFetch(`${API_BASE}/status`);
@@ -479,7 +479,7 @@ async function fetchStatus() {
     // O servidor retorna: cpu (string), cpuCores, cpuSpeed, ram (string),
     // storageFree, storageTotal, storagePercent, temperature (string)
     if (el.cpu)        el.cpu.textContent        = data.cpu        || '--%';
-    if (el.cpuDetails) el.cpuDetails.textContent = `${data.cpuCores || '--'} Núcleos | ${data.cpuSpeed || '--'}`;
+    if (el.cpuDetails) el.cpuDetails.textContent = `${data.cpuCores || '--'} NÃºcleos | ${data.cpuSpeed || '--'}`;
     renderCpuVisual(data);
     if (el.ram)        el.ram.textContent        = data.ram        || '-- / --';
     if (el.ramExpanded) el.ramExpanded.textContent = data.ram       || '-- / --';
@@ -502,7 +502,7 @@ async function fetchStatus() {
     }
 
     if (el.temp) {
-        lastTemperatureStr = data.temperature || '--°C';
+        lastTemperatureStr = data.temperature || '--Â°C';
         updateTemperatureDisplay();
     }
     if (el.netSpeed) {
@@ -511,7 +511,7 @@ async function fetchStatus() {
         updateNetDisplay();
     }
 
-    // Storage — campos: storageFree, storageTotal, storagePercent
+    // Storage â€” campos: storageFree, storageTotal, storagePercent
     if (el.storageBar && data.storagePercent) {
         el.storageBar.style.width = `${data.storagePercent}%`;
     }
@@ -555,7 +555,7 @@ function escapeHtml(value) {
 }
 
 async function updateCpuStatus() {
-    const data = await safeFetch(`${API_BASE}/cpu/status`, 'GET', null, 2500);
+    const data = await safeFetch(`${API_BASE}/cpu/status`, 'GET', null, 8000);
     if (!data) {
         if (el.cpuStatus) el.cpuStatus.textContent = 'Erro ao ler CPU';
         if (el.cpuCoresList) el.cpuCoresList.innerHTML = '<div class="cpu-core-row muted">Erro ao ler CPU</div>';
@@ -577,9 +577,9 @@ async function updateCpuStatus() {
 
     // Handle Termux native estimated fallback mode
     if (data.mode === 'termux_native_estimated') {
-        if (el.cpu) el.cpu.textContent = 'Indisponível';
-        if (el.cpuTotal) el.cpuTotal.textContent = 'Indisponível';
-        if (el.cpuTotalPercent) el.cpuTotalPercent.textContent = 'Indisponível';
+        if (el.cpu) el.cpu.textContent = 'IndisponÃ­vel';
+        if (el.cpuTotal) el.cpuTotal.textContent = 'IndisponÃ­vel';
+        if (el.cpuTotalPercent) el.cpuTotalPercent.textContent = 'IndisponÃ­vel';
 
         if (el.cpuCoresCompact) {
             el.cpuCoresCompact.textContent = `Painel: ${data.panelCpuPercent || 0}%`;
@@ -603,7 +603,7 @@ async function updateCpuStatus() {
             `;
             if (data.topProcesses && data.topProcesses.length > 0) {
                 html += `
-                    <div style="font-size: 0.8rem; font-weight: bold; margin: 12px 0 6px 0; color: var(--text-muted);">Processos Acessíveis</div>
+                    <div style="font-size: 0.8rem; font-weight: bold; margin: 12px 0 6px 0; color: var(--text-muted);">Processos AcessÃ­veis</div>
                 `;
                 data.topProcesses.forEach(proc => {
                     const shortCmd = proc.command.split(' ')[0].split('/').pop() || proc.command;
@@ -618,7 +618,7 @@ async function updateCpuStatus() {
             }
             if (data.cores && data.cores.length > 0) {
                 html += `
-                    <div style="font-size: 0.8rem; font-weight: bold; margin: 16px 0 6px 0; color: var(--text-muted);">Status & Frequências dos Núcleos</div>
+                    <div style="font-size: 0.8rem; font-weight: bold; margin: 16px 0 6px 0; color: var(--text-muted);">Status & FrequÃªncias dos NÃºcleos</div>
                 `;
                 html += data.cores.map(core => {
                     const freq = core.online ? (core.frequency?.formatted || 'N/A') : 'offline';
@@ -649,13 +649,13 @@ async function updateCpuStatus() {
         if (el.cpuLoadAvg) el.cpuLoadAvg.textContent = data.loadAverage ? data.loadAverage.formatted : '--';
 
         if (el.cpuCoresCompact) {
-            el.cpuCoresCompact.textContent = data.loadAverage ? `Carga: ${data.loadAverage.formatted}` : 'Uso indisponível';
+            el.cpuCoresCompact.textContent = data.loadAverage ? `Carga: ${data.loadAverage.formatted}` : 'Uso indisponÃ­vel';
         }
         if (el.cpuDetails) {
-            el.cpuDetails.textContent = data.loadAverage ? `Carga: ${data.loadAverage.formatted}` : 'Uso indisponível';
+            el.cpuDetails.textContent = data.loadAverage ? `Carga: ${data.loadAverage.formatted}` : 'Uso indisponÃ­vel';
         }
         if (el.cpuCoresList) {
-            el.cpuCoresList.innerHTML = `<div class="cpu-core-row muted">Uso por núcleo indisponível no modo fallback de carga média.</div>`;
+            el.cpuCoresList.innerHTML = `<div class="cpu-core-row muted">Uso por nÃºcleo indisponÃ­vel no modo fallback de carga mÃ©dia.</div>`;
         }
         renderCpuVisual({ cpu: '0%', cpuCores: data.coresCount || 1 });
         return;
@@ -667,7 +667,7 @@ async function updateCpuStatus() {
         if (el.cpu) el.cpu.textContent = 'Calculando...';
         if (el.cpuTotal) el.cpuTotal.textContent = 'Calculando...';
         if (el.cpuTotalPercent) el.cpuTotalPercent.textContent = 'Calculando...';
-        if (el.cpuCoresCompact) el.cpuCoresCompact.textContent = `${data.coresCount ?? '--'} núcleos`;
+        if (el.cpuCoresCompact) el.cpuCoresCompact.textContent = `${data.coresCount ?? '--'} nÃºcleos`;
         if (el.cpuDetails) el.cpuDetails.textContent = `Calculando...`;
         if (el.cpuCoresList) {
             el.cpuCoresList.innerHTML = '<div class="cpu-core-row muted">Calculando...</div>';
@@ -680,8 +680,8 @@ async function updateCpuStatus() {
     if (el.cpu) el.cpu.textContent = total;
     if (el.cpuTotal) el.cpuTotal.textContent = total;
     if (el.cpuTotalPercent) el.cpuTotalPercent.textContent = total;
-    if (el.cpuCoresCompact) el.cpuCoresCompact.textContent = `${data.coresCount ?? '--'} núcleos`;
-    if (el.cpuDetails) el.cpuDetails.textContent = `${data.coresCount || '--'} Núcleos | ${total}`;
+    if (el.cpuCoresCompact) el.cpuCoresCompact.textContent = `${data.coresCount ?? '--'} nÃºcleos`;
+    if (el.cpuDetails) el.cpuDetails.textContent = `${data.coresCount || '--'} NÃºcleos | ${total}`;
 
     renderCpuCoreList(data.cores || []);
     renderCpuVisual({ cpu: total, cpuCores: data.coresCount || 1 });
@@ -815,13 +815,13 @@ function renderApps(apps) {
     el.appsGrid.innerHTML = apps.map(app => `
         <div class="card" style="border-left:3px solid var(--primary);">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-                <strong>${app.icon || '🚀'} ${app.name}</strong>
+                <strong>${app.icon || 'ðŸš€'} ${app.name}</strong>
                 <span style="font-size:0.75rem;font-weight:600;color:${statusColor(app.status)}">${app.status || '--'}</span>
             </div>
             <small style="color:var(--text-muted)">Porta: ${app.port}</small>
             <div style="display:flex;gap:6px;margin-top:12px">
-                <button class="btn btn-sm btn-danger" onclick="deleteApp('${app.id}')" title="Remover">🗑</button>
-                ${app.url ? `<a href="${app.url}" target="_blank" class="btn btn-sm btn-secondary">↗</a>` : ''}
+                <button class="btn btn-sm btn-danger" onclick="deleteApp('${app.id}')" title="Remover">ðŸ—‘</button>
+                ${app.url ? `<a href="${app.url}" target="_blank" class="btn btn-sm btn-secondary">â†—</a>` : ''}
             </div>
         </div>
     `).join('');
@@ -862,7 +862,7 @@ async function fetchProcesses() {
             <td>${p.cpu}%</td>
             <td>${p.ram}</td>
             <td style="font-family:monospace;font-size:0.8rem">${p.command}</td>
-            <td><button class="btn btn-sm btn-danger" onclick="killProcess(${p.pid})">✕</button></td>
+            <td><button class="btn btn-sm btn-danger" onclick="killProcess(${p.pid})">âœ•</button></td>
         </tr>
     `).join('');
 }
@@ -885,7 +885,7 @@ async function cleanupDuplicateProcesses() {
 }
 
 // ============================================================
-//  GERENCIADOR DE ARQUIVOS — Stubs removidos (gerenciado por filemanager.js)
+//  GERENCIADOR DE ARQUIVOS â€” Stubs removidos (gerenciado por filemanager.js)
 // ============================================================
 
 function formatSize(bytes) {
@@ -900,9 +900,9 @@ function formatDate(mtime) {
     return new Date(mtime).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' });
 }
 
-// loadFiles() e fbNavigate() são definidos em filemanager.js — NÃO redefina aqui!
+// loadFiles() e fbNavigate() sÃ£o definidos em filemanager.js â€” NÃƒO redefina aqui!
 // ============================================================
-//  BANCO DE DADOS — Módulo Completo
+//  BANCO DE DADOS â€” MÃ³dulo Completo
 // ============================================================
 
 async function fetchDbStatus() {
@@ -935,7 +935,7 @@ async function fetchDatabases() {
     if (!listContainer) return;
 
     if (!data || !data.databases) {
-        listContainer.innerHTML = '<div style="color:var(--text-muted);padding:20px;text-align:center;">Sem conexão com MariaDB. Configure a senha root primeiro.</div>';
+        listContainer.innerHTML = '<div style="color:var(--text-muted);padding:20px;text-align:center;">Sem conexÃ£o com MariaDB. Configure a senha root primeiro.</div>';
         return;
     }
     if (!data.databases.length) {
@@ -952,7 +952,7 @@ async function fetchDatabases() {
         
         const badgeHtml = isSystem 
             ? '<span class="badge badge-system">Sistema</span>' 
-            : '<span class="badge badge-ok">Usuário</span>';
+            : '<span class="badge badge-ok">UsuÃ¡rio</span>';
             
         const activeClass = (currentDbManager === name) ? 'active' : '';
 
@@ -1008,13 +1008,13 @@ async function selectDatabase(dbName) {
     const system = isSystemDatabase(dbName);
     const badgeEl = document.getElementById('db-detail-badge');
     if (badgeEl) {
-        badgeEl.textContent = system ? 'Sistema' : 'Usuário';
+        badgeEl.textContent = system ? 'Sistema' : 'UsuÃ¡rio';
         badgeEl.className = system ? 'badge badge-system' : 'badge badge-ok';
     }
     
     const subtitleEl = document.getElementById('db-detail-subtitle');
     if (subtitleEl) {
-        subtitleEl.textContent = system ? 'Banco de dados do sistema protegido pelo painel.' : 'Banco de dados do usuário.';
+        subtitleEl.textContent = system ? 'Banco de dados do sistema protegido pelo painel.' : 'Banco de dados do usuÃ¡rio.';
     }
 
     // Toggle system database warning
@@ -1058,8 +1058,8 @@ async function selectDatabase(dbName) {
     const dangerNote = document.getElementById('db-danger-note');
     if (dangerNote) {
         dangerNote.textContent = system 
-            ? 'A exclusão está bloqueada porque este é um banco do sistema.' 
-            : 'Cuidado: Esta ação é permanente e apagará todas as tabelas!';
+            ? 'A exclusÃ£o estÃ¡ bloqueada porque este Ã© um banco do sistema.' 
+            : 'Cuidado: Esta aÃ§Ã£o Ã© permanente e apagarÃ¡ todas as tabelas!';
     }
 
     await loadDbDetails(dbName);
@@ -1133,47 +1133,40 @@ async function handleCreateDatabase(e) {
     const dbPass = document.getElementById('modalDbPass').value;
 
     if (!dbName.match(/^[a-zA-Z0-9_]+$/)) {
-        showToast('Nome de banco inválido! Use apenas letras, números e underline.', 'warning');
+        showToast('Nome de banco invÃ¡lido! Use apenas letras, nÃºmeros e underline.', 'warning');
         return;
     }
     
     if (dbUser && !dbUser.match(/^[a-zA-Z0-9_-]+$/)) {
-        showToast('Nome de usuário inválido! Use apenas letras, números, underline e hífen.', 'warning');
+        showToast('Nome de usuÃ¡rio invÃ¡lido! Use apenas letras, nÃºmeros, underline e hÃ­fen.', 'warning');
         return;
     }
 
-    logToDbConsole(`create_db --name=${dbName} --user=${dbUser || 'none'}`, `Solicitando criação de novo banco "${dbName}"...`);
+    logToDbConsole(`create_db --name=${dbName} --user=${dbUser || 'none'}`, `Solicitando criaÃ§Ã£o de novo banco "${dbName}"...`);
     try {
         const result = await safeFetch(`${API_BASE}/db/create`, 'POST', { dbName, dbUser, dbPass });
         if (result?.success) {
             logToDbConsole(`create_db --name=${dbName} --user=${dbUser || 'none'}`, 
-                `✓ Banco "${dbName}" criado com sucesso!\n` +
-                (dbUser ? `✓ Usuário "${dbUser}" criado com privilégios totais concedidos no banco "${dbName}".` : '✓ Nenhum usuário adicional criado.'));
+                `âœ“ Banco "${dbName}" criado com sucesso!\n` +
+                (dbUser ? `âœ“ UsuÃ¡rio "${dbUser}" criado com privilÃ©gios totais concedidos no banco "${dbName}".` : 'âœ“ Nenhum usuÃ¡rio adicional criado.'));
             showToast('Banco criado com sucesso!', 'success');
             closeDbCreateModal();
             e.target.reset();
             currentDbManager = dbName;
             fetchDatabases();
         } else {
-            logToDbConsole(`create_db --name=${dbName} --user=${dbUser || 'none'}`, `❌ Erro ao criar banco: ${result?.message || 'Falha interna'}`, true);
+            logToDbConsole(`create_db --name=${dbName} --user=${dbUser || 'none'}`, `âŒ Erro ao criar banco: ${result?.message || 'Falha interna'}`, true);
             showToast(`Erro ao criar banco: ${result?.message || 'Erro interno'}`, 'error');
         }
     } catch (err) {
-        logToDbConsole(`create_db --name=${dbName} --user=${dbUser || 'none'}`, `❌ Erro de rede: ${err.message}`, true);
+        logToDbConsole(`create_db --name=${dbName} --user=${dbUser || 'none'}`, `âŒ Erro de rede: ${err.message}`, true);
         showToast(`Erro de rede: ${err.message}`, 'error');
     }
 }
 
 function getPhpMyAdminBaseUrl() {
-    const isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname) || 
-                    window.location.hostname.startsWith('192.168.') || 
-                    window.location.hostname.startsWith('10.') ||
-                    window.location.port === '8088'; // porta interna do painel
-
-    if (isLocal && window.location.port) {
-        return window.location.protocol + '//' + window.location.hostname + ':8080';
-    }
-    return ''; // Usar caminho relativo para domínios públicos
+    // Sempre usar rota relativa do painel: funciona local e via túnel.
+    return '';
 }
 
 async function actionPhpMyAdmin() {
@@ -1191,38 +1184,38 @@ async function actionShowTables() {
 }
 
 async function actionBackup() {
-    logToDbConsole('mysqldump --opt -u root -p ' + currentDbManager + ' > backup.sql', `Iniciando backup físico do banco "${currentDbManager}"...`);
+    logToDbConsole('mysqldump --opt -u root -p ' + currentDbManager + ' > backup.sql', `Iniciando backup fÃ­sico do banco "${currentDbManager}"...`);
     try {
         const result = await safeFetch(`${API_BASE}/db/backup`, 'POST', { dbName: currentDbManager });
         if (result?.success) {
             logToDbConsole('mysqldump --opt -u root -p ' + currentDbManager + ' > backup.sql', 
-                `✓ Backup concluído com sucesso!\n✓ Arquivo gerado: ${result.filename}\n✓ Diretório: termux-panel/backups/\n✓ Tamanho: --`);
+                `âœ“ Backup concluÃ­do com sucesso!\nâœ“ Arquivo gerado: ${result.filename}\nâœ“ DiretÃ³rio: termux-panel/backups/\nâœ“ Tamanho: --`);
             fetchDatabases();
         } else {
-            logToDbConsole('mysqldump --opt -u root -p ' + currentDbManager + ' > backup.sql', `❌ Erro ao criar backup: ${result?.message || 'Falha no backup'}`, true);
+            logToDbConsole('mysqldump --opt -u root -p ' + currentDbManager + ' > backup.sql', `âŒ Erro ao criar backup: ${result?.message || 'Falha no backup'}`, true);
         }
     } catch (e) {
-        logToDbConsole('mysqldump --opt -u root -p ' + currentDbManager + ' > backup.sql', `❌ Erro de rede: ${e.message}`, true);
+        logToDbConsole('mysqldump --opt -u root -p ' + currentDbManager + ' > backup.sql', `âŒ Erro de rede: ${e.message}`, true);
     }
 }
 
 async function actionRestore() {
-    const file = prompt('Digite o nome do arquivo SQL do backup localizado no diretório de backups (ex: wordpress_backup.sql):');
+    const file = prompt('Digite o nome do arquivo SQL do backup localizado no diretÃ³rio de backups (ex: wordpress_backup.sql):');
     if (!file) return;
 
-    if (!confirm(`⚠️ ATENÇÃO!\n\nRestaurar backup "${file}" no banco "${currentDbManager}"?\n\nTODOS os dados atuais serão completamente SOBRESCRITOS!`)) return;
+    if (!confirm(`âš ï¸ ATENÃ‡ÃƒO!\n\nRestaurar backup "${file}" no banco "${currentDbManager}"?\n\nTODOS os dados atuais serÃ£o completamente SOBRESCRITOS!`)) return;
 
     logToDbConsole('mysql -u root -p ' + currentDbManager + ' < ' + file, `Restaurando backup "${file}" no banco "${currentDbManager}"... Aguarde.`);
     try {
         const result = await safeFetch(`${API_BASE}/db/restore`, 'POST', { filename: file, dbName: currentDbManager });
         if (result?.success) {
-            logToDbConsole('mysql -u root -p ' + currentDbManager + ' < ' + file, `✓ Restauração concluída com sucesso!\n✓ Banco "${currentDbManager}" atualizado.`);
+            logToDbConsole('mysql -u root -p ' + currentDbManager + ' < ' + file, `âœ“ RestauraÃ§Ã£o concluÃ­da com sucesso!\nâœ“ Banco "${currentDbManager}" atualizado.`);
             loadDbDetails(currentDbManager);
         } else {
-            logToDbConsole('mysql -u root -p ' + currentDbManager + ' < ' + file, `❌ Falha na restauração: ${result?.message || 'Erro interno'}`, true);
+            logToDbConsole('mysql -u root -p ' + currentDbManager + ' < ' + file, `âŒ Falha na restauraÃ§Ã£o: ${result?.message || 'Erro interno'}`, true);
         }
     } catch(err) {
-        logToDbConsole('mysql -u root -p ' + currentDbManager + ' < ' + file, `❌ Erro de rede ao restaurar: ${err.message}`, true);
+        logToDbConsole('mysql -u root -p ' + currentDbManager + ' < ' + file, `âŒ Erro de rede ao restaurar: ${err.message}`, true);
     }
 }
 
@@ -1236,13 +1229,13 @@ async function actionOptimize() {
         });
         const data = await res.json();
         if (data.success) {
-            logToDbConsole('mysqlcheck -o -u root -p ' + currentDbManager, `✓ Otimização concluída com sucesso!\n✓ Todas as tabelas foram otimizadas e reorganizadas.`);
+            logToDbConsole('mysqlcheck -o -u root -p ' + currentDbManager, `âœ“ OtimizaÃ§Ã£o concluÃ­da com sucesso!\nâœ“ Todas as tabelas foram otimizadas e reorganizadas.`);
             loadDbDetails(currentDbManager);
         } else {
-            logToDbConsole('mysqlcheck -o -u root -p ' + currentDbManager, `❌ Erro na otimização: ${data.error || 'Falha ao otimizar.'}`, true);
+            logToDbConsole('mysqlcheck -o -u root -p ' + currentDbManager, `âŒ Erro na otimizaÃ§Ã£o: ${data.error || 'Falha ao otimizar.'}`, true);
         }
     } catch(err) {
-        logToDbConsole('mysqlcheck -o -u root -p ' + currentDbManager, `❌ Erro de rede: ${err.message}`, true);
+        logToDbConsole('mysqlcheck -o -u root -p ' + currentDbManager, `âŒ Erro de rede: ${err.message}`, true);
     }
 }
 
@@ -1256,69 +1249,69 @@ async function actionRepair() {
         });
         const data = await res.json();
         if (data.success) {
-            logToDbConsole('mysqlcheck -r -u root -p ' + currentDbManager, `✓ Reparação concluída com sucesso!\n✓ Tabelas reparadas e indexadas.`);
+            logToDbConsole('mysqlcheck -r -u root -p ' + currentDbManager, `âœ“ ReparaÃ§Ã£o concluÃ­da com sucesso!\nâœ“ Tabelas reparadas e indexadas.`);
             loadDbDetails(currentDbManager);
         } else {
-            logToDbConsole('mysqlcheck -r -u root -p ' + currentDbManager, `❌ Erro na reparação: ${data.error || 'Falha ao reparar.'}`, true);
+            logToDbConsole('mysqlcheck -r -u root -p ' + currentDbManager, `âŒ Erro na reparaÃ§Ã£o: ${data.error || 'Falha ao reparar.'}`, true);
         }
     } catch(err) {
-        logToDbConsole('mysqlcheck -r -u root -p ' + currentDbManager, `❌ Erro de rede: ${err.message}`, true);
+        logToDbConsole('mysqlcheck -r -u root -p ' + currentDbManager, `âŒ Erro de rede: ${err.message}`, true);
     }
 }
 
 async function actionDiagnostic() {
-    logToDbConsole('mysqlcheck --status -u root -p ' + currentDbManager, `Efetuando varredura rápida de integridade no banco "${currentDbManager}"...`);
+    logToDbConsole('mysqlcheck --status -u root -p ' + currentDbManager, `Efetuando varredura rÃ¡pida de integridade no banco "${currentDbManager}"...`);
     try {
         const res = await fetch(`/api/db/details?db=${encodeURIComponent(currentDbManager)}`);
         const data = await res.json();
         if (data) {
             logToDbConsole('mysqlcheck --status -u root -p ' + currentDbManager, 
-                `✓ Varredura concluída!\n` +
+                `âœ“ Varredura concluÃ­da!\n` +
                 `- Total de Tabelas: ${data.tablesCount ?? '0'}\n` +
                 `- Tamanho em disco: ${data.totalSizeMb ?? '0'} MB\n` +
                 `- Storage Engine: ${data.engine ?? 'InnoDB'}\n` +
-                `- Collation padrão: ${data.collation ?? 'utf8mb4_general_ci'}\n` +
-                `- Status geral: OK (Físico intacto)`);
+                `- Collation padrÃ£o: ${data.collation ?? 'utf8mb4_general_ci'}\n` +
+                `- Status geral: OK (FÃ­sico intacto)`);
         } else {
-            logToDbConsole('mysqlcheck --status -u root -p ' + currentDbManager, `❌ Erro ao obter dados de diagnóstico.`, true);
+            logToDbConsole('mysqlcheck --status -u root -p ' + currentDbManager, `âŒ Erro ao obter dados de diagnÃ³stico.`, true);
         }
     } catch (err) {
-        logToDbConsole('mysqlcheck --status -u root -p ' + currentDbManager, `❌ Erro de rede: ${err.message}`, true);
+        logToDbConsole('mysqlcheck --status -u root -p ' + currentDbManager, `âŒ Erro de rede: ${err.message}`, true);
     }
 }
 
 async function actionSqlLog() {
     logToDbConsole('tail -n 20 /data/data/com.termux/files/usr/var/lib/mysql/localhost.err', `Buscando logs recentes do MariaDB relacionados a "${currentDbManager}"...`);
     logToDbConsole('tail -n 20 /data/data/com.termux/files/usr/var/lib/mysql/localhost.err', 
-        `✓ Conectado a MariaDB local socket.\n` +
-        `✓ query: SELECT table_name, data_length FROM information_schema.tables WHERE table_schema='${currentDbManager}';\n` +
-        `✓ status: 200 OK\n` +
-        `✓ Nenhuma anomalia de transação relatada nas últimas 24 horas.`);
+        `âœ“ Conectado a MariaDB local socket.\n` +
+        `âœ“ query: SELECT table_name, data_length FROM information_schema.tables WHERE table_schema='${currentDbManager}';\n` +
+        `âœ“ status: 200 OK\n` +
+        `âœ“ Nenhuma anomalia de transaÃ§Ã£o relatada nas Ãºltimas 24 horas.`);
 }
 
 async function actionListUsers() {
-    logToDbConsole('mysql -e "SHOW GRANTS FOR ..."', `Buscando usuários com acesso ao banco "${currentDbManager}"...`);
+    logToDbConsole('mysql -e "SHOW GRANTS FOR ..."', `Buscando usuÃ¡rios com acesso ao banco "${currentDbManager}"...`);
     try {
         const res = await fetch(`/api/db/users?db=${encodeURIComponent(currentDbManager)}`);
         const data = await res.json();
         if (data.success) {
-            const list = data.dbUsers.map(u => `  - ${u.user}@${u.host}`).join('\n') || '  (Nenhum usuário com acesso direto localizado)';
-            logToDbConsole('mysql -e "SHOW GRANTS FOR ..."', `✓ Lista de usuários com privilégios específicos em "${currentDbManager}":\n${list}`);
+            const list = data.dbUsers.map(u => `  - ${u.user}@${u.host}`).join('\n') || '  (Nenhum usuÃ¡rio com acesso direto localizado)';
+            logToDbConsole('mysql -e "SHOW GRANTS FOR ..."', `âœ“ Lista de usuÃ¡rios com privilÃ©gios especÃ­ficos em "${currentDbManager}":\n${list}`);
         } else {
-            logToDbConsole('mysql -e "SHOW GRANTS FOR ..."', `❌ Erro ao listar usuários.`, true);
+            logToDbConsole('mysql -e "SHOW GRANTS FOR ..."', `âŒ Erro ao listar usuÃ¡rios.`, true);
         }
     } catch (err) {
-        logToDbConsole('mysql -e "SHOW GRANTS FOR ..."', `❌ Erro de rede: ${err.message}`, true);
+        logToDbConsole('mysql -e "SHOW GRANTS FOR ..."', `âŒ Erro de rede: ${err.message}`, true);
     }
 }
 
 async function actionCreateUser() {
-    const username = prompt('Nome do novo usuário a criar:');
+    const username = prompt('Nome do novo usuÃ¡rio a criar:');
     if (!username) return;
-    const password = prompt('Senha para o novo usuário:');
+    const password = prompt('Senha para o novo usuÃ¡rio:');
     if (!password) return;
 
-    logToDbConsole(`mysql -e "CREATE USER '${username}'@'localhost' IDENTIFIED BY '***';"`, `Criando usuário "${username}" no MariaDB...`);
+    logToDbConsole(`mysql -e "CREATE USER '${username}'@'localhost' IDENTIFIED BY '***';"`, `Criando usuÃ¡rio "${username}" no MariaDB...`);
     try {
         const res = await fetch('/api/db/user/create', {
             method: 'POST',
@@ -1328,7 +1321,7 @@ async function actionCreateUser() {
         const data = await res.json();
         if (data.success) {
             logToDbConsole(`mysql -e "CREATE USER '${username}'@'localhost' IDENTIFIED BY '***';"`, 
-                `✓ Usuário "${username}" criado com sucesso!\nConcedendo privilégios totais em "${currentDbManager}"...`);
+                `âœ“ UsuÃ¡rio "${username}" criado com sucesso!\nConcedendo privilÃ©gios totais em "${currentDbManager}"...`);
                 
             const privRes = await fetch('/api/db/user/privileges', {
                 method: 'POST',
@@ -1338,25 +1331,25 @@ async function actionCreateUser() {
             const privData = await privRes.json();
             if (privData.success) {
                 logToDbConsole(`mysql -e "GRANT ALL ON ${currentDbManager}.* TO '${username}'@'localhost';"`, 
-                    `✓ Permissões concedidas com sucesso!\n✓ O usuário "${username}" agora possui privilégios totais no banco "${currentDbManager}".`);
+                    `âœ“ PermissÃµes concedidas com sucesso!\nâœ“ O usuÃ¡rio "${username}" agora possui privilÃ©gios totais no banco "${currentDbManager}".`);
             } else {
                 logToDbConsole(`mysql -e "GRANT ALL ON ${currentDbManager}.* TO '${username}'@'localhost';"`, 
-                    `❌ Erro ao conceder permissões: ${privData.error}`, true);
+                    `âŒ Erro ao conceder permissÃµes: ${privData.error}`, true);
             }
         } else {
-            logToDbConsole(`mysql -e "CREATE USER '${username}'@'localhost' IDENTIFIED BY '***';"`, `❌ Falha ao criar usuário: ${data.error || 'Erro desconhecido.'}`, true);
+            logToDbConsole(`mysql -e "CREATE USER '${username}'@'localhost' IDENTIFIED BY '***';"`, `âŒ Falha ao criar usuÃ¡rio: ${data.error || 'Erro desconhecido.'}`, true);
         }
     } catch(err) {
-        logToDbConsole(`mysql -e "CREATE USER '${username}'@'localhost' IDENTIFIED BY '***';"`, `❌ Erro de rede: ${err.message}`, true);
+        logToDbConsole(`mysql -e "CREATE USER '${username}'@'localhost' IDENTIFIED BY '***';"`, `âŒ Erro de rede: ${err.message}`, true);
     }
 }
 
 async function actionResetPassword() {
-    const username = prompt('Qual usuário do MariaDB deseja redefinir a senha?');
+    const username = prompt('Qual usuÃ¡rio do MariaDB deseja redefinir a senha?');
     if (!username) return;
-    const password = prompt('Digite a nova senha para o usuário:');
+    const password = prompt('Digite a nova senha para o usuÃ¡rio:');
     if (!password) return;
-    const alterConfigs = confirm('Deseja buscar e redefinir a senha em arquivos de projeto (.env / wp-config.php) na pasta home?\n(Backups automáticos serão criados para sua segurança)');
+    const alterConfigs = confirm('Deseja buscar e redefinir a senha em arquivos de projeto (.env / wp-config.php) na pasta home?\n(Backups automÃ¡ticos serÃ£o criados para sua seguranÃ§a)');
 
     logToDbConsole(`mysql -e "ALTER USER '${username}' IDENTIFIED BY '***';"`, `Redefinindo senha de "${username}" no MariaDB...`);
     try {
@@ -1367,9 +1360,9 @@ async function actionResetPassword() {
         });
         const data = await res.json();
         if (data.success) {
-            let logMsg = `✓ Senha do usuário "${username}" alterada com sucesso no banco de dados!\n`;
+            let logMsg = `âœ“ Senha do usuÃ¡rio "${username}" alterada com sucesso no banco de dados!\n`;
             if (data.updatedFiles && data.updatedFiles.length > 0) {
-                logMsg += `✓ Arquivos de configuração atualizados:\n`;
+                logMsg += `âœ“ Arquivos de configuraÃ§Ã£o atualizados:\n`;
                 data.updatedFiles.forEach(f => {
                     const filename = f.file.split(/[\\/]/).pop();
                     const backupName = f.backup.split(/[\\/]/).pop();
@@ -1379,21 +1372,21 @@ async function actionResetPassword() {
             logToDbConsole(`mysql -e "ALTER USER '${username}' IDENTIFIED BY '***';"`, logMsg);
             showToast('Senha redefinida com sucesso!', 'success');
         } else {
-            logToDbConsole(`mysql -e "ALTER USER '${username}' IDENTIFIED BY '***';"`, `❌ Erro: ${data.error || 'Falha ao redefinir senha.'}`, true);
+            logToDbConsole(`mysql -e "ALTER USER '${username}' IDENTIFIED BY '***';"`, `âŒ Erro: ${data.error || 'Falha ao redefinir senha.'}`, true);
             showToast(`Erro: ${data.error || 'Falha ao redefinir senha.'}`, 'error');
         }
     } catch(err) {
-        logToDbConsole(`mysql -e "ALTER USER '${username}' IDENTIFIED BY '***';"`, `❌ Erro de rede: ${err.message}`, true);
+        logToDbConsole(`mysql -e "ALTER USER '${username}' IDENTIFIED BY '***';"`, `âŒ Erro de rede: ${err.message}`, true);
         showToast(`Erro de rede: ${err.message}`, 'error');
     }
 }
 
 async function actionPermissions() {
-    const username = prompt('Nome de usuário do MariaDB:');
+    const username = prompt('Nome de usuÃ¡rio do MariaDB:');
     if (!username) return;
-    const action = confirm('Clique em OK para CONCEDER permissão total ou Cancelar para REVOGAR permissão:') ? 'grant' : 'revoke';
+    const action = confirm('Clique em OK para CONCEDER permissÃ£o total ou Cancelar para REVOGAR permissÃ£o:') ? 'grant' : 'revoke';
 
-    logToDbConsole(`mysql -e "${action.toUpperCase()} ALL ON ${currentDbManager}.* ..."`, `Ajustando privilégios de "${username}" em "${currentDbManager}"...`);
+    logToDbConsole(`mysql -e "${action.toUpperCase()} ALL ON ${currentDbManager}.* ..."`, `Ajustando privilÃ©gios de "${username}" em "${currentDbManager}"...`);
     try {
         const res = await fetch('/api/db/user/privileges', {
             method: 'POST',
@@ -1403,12 +1396,12 @@ async function actionPermissions() {
         const data = await res.json();
         if (data.success) {
             logToDbConsole(`mysql -e "${action.toUpperCase()} ALL ON ${currentDbManager}.* ..."`, 
-                `✓ Sucesso!\n✓ Privilégios do usuário "${username}" no banco "${currentDbManager}" foram atualizados para: ${action.toUpperCase()}`);
+                `âœ“ Sucesso!\nâœ“ PrivilÃ©gios do usuÃ¡rio "${username}" no banco "${currentDbManager}" foram atualizados para: ${action.toUpperCase()}`);
         } else {
-            logToDbConsole(`mysql -e "${action.toUpperCase()} ALL ON ${currentDbManager}.* ..."`, `❌ Erro: ${data.error || 'Falha ao ajustar privilégios.'}`, true);
+            logToDbConsole(`mysql -e "${action.toUpperCase()} ALL ON ${currentDbManager}.* ..."`, `âŒ Erro: ${data.error || 'Falha ao ajustar privilÃ©gios.'}`, true);
         }
     } catch(err) {
-        logToDbConsole(`mysql -e "${action.toUpperCase()} ALL ON ${currentDbManager}.* ..."`, `❌ Erro de rede: ${err.message}`, true);
+        logToDbConsole(`mysql -e "${action.toUpperCase()} ALL ON ${currentDbManager}.* ..."`, `âŒ Erro de rede: ${err.message}`, true);
     }
 }
 
@@ -1418,12 +1411,12 @@ async function actionRename() {
     if (newName === currentDbManager) return showToast('O novo nome deve ser diferente do atual.', 'warning');
 
     if (!newName.match(/^[a-zA-Z0-9_]+$/)) {
-        return showToast('Nome de banco inválido. Use apenas letras, números e underline.', 'warning');
+        return showToast('Nome de banco invÃ¡lido. Use apenas letras, nÃºmeros e underline.', 'warning');
     }
 
-    const deleteOld = confirm(`Excluir o banco antigo "${currentDbManager}" após clonar e validar com sucesso?\n\n(Selecione CANCELAR para manter o banco antigo ativo como backup por segurança)`);
+    const deleteOld = confirm(`Excluir o banco antigo "${currentDbManager}" apÃ³s clonar e validar com sucesso?\n\n(Selecione CANCELAR para manter o banco antigo ativo como backup por seguranÃ§a)`);
 
-    logToDbConsole(`rename_db "${currentDbManager}" "${newName}"`, `Iniciando renomeação segura de "${currentDbManager}" para "${newName}"...\n- Gerando backup automático...\n- Criando novo banco "${newName}"...\n- Importando dados...`);
+    logToDbConsole(`rename_db "${currentDbManager}" "${newName}"`, `Iniciando renomeaÃ§Ã£o segura de "${currentDbManager}" para "${newName}"...\n- Gerando backup automÃ¡tico...\n- Criando novo banco "${newName}"...\n- Importando dados...`);
     try {
         const res = await fetch('/api/db/rename', {
             method: 'POST',
@@ -1433,20 +1426,20 @@ async function actionRename() {
         const data = await res.json();
         if (data.success) {
             logToDbConsole(`rename_db "${currentDbManager}" "${newName}"`, 
-                `✓ Banco renomeado com sucesso!\n` +
+                `âœ“ Banco renomeado com sucesso!\n` +
                 `- Novo banco: ${newName}\n` +
-                `- Backup temporário de segurança criado: ${data.backupFile.split(/[\\/]/).pop()}\n` +
-                `- Validação estrutural: OK\n` +
-                `- Exclusão do banco antigo: ${deleteOld ? 'Banco antigo excluído' : 'Mantido por segurança'}`);
+                `- Backup temporÃ¡rio de seguranÃ§a criado: ${data.backupFile.split(/[\\/]/).pop()}\n` +
+                `- ValidaÃ§Ã£o estrutural: OK\n` +
+                `- ExclusÃ£o do banco antigo: ${deleteOld ? 'Banco antigo excluÃ­do' : 'Mantido por seguranÃ§a'}`);
             showToast('Banco renomeado com sucesso!', 'success');
             currentDbManager = newName;
             fetchDatabases();
         } else {
-            logToDbConsole(`rename_db "${currentDbManager}" "${newName}"`, `❌ Erro ao renomear: ${data.error || 'Falha interna.'}`, true);
+            logToDbConsole(`rename_db "${currentDbManager}" "${newName}"`, `âŒ Erro ao renomear: ${data.error || 'Falha interna.'}`, true);
             showToast(`Erro ao renomear: ${data.error || 'Falha interna.'}`, 'error');
         }
     } catch(err) {
-        logToDbConsole(`rename_db "${currentDbManager}" "${newName}"`, `❌ Erro de rede: ${err.message}`, true);
+        logToDbConsole(`rename_db "${currentDbManager}" "${newName}"`, `âŒ Erro de rede: ${err.message}`, true);
         showToast(`Erro de rede: ${err.message}`, 'error');
     }
 }
@@ -1465,7 +1458,7 @@ async function actionDrop() {
     const input = document.getElementById('dbDropConfirmInput').value.trim();
     if (input !== currentDbManager) return;
 
-    if (!confirm(`⚠️ ATENÇÃO EXTREMA!\n\nVocê tem certeza absoluta que deseja excluir permanentemente o banco "${currentDbManager}"?\n\nEsta ação é irreversível e apagará todas as tabelas!`)) return;
+    if (!confirm(`âš ï¸ ATENÃ‡ÃƒO EXTREMA!\n\nVocÃª tem certeza absoluta que deseja excluir permanentemente o banco "${currentDbManager}"?\n\nEsta aÃ§Ã£o Ã© irreversÃ­vel e apagarÃ¡ todas as tabelas!`)) return;
 
     logToDbConsole(`DROP DATABASE \`${currentDbManager}\`;`, `Excluindo banco "${currentDbManager}" permanentemente...`);
     try {
@@ -1474,23 +1467,23 @@ async function actionDrop() {
         });
         const data = await res.json();
         if (data.success) {
-            logToDbConsole(`DROP DATABASE \`${currentDbManager}\`;`, `✓ Banco "${currentDbManager}" deletado com sucesso do servidor MariaDB.`);
+            logToDbConsole(`DROP DATABASE \`${currentDbManager}\`;`, `âœ“ Banco "${currentDbManager}" deletado com sucesso do servidor MariaDB.`);
             showToast('Banco deletado permanentemente com sucesso!', 'success');
             currentDbManager = null;
             fetchDatabases();
         } else {
-            logToDbConsole(`DROP DATABASE \`${currentDbManager}\`;`, `❌ Erro ao excluir banco: ${data.error || 'Falha interna.'}`, true);
+            logToDbConsole(`DROP DATABASE \`${currentDbManager}\`;`, `âŒ Erro ao excluir banco: ${data.error || 'Falha interna.'}`, true);
             showToast(`Erro ao excluir banco: ${data.error || 'Falha interna.'}`, 'error');
         }
     } catch(err) {
-        logToDbConsole(`DROP DATABASE \`${currentDbManager}\`;`, `❌ Erro de rede: ${err.message}`, true);
+        logToDbConsole(`DROP DATABASE \`${currentDbManager}\`;`, `âŒ Erro de rede: ${err.message}`, true);
         showToast(`Erro de rede: ${err.message}`, 'error');
     }
 }
 
 async function mariadbAction(action) {
     const msg = document.getElementById('mariadb-msg');
-    if (msg) msg.innerHTML = `<span style="color:var(--text-muted);"><i data-lucide="loader" class="spin" style="width:12px;height:12px;display:inline-block;vertical-align:middle;margin-right:4px;"></i> Executando ação "${action}" no MariaDB...</span>`;
+    if (msg) msg.innerHTML = `<span style="color:var(--text-muted);"><i data-lucide="loader" class="spin" style="width:12px;height:12px;display:inline-block;vertical-align:middle;margin-right:4px;"></i> Executando aÃ§Ã£o "${action}" no MariaDB...</span>`;
     if (window.lucide) lucide.createIcons();
 
     try {
@@ -1499,11 +1492,11 @@ async function mariadbAction(action) {
         
         if (res && res.success) {
             if (msg) {
-                msg.innerHTML = `<span style="color:var(--success); font-weight:600;">✅ ${res.message || `Ação "${action}" concluída com sucesso.`}</span>`;
+                msg.innerHTML = `<span style="color:var(--success); font-weight:600;">âœ… ${res.message || `AÃ§Ã£o "${action}" concluÃ­da com sucesso.`}</span>`;
             }
         } else {
             if (msg) {
-                let errorHtml = `<span style="color:var(--danger); font-weight:600;">❌ Falha na ação "${action}": ${res?.message || 'Erro desconhecido.'}</span>`;
+                let errorHtml = `<span style="color:var(--danger); font-weight:600;">âŒ Falha na aÃ§Ã£o "${action}": ${res?.message || 'Erro desconhecido.'}</span>`;
                 if (res?.log) {
                     errorHtml += `<br><pre style="background:rgba(0,0,0,0.4); padding:10px; margin-top:8px; border-radius:6px; font-family:monospace; font-size:0.75rem; text-align:left; max-height:220px; overflow-y:auto; border:1px solid rgba(255,255,255,0.15); white-space:pre-wrap; color:#f87171;">${res.log}</pre>`;
                 }
@@ -1513,7 +1506,7 @@ async function mariadbAction(action) {
     } catch (e) {
         await fetchDbStatus();
         if (msg) {
-            msg.innerHTML = `<span style="color:var(--danger); font-weight:600;">❌ Erro de rede ao executar "${action}": ${e.message}</span>`;
+            msg.innerHTML = `<span style="color:var(--danger); font-weight:600;">âŒ Erro de rede ao executar "${action}": ${e.message}</span>`;
         }
     }
 }
@@ -1521,9 +1514,9 @@ async function mariadbAction(action) {
 async function testDbConnection() {
     const data = await safeFetch(`${API_BASE}/db/test`);
     if (data?.success) {
-        showToast(data.message || 'Conexão testada com sucesso!', 'success');
+        showToast(data.message || 'ConexÃ£o testada com sucesso!', 'success');
     } else {
-        showToast(data?.message || 'Falha na conexão', 'error');
+        showToast(data?.message || 'Falha na conexÃ£o', 'error');
     }
 }
 
@@ -1538,7 +1531,7 @@ async function createDbBackup() {
         showToast('Backup gerado com sucesso!', 'success');
         loadDbBackups();
     } else {
-        showToast('Erro ao gerar backup. Verifique a conexão.', 'error');
+        showToast('Erro ao gerar backup. Verifique a conexÃ£o.', 'error');
     }
 }
 
@@ -1547,14 +1540,14 @@ async function loadDbBackups() {
     const sel  = document.getElementById('dbRestoreFile');
     if (!sel || !data?.backups) return;
     sel.innerHTML = '<option value="">Selecione o backup...</option>' +
-        data.backups.map(b => `<option value="${b.name}">${b.name} (${b.size}) — ${b.date}</option>`).join('');
+        data.backups.map(b => `<option value="${b.name}">${b.name} (${b.size}) â€” ${b.date}</option>`).join('');
 }
 
 async function restoreDbBackup() {
     const filename = document.getElementById('dbRestoreFile')?.value;
     const dbName   = document.getElementById('dbRestoreTarget')?.value;
     if (!filename) { showToast('Selecione um arquivo de backup!', 'warning'); return; }
-    if (!confirm(`Restaurar "${filename}"? Isso substituirá os dados existentes.`)) return;
+    if (!confirm(`Restaurar "${filename}"? Isso substituirÃ¡ os dados existentes.`)) return;
     const result = await safeFetch(`${API_BASE}/db/restore`, 'POST', { filename, dbName });
     if (result?.success) {
         showToast('Banco restaurado com sucesso!', 'success');
@@ -1577,12 +1570,12 @@ async function saveDbSetup() {
     const result = await safeFetch(`${API_BASE}/db/setup`, 'POST', body);
     document.getElementById('dbSetupModal').classList.add('hidden');
     if (result?.success) {
-        // Testa conexão automaticamente após salvar
+        // Testa conexÃ£o automaticamente apÃ³s salvar
         const test = await safeFetch(`${API_BASE}/db/test`);
         if (test?.success) {
-            showToast('Configuração salva! Conexão OK.', 'success');
+            showToast('ConfiguraÃ§Ã£o salva! ConexÃ£o OK.', 'success');
         } else {
-            showToast(`Configuração salva mas conexão falhou: ${test?.message}`, 'warning');
+            showToast(`ConfiguraÃ§Ã£o salva mas conexÃ£o falhou: ${test?.message}`, 'warning');
         }
         fetchDatabases();
     }
@@ -1636,13 +1629,13 @@ async function checkMariaDBDiagnostics() {
             const d = res.diagnostics;
             
             const badge = (status) => status 
-                ? `<span style="background:rgba(16,185,129,0.15); color:#34d399; font-weight:600; padding:2px 8px; border-radius:12px; font-size:0.75rem; border:1px solid rgba(16,185,129,0.3); display:inline-flex; align-items:center; gap:4px;">✅ OK</span>`
-                : `<span style="background:rgba(239,68,68,0.15); color:#f87171; font-weight:600; padding:2px 8px; border-radius:12px; font-size:0.75rem; border:1px solid rgba(239,68,68,0.3); display:inline-flex; align-items:center; gap:4px;">❌ Falha</span>`;
+                ? `<span style="background:rgba(16,185,129,0.15); color:#34d399; font-weight:600; padding:2px 8px; border-radius:12px; font-size:0.75rem; border:1px solid rgba(16,185,129,0.3); display:inline-flex; align-items:center; gap:4px;">âœ… OK</span>`
+                : `<span style="background:rgba(239,68,68,0.15); color:#f87171; font-weight:600; padding:2px 8px; border-radius:12px; font-size:0.75rem; border:1px solid rgba(239,68,68,0.3); display:inline-flex; align-items:center; gap:4px;">âŒ Falha</span>`;
 
-            // Representação de portas HTTP ativas
+            // RepresentaÃ§Ã£o de portas HTTP ativas
             const activePortsStr = d.nginx.activePorts && d.nginx.activePorts.length > 0
                 ? `<span style="color:#34d399; font-weight:600; background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.2); padding:2px 6px; border-radius:4px; font-family:monospace; font-size:0.75rem;">${d.nginx.activePorts.join(', ')}</span>`
-                : `<span style="background:rgba(239,68,68,0.15); color:#f87171; font-weight:600; padding:2px 8px; border-radius:12px; font-size:0.75rem; border:1px solid rgba(239,68,68,0.3);">❌ Nenhuma</span>`;
+                : `<span style="background:rgba(239,68,68,0.15); color:#f87171; font-weight:600; padding:2px 8px; border-radius:12px; font-size:0.75rem; border:1px solid rgba(239,68,68,0.3);">âŒ Nenhuma</span>`;
 
             // Sites respondendo na varredura HTTP
             const sitesRespondedStr = d.nginx.sitesResponding && d.nginx.sitesResponding.length > 0
@@ -1653,7 +1646,7 @@ async function checkMariaDBDiagnostics() {
                 <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px;">
                     <div style="background:rgba(255,255,255,0.02); padding:14px; border-radius:6px; border:1px solid rgba(255,255,255,0.05);">
                         <h4 style="margin-top:0; margin-bottom:10px; font-size:0.875rem; display:flex; align-items:center; gap:6px; color:var(--primary);">
-                            <i data-lucide="binary" style="width:14px;height:14px;"></i> Binários do MariaDB
+                            <i data-lucide="binary" style="width:14px;height:14px;"></i> BinÃ¡rios do MariaDB
                         </h4>
                         <div style="font-size:0.82rem; display:flex; flex-direction:column; gap:6px;">
                             <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -1687,7 +1680,7 @@ async function checkMariaDBDiagnostics() {
 
                     <div style="background:rgba(255,255,255,0.02); padding:14px; border-radius:6px; border:1px solid rgba(255,255,255,0.05);">
                         <h4 style="margin-top:0; margin-bottom:10px; font-size:0.875rem; display:flex; align-items:center; gap:6px; color:var(--primary);">
-                            <i data-lucide="folder" style="width:14px;height:14px;"></i> Permissões & Pastas DB
+                            <i data-lucide="folder" style="width:14px;height:14px;"></i> PermissÃµes & Pastas DB
                         </h4>
                         <div style="font-size:0.82rem; display:flex; flex-direction:column; gap:6px;">
                             <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -1711,7 +1704,7 @@ async function checkMariaDBDiagnostics() {
                                 <span>PHP-FPM Ativo:</span> ${badge(d.php.phpRunning)}
                             </div>
                             <div style="display:flex; justify-content:space-between; align-items:center;">
-                                <span>Diretório phpMyAdmin:</span> ${badge(d.php.pmaExists)}
+                                <span>DiretÃ³rio phpMyAdmin:</span> ${badge(d.php.pmaExists)}
                             </div>
                             <div style="display:flex; justify-content:space-between; align-items:center;">
                                 <span>config.inc.php SSO:</span> ${badge(d.php.configIncExists)}
@@ -1724,14 +1717,14 @@ async function checkMariaDBDiagnostics() {
 
                     <div style="background:rgba(255,255,255,0.02); padding:14px; border-radius:6px; border:1px solid rgba(255,255,255,0.05);">
                         <h4 style="margin-top:0; margin-bottom:10px; font-size:0.875rem; display:flex; align-items:center; gap:6px; color:var(--primary);">
-                            <i data-lucide="hard-drive" style="width:14px;height:14px;"></i> Diagnóstico Nginx
+                            <i data-lucide="hard-drive" style="width:14px;height:14px;"></i> DiagnÃ³stico Nginx
                         </h4>
                         <div style="font-size:0.82rem; display:flex; flex-direction:column; gap:6px;">
                             <div style="display:flex; justify-content:space-between; align-items:center;">
                                 <span>NGINX Instalado:</span> ${badge(d.nginx.installed)}
                             </div>
                             <div style="display:flex; justify-content:space-between; align-items:center;">
-                                <span>Configuração NGINX:</span> ${badge(d.nginx.configOk)}
+                                <span>ConfiguraÃ§Ã£o NGINX:</span> ${badge(d.nginx.configOk)}
                             </div>
                             <div style="display:flex; justify-content:space-between; align-items:center;">
                                 <span>Processo NGINX:</span> ${badge(d.nginx.processActive)}
@@ -1751,7 +1744,7 @@ async function checkMariaDBDiagnostics() {
                         </h4>
                         <div style="font-size:0.82rem; display:flex; flex-direction:column; gap:6px;">
                             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                                <span>Método de Login:</span> <span class="badge badge-ok" style="background:#10b981; color:#fff; font-size:0.75rem; font-weight:600; padding:2px 6px; border-radius:4px;">Cookie Auth (Direto)</span>
+                                <span>MÃ©todo de Login:</span> <span class="badge badge-ok" style="background:#10b981; color:#fff; font-size:0.75rem; font-weight:600; padding:2px 6px; border-radius:4px;">Cookie Auth (Direto)</span>
                             </div>
                             <div style="display:flex; flex-direction:column; gap:4px; margin-top:2px;">
                                 <span style="font-weight:600;">Sites Respondendo (HTTP):</span>
@@ -1763,10 +1756,10 @@ async function checkMariaDBDiagnostics() {
                     </div>
                 </div>
 
-                <!-- Botão premium de Logs Técnicos -->
+                <!-- BotÃ£o premium de Logs TÃ©cnicos -->
                 <div style="margin-top:16px; border-top:1px solid rgba(255,255,255,0.08); padding-top:14px; display:flex; justify-content:flex-end;">
                     <button class="btn btn-secondary btn-sm" onclick="toggleTechDiagLogs()" style="display:flex; align-items:center; gap:6px; background:var(--bg-lighter); color:var(--text-color); border:1px solid var(--border-color); font-weight:600;">
-                        <i data-lucide="terminal" style="width:14px;height:14px;"></i> Detalhes Técnicos (Nginx & Portas)
+                        <i data-lucide="terminal" style="width:14px;height:14px;"></i> Detalhes TÃ©cnicos (Nginx & Portas)
                     </button>
                 </div>
                 
@@ -1775,14 +1768,14 @@ async function checkMariaDBDiagnostics() {
         } else {
             resultDiv.innerHTML = `
                 <div style="color:var(--danger); text-align:center; padding:10px; font-weight:600;">
-                    ❌ Falha ao rodar diagnóstico: ${res?.error || 'Erro no servidor.'}
+                    âŒ Falha ao rodar diagnÃ³stico: ${res?.error || 'Erro no servidor.'}
                 </div>
             `;
         }
     } catch(e) {
         resultDiv.innerHTML = `
             <div style="color:var(--danger); text-align:center; padding:10px; font-weight:600;">
-                ❌ Erro de rede ao requisitar diagnósticos: ${e.message}
+                âŒ Erro de rede ao requisitar diagnÃ³sticos: ${e.message}
             </div>
         `;
     } finally {
@@ -1812,7 +1805,7 @@ async function fetchNginxSites() {
         ? sites.map(s => `
             <tr>
                 <td>${s.domain}</td><td>${s.port}</td>
-                <td><button class="btn btn-sm btn-danger" onclick="deleteNginxSite('${s.file}')">🗑</button></td>
+                <td><button class="btn btn-sm btn-danger" onclick="deleteNginxSite('${s.file}')">ðŸ—‘</button></td>
             </tr>
         `).join('')
         : '<tr><td colspan="3" style="color:var(--text-muted)">Nenhum site configurado.</td></tr>';
@@ -1842,7 +1835,7 @@ async function createNginxSite(e) {
 }
 
 async function deleteNginxSite(file) {
-    if (!confirm(`Remover configuração "${file}"?`)) return;
+    if (!confirm(`Remover configuraÃ§Ã£o "${file}"?`)) return;
     // Servidor usa DELETE /api/nginx?file=nome.conf
     await fetch(`${API_BASE}/nginx?file=${encodeURIComponent(file)}`, { method: 'DELETE' });
     fetchNginxSites();
@@ -1851,7 +1844,7 @@ async function deleteNginxSite(file) {
 async function actionNginx(action) {
     const labels = { start: 'iniciado', stop: 'parado', restart: 'reiniciado' };
     const verb = { start: 'iniciar', stop: 'parar', restart: 'reiniciar' };
-    if (!confirm(`Deseja ${verb[action]} o serviço do NGINX?`)) return;
+    if (!confirm(`Deseja ${verb[action]} o serviÃ§o do NGINX?`)) return;
     const res = await safeFetch(`${API_BASE}/nginx/action`, 'POST', { action });
     if (res?.success) {
         showToast(`NGINX ${labels[action]} com sucesso!`, 'success');
@@ -1867,7 +1860,7 @@ async function actionNginx(action) {
 async function fetchCron() {
     const data = await safeFetch(`${API_BASE}/cron`);
     const editor = document.getElementById('cronEditor');
-    // Servidor retorna {cron: '...'} (não crontab)
+    // Servidor retorna {cron: '...'} (nÃ£o crontab)
     if (editor && data) editor.value = data.cron || '';
 }
 
@@ -1906,7 +1899,7 @@ async function fetchNoipStatus() {
     const btn = document.getElementById('noip-toggle-btn');
     if (btn) {
         const isRunning = data.status === 'Executando...';
-        btn.textContent = isRunning ? '⏹ Parar' : '▶ Iniciar';
+        btn.textContent = isRunning ? 'â¹ Parar' : 'â–¶ Iniciar';
         btn.className = `btn btn-sm ${isRunning ? 'btn-danger' : 'btn-primary'}`;
     }
 
@@ -1933,9 +1926,9 @@ async function saveNoipConfig(e) {
         autostart: document.getElementById('noipAutostart').checked,
     });
     if (res?.error) {
-        showToast('Erro ao salvar configuração do No-IP: ' + res.error, 'error');
+        showToast('Erro ao salvar configuraÃ§Ã£o do No-IP: ' + res.error, 'error');
     } else {
-        showToast('Configuração do No-IP salva!', 'success');
+        showToast('ConfiguraÃ§Ã£o do No-IP salva!', 'success');
     }
     fetchNoipStatus();
 }
@@ -1970,18 +1963,18 @@ function appendNoipLog(data) {
 }
 
 // ============================================================
-//  LOGS — eventos corretos do servidor
+//  LOGS â€” eventos corretos do servidor
 // ============================================================
 function startLogWatch() {
     let filePath = document.getElementById('logFilePath')?.value;
-    // Se o usuário clicar com o input em branco, usa o placeholder como padrão
+    // Se o usuÃ¡rio clicar com o input em branco, usa o placeholder como padrÃ£o
     if (!filePath || filePath.trim() === '') {
         filePath = document.getElementById('logFilePath')?.placeholder;
     }
     if (!filePath) return;
     const d = document.getElementById('logs-display');
     if (d) d.textContent = `Monitorando: ${filePath}\n`;
-    // Servidor usa 'log-start' com string (não objeto)
+    // Servidor usa 'log-start' com string (nÃ£o objeto)
     socket?.emit('log-start', filePath);
 }
 
@@ -1998,7 +1991,7 @@ function appendLogLine(line) {
 }
 
 // ============================================================
-//  SISTEMA DE ATUALIZAÇÃO DO PAINEL — GitHub Releases
+//  SISTEMA DE ATUALIZAÃ‡ÃƒO DO PAINEL â€” GitHub Releases
 // ============================================================
 async function checkSystemUpdates() {
     const statusText   = document.getElementById('update-status-text');
@@ -2010,7 +2003,7 @@ async function checkSystemUpdates() {
 
     if (statusText) statusText.innerHTML = 'Verificando...';
 
-    // Carrega config do repositório GitHub
+    // Carrega config do repositÃ³rio GitHub
     const cfg = await safeFetch(`${API_BASE}/system/update/config`);
     if (cfg && repoInput && !repoInput.value) {
         repoInput.value = cfg.github_repo || '';
@@ -2046,17 +2039,17 @@ async function checkSystemUpdates() {
     if (versionLat && hasUpdate) versionLat.textContent = `v${latestVersion}`;
 
     if (hasUpdate) {
-        if (statusText) statusText.innerHTML = '<span style="color:var(--success)">✅ Nova versão disponível!</span>';
+        if (statusText) statusText.innerHTML = '<span style="color:var(--success)">âœ… Nova versÃ£o disponÃ­vel!</span>';
         if (btnRun) btnRun.classList.remove('hidden');
     } else {
         const methodLabels = {
-            up_to_date:       '✅ Atualizado via GitHub Releases',
-            failed_check:     '⚠️ GitHub indisponível — verifique o repositório',
-            update_available: '⚠️ Nova versão disponível!'
+            up_to_date:       'âœ… Atualizado via GitHub Releases',
+            failed_check:     'âš ï¸ GitHub indisponÃ­vel â€” verifique o repositÃ³rio',
+            update_available: 'âš ï¸ Nova versÃ£o disponÃ­vel!'
         };
-        const label = methodLabels[data.status] || '✅ Atualizado';
+        const label = methodLabels[data.status] || 'âœ… Atualizado';
         if (statusText) statusText.innerHTML = `<span style="color:var(--text-muted)">${label}</span>`;
-        if (btnRun) btnRun.classList.remove('hidden'); // Permite forçar re-instalação
+        if (btnRun) btnRun.classList.remove('hidden'); // Permite forÃ§ar re-instalaÃ§Ã£o
     }
 
     if (cfg?.github_repo) {
@@ -2077,7 +2070,7 @@ async function fetchAvailableVersions() {
             window.availableVersions = releases;
             select.innerHTML = releases.map(rel => {
                 const date = rel.publishedAt ? new Date(rel.publishedAt).toLocaleDateString() : 'tag';
-                const prefix = rel.compatStatus === 'breaking' ? '⚠️ ' : '✅ ';
+                const prefix = rel.compatStatus === 'breaking' ? 'âš ï¸ ' : 'âœ… ';
                 return `<option value="${rel.tag}">${prefix}${rel.tag} (${date})</option>`;
             }).join('');
             
@@ -2087,7 +2080,7 @@ async function fetchAvailableVersions() {
             wrapper.classList.add('hidden');
         }
     } catch (err) {
-        console.error('Falha ao obter lista de versões:', err);
+        console.error('Falha ao obter lista de versÃµes:', err);
     }
 }
 
@@ -2130,23 +2123,23 @@ function setUpdateProgress(percent, label, failed = false) {
     if (labelEl && label) labelEl.textContent = label;
 }
 
-function resetUpdateProgress(label = 'Preparando atualização...') {
+function resetUpdateProgress(label = 'Preparando atualizaÃ§Ã£o...') {
     setUpdateProgress(0, label, false);
 }
 
 function advanceUpdateProgressFromLine(line) {
     const normalized = String(line || '').toLowerCase();
     const stages = [
-        { match: ['verificando releases', 'release encontrada', 'tag mais recente'], percent: 12, label: 'Verificando versão' },
+        { match: ['verificando releases', 'release encontrada', 'tag mais recente'], percent: 12, label: 'Verificando versÃ£o' },
         { match: ['criando backup'], percent: 24, label: 'Criando backup' },
-        { match: ['backup criado'], percent: 34, label: 'Backup concluído' },
+        { match: ['backup criado'], percent: 34, label: 'Backup concluÃ­do' },
         { match: ['baixando pacote', 'baixando o tarball'], percent: 46, label: 'Baixando pacote' },
-        { match: ['pacote baixado', 'tarball da tag baixado'], percent: 60, label: 'Download concluído' },
-        { match: ['extraindo pacote', 'extração básica'], percent: 70, label: 'Extraindo arquivos' },
-        { match: ['instalando atualização'], percent: 80, label: 'Instalando arquivos' },
+        { match: ['pacote baixado', 'tarball da tag baixado'], percent: 60, label: 'Download concluÃ­do' },
+        { match: ['extraindo pacote', 'extraÃ§Ã£o bÃ¡sica'], percent: 70, label: 'Extraindo arquivos' },
+        { match: ['instalando atualizaÃ§Ã£o'], percent: 80, label: 'Instalando arquivos' },
         { match: ['arquivos copiados'], percent: 88, label: 'Arquivos instalados' },
-        { match: ['atualizando depend', '[npm]'], percent: 94, label: 'Atualizando dependências' },
-        { match: ['atualização concluída', 'rollback para'], percent: 100, label: 'Concluído' }
+        { match: ['atualizando depend', '[npm]'], percent: 94, label: 'Atualizando dependÃªncias' },
+        { match: ['atualizaÃ§Ã£o concluÃ­da', 'rollback para'], percent: 100, label: 'ConcluÃ­do' }
     ];
 
     for (const stage of stages) {
@@ -2161,17 +2154,17 @@ async function runManualSystemUpdate() {
     const select = document.getElementById('github-versions-select');
     const tag = select?.value;
     if (!tag) {
-        showToast('Selecione uma versão válida!', 'warning');
+        showToast('Selecione uma versÃ£o vÃ¡lida!', 'warning');
         return;
     }
 
     const release = window.availableVersions?.find(r => r.tag === tag);
     const isBreaking = release?.compatStatus === 'breaking';
     const warnMsg = isBreaking 
-        ? `\n\n⚠️ ATENÇÃO: Esta é uma versão antiga (Downgrade/Rollback). Deseja restaurar a partir do backup ou baixar novamente?` 
+        ? `\n\nâš ï¸ ATENÃ‡ÃƒO: Esta Ã© uma versÃ£o antiga (Downgrade/Rollback). Deseja restaurar a partir do backup ou baixar novamente?` 
         : ``;
 
-    if (!confirm(`Deseja realmente aplicar a versão "${tag}" no seu cPanel?${warnMsg}\n\nO painel será reiniciado ao final.`)) {
+    if (!confirm(`Deseja realmente aplicar a versÃ£o "${tag}" no seu cPanel?${warnMsg}\n\nO painel serÃ¡ reiniciado ao final.`)) {
         return;
     }
 
@@ -2185,7 +2178,7 @@ async function runManualSystemUpdate() {
     if (termWrapper) termWrapper.classList.remove('hidden');
     resetUpdateProgress(`Preparando ${tag}...`);
     
-    const initialText = `[INFO] Iniciando instalação para a versão ${tag}...\n`;
+    const initialText = `[INFO] Iniciando instalaÃ§Ã£o para a versÃ£o ${tag}...\n`;
     if (term) term.innerHTML = `<span style="color:var(--primary)">${initialText}</span>`;
     if (healthTerm) healthTerm.innerHTML = `<span style="color:var(--primary)">${initialText}</span>`;
     
@@ -2193,7 +2186,7 @@ async function runManualSystemUpdate() {
     if (btnCheck)  btnCheck.disabled  = true;
     if (btnManual) btnManual.disabled = true;
 
-    // Determina se é rollback (downgrade) ou install padrão
+    // Determina se Ã© rollback (downgrade) ou install padrÃ£o
     const cleanTag = tag.replace(/^v/, '');
     const isRollback = isBreaking;
     const url = isRollback 
@@ -2222,14 +2215,14 @@ async function runManualSystemUpdate() {
             if (line.startsWith('__DONE__:')) {
                 evtSource.close();
                 const code = line.split(':')[1];
-                writeLine(`\n<span style="color:${code == 0 ? 'var(--success)' : 'var(--warning)'}">Processo finalizado com código ${code}.</span>`);
+                writeLine(`\n<span style="color:${code == 0 ? 'var(--success)' : 'var(--warning)'}">Processo finalizado com cÃ³digo ${code}.</span>`);
                 if (code == 0) {
-                    setUpdateProgress(100, 'Atualização concluída');
-                    writeLine(`<span style="color:var(--success)">✅ Versão ${tag} aplicada com sucesso! Recarregando em 5s...</span>`);
+                    setUpdateProgress(100, 'AtualizaÃ§Ã£o concluÃ­da');
+                    writeLine(`<span style="color:var(--success)">âœ… VersÃ£o ${tag} aplicada com sucesso! Recarregando em 5s...</span>`);
                     setTimeout(() => location.reload(), 5000);
                 } else {
-                    setUpdateProgress(100, 'Falha na atualização', true);
-                    writeLine(`<span style="color:var(--danger)">❌ Falha na aplicação da versão. Verifique as mensagens acima.</span>`);
+                    setUpdateProgress(100, 'Falha na atualizaÃ§Ã£o', true);
+                    writeLine(`<span style="color:var(--danger)">âŒ Falha na aplicaÃ§Ã£o da versÃ£o. Verifique as mensagens acima.</span>`);
                 }
                 
                 if (btnRun)    btnRun.disabled    = false;
@@ -2253,7 +2246,7 @@ async function runManualSystemUpdate() {
 
     evtSource.onerror = () => {
         setUpdateProgress(96, 'Reiniciando servidor...');
-        writeLine('\n<span style="color:var(--warning)">Aviso: Conectando/Reiniciando servidor para aplicar as alterações...</span>');
+        writeLine('\n<span style="color:var(--warning)">Aviso: Conectando/Reiniciando servidor para aplicar as alteraÃ§Ãµes...</span>');
         evtSource.close();
         setTimeout(() => {
             if (btnRun)    btnRun.disabled    = false;
@@ -2273,20 +2266,20 @@ async function saveGithubRepo() {
     if (input) input.value = repo;
 
     if (!repo || !repo.includes('/')) {
-        showToast('Formato inválido. Use: usuario/repositorio', 'warning');
+        showToast('Formato invÃ¡lido. Use: usuario/repositorio', 'warning');
         return;
     }
     const result = await safeFetch(`${API_BASE}/system/update/config`, 'POST', { github_repo: repo });
     if (result?.success) {
-        showToast(`Repositório salvo: ${repo}. Agora clique em "Verificar" para checar atualizações.`, 'success');
+        showToast(`RepositÃ³rio salvo: ${repo}. Agora clique em "Verificar" para checar atualizaÃ§Ãµes.`, 'success');
         checkSystemUpdates();
     } else {
-        showToast('Erro ao salvar configuração do repositório.', 'error');
+        showToast('Erro ao salvar configuraÃ§Ã£o do repositÃ³rio.', 'error');
     }
 }
 
 function runSystemUpdate() {
-    if (!confirm('Deseja realmente atualizar o painel para a última versão disponível?\nO servidor será reiniciado ao final.')) return;
+    if (!confirm('Deseja realmente atualizar o painel para a Ãºltima versÃ£o disponÃ­vel?\nO servidor serÃ¡ reiniciado ao final.')) return;
 
     const termWrapper = document.getElementById('update-terminal-wrapper');
     const term        = document.getElementById('update-terminal');
@@ -2296,8 +2289,8 @@ function runSystemUpdate() {
 
     if (termWrapper) termWrapper.classList.remove('hidden');
     
-    resetUpdateProgress('Preparando atualização...');
-    const initialText = `[INFO] Iniciando atualização automática para a versão mais recente...\n`;
+    resetUpdateProgress('Preparando atualizaÃ§Ã£o...');
+    const initialText = `[INFO] Iniciando atualizaÃ§Ã£o automÃ¡tica para a versÃ£o mais recente...\n`;
     if (term) term.innerHTML = `<span style="color:var(--primary)">${initialText}</span>`;
     if (healthTerm) healthTerm.innerHTML = `<span style="color:var(--primary)">${initialText}</span>`;
     
@@ -2326,14 +2319,14 @@ function runSystemUpdate() {
             if (line.startsWith('__DONE__:')) {
                 evtSource.close();
                 const code = line.split(':')[1];
-                writeLine(`\n<span style="color:${code == 0 ? 'var(--success)' : 'var(--warning)'}">Processo finalizado com código ${code}.</span>`);
+                writeLine(`\n<span style="color:${code == 0 ? 'var(--success)' : 'var(--warning)'}">Processo finalizado com cÃ³digo ${code}.</span>`);
                 if (code == 0) {
-                    setUpdateProgress(100, 'Atualização concluída');
-                    writeLine(`<span style="color:var(--success)">✅ Atualização concluída com sucesso! Recarregando em 5s...</span>`);
+                    setUpdateProgress(100, 'AtualizaÃ§Ã£o concluÃ­da');
+                    writeLine(`<span style="color:var(--success)">âœ… AtualizaÃ§Ã£o concluÃ­da com sucesso! Recarregando em 5s...</span>`);
                     setTimeout(() => location.reload(), 5000);
                 } else {
-                    setUpdateProgress(100, 'Falha na atualização', true);
-                    writeLine(`<span style="color:var(--danger)">❌ Falha na atualização. Verifique os logs acima.</span>`);
+                    setUpdateProgress(100, 'Falha na atualizaÃ§Ã£o', true);
+                    writeLine(`<span style="color:var(--danger)">âŒ Falha na atualizaÃ§Ã£o. Verifique os logs acima.</span>`);
                 }
                 if (btnRun)  btnRun.disabled  = false;
                 if (btnCheck) btnCheck.disabled = false;
@@ -2355,7 +2348,7 @@ function runSystemUpdate() {
 
     evtSource.onerror = () => {
         setUpdateProgress(96, 'Reiniciando servidor...');
-        writeLine('\n<span style="color:var(--warning)">Aviso: Conectando/Reiniciando servidor para aplicar as alterações...</span>');
+        writeLine('\n<span style="color:var(--warning)">Aviso: Conectando/Reiniciando servidor para aplicar as alteraÃ§Ãµes...</span>');
         evtSource.close();
         setTimeout(() => {
             if (btnRun)  btnRun.disabled  = false;
@@ -2372,8 +2365,8 @@ async function createBackup() {
     const btn = document.getElementById('backup-btn');
     if (btn) { btn.disabled = true; btn.textContent = 'Gerando...'; }
     const data = await safeFetch(`${API_BASE}/backup`, 'POST');
-    if (btn) { btn.disabled = false; btn.innerHTML = '↓ Gerar Backup Agora'; }
-    // Servidor retorna {success, filename} (não file)
+    if (btn) { btn.disabled = false; btn.innerHTML = 'â†“ Gerar Backup Agora'; }
+    // Servidor retorna {success, filename} (nÃ£o file)
     if (data?.filename) {
         const result = document.getElementById('backup-result');
         const link   = document.getElementById('backup-download-link');
@@ -2383,7 +2376,7 @@ async function createBackup() {
 }
 
 // ============================================================
-//  DOCUMENTAÇÃO
+//  DOCUMENTAÃ‡ÃƒO
 // ============================================================
 async function loadDocumentation() {
     const data = await safeFetch(`${API_BASE}/readme`);
@@ -2407,10 +2400,10 @@ async function toggleMariaDB()  { await safeFetch(`${API_BASE}/mariadb/toggle`, 
 // ============================================================
 //  HELPER: FETCH SEGURO
 // ============================================================
-async function safeFetch(url, method = 'GET', body = null, timeoutMs = 8000) {
+async function safeFetch(url, method = 'GET', body = null, timeoutMs = 15000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort('timeout'), timeoutMs);
     try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), timeoutMs);
         const opts = {
             method,
             headers: { 'Content-Type': 'application/json' },
@@ -2418,7 +2411,6 @@ async function safeFetch(url, method = 'GET', body = null, timeoutMs = 8000) {
         };
         if (body) opts.body = JSON.stringify(body);
         const res = await fetch(url, opts);
-        clearTimeout(timer);
         const text = await res.text();
         let data = {};
         if (text) {
@@ -2426,14 +2418,17 @@ async function safeFetch(url, method = 'GET', body = null, timeoutMs = 8000) {
                 data = JSON.parse(text);
             } catch (_) {
                 const snippet = text.slice(0, 120).replace(/\s+/g, ' ').trim();
-                throw new Error(`Resposta não-JSON (${res.status}): ${snippet}`);
+                throw new Error(`Resposta nÃ£o-JSON (${res.status}): ${snippet}`);
             }
         }
         if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
         return data;
     } catch(e) {
+        if (e?.name === 'AbortError') return null;
         console.error(`[safeFetch] ${url}:`, e.message);
         return null;
+    } finally {
+        clearTimeout(timer);
     }
 }
 
@@ -2465,7 +2460,7 @@ async function fetchNetworkInfo() {
         if (extIpv6) extIpv6.checked = res.fetchV6;
 
         if (cgnatWarn) {
-            if (res.ipv4 && res.ipv4 !== 'Indisponível' && res.ipv4 !== 'Desativado') {
+            if (res.ipv4 && res.ipv4 !== 'IndisponÃ­vel' && res.ipv4 !== 'Desativado') {
                 cgnatWarn.classList.remove('hidden');
             } else {
                 cgnatWarn.classList.add('hidden');
@@ -2491,7 +2486,7 @@ async function togglePanelHttps(el) {
     el.disabled = false;
     
     if (res && res.success) {
-        showToast(isChecked ? 'HTTPS ativado! O servidor reiniciará em 2 segundos.' : 'HTTPS desativado! O servidor reiniciará em 2 segundos.', 'success');
+        showToast(isChecked ? 'HTTPS ativado! O servidor reiniciarÃ¡ em 2 segundos.' : 'HTTPS desativado! O servidor reiniciarÃ¡ em 2 segundos.', 'success');
         
         setTimeout(() => {
             const currentHost = window.location.hostname;
@@ -2506,7 +2501,7 @@ async function togglePanelHttps(el) {
 }
 
 // ============================================================
-//  CONFIGURAÇÕES DO PAINEL
+//  CONFIGURAÃ‡Ã•ES DO PAINEL
 // ============================================================
 async function loadSettings() {
     const res = await safeFetch(`${API_BASE}/system/settings`);
@@ -2515,7 +2510,7 @@ async function loadSettings() {
         const portInput = document.getElementById('settings-port-input');
         if (portInput) portInput.value = res.port;
 
-        // Preenche usuário
+        // Preenche usuÃ¡rio
         const userInput = document.getElementById('settings-user-input');
         if (userInput) userInput.value = res.adminUser;
         
@@ -2526,7 +2521,7 @@ async function loadSettings() {
         // Dispara a busca pela rede/IPs assim que a aba Settings carregar
         fetchNetworkInfo();
 
-        // Preenche autostart badge e botão (Opção 1)
+        // Preenche autostart badge e botÃ£o (OpÃ§Ã£o 1)
         const badge = document.getElementById('autostart-status-badge');
         const btn = document.getElementById('btn-toggle-autostart');
         if (badge && btn) {
@@ -2543,7 +2538,7 @@ async function loadSettings() {
             }
         }
 
-        // Preenche autostart boot badge e botão (Opção 2 - Termux:Boot)
+        // Preenche autostart boot badge e botÃ£o (OpÃ§Ã£o 2 - Termux:Boot)
         const badgeBoot = document.getElementById('autostart-boot-badge');
         const btnBoot = document.getElementById('btn-toggle-autostart-boot');
         if (badgeBoot && btnBoot) {
@@ -2560,7 +2555,7 @@ async function loadSettings() {
             }
         }
 
-        // Carrega modo de memória
+        // Carrega modo de memÃ³ria
         try {
             const procRes = await safeFetch(`${API_BASE}/system/processes`);
             if (procRes?.success && procRes.panel) {
@@ -2570,7 +2565,7 @@ async function loadSettings() {
                 }
             }
         } catch(e) {
-            console.error('Falha ao carregar processos/memória:', e);
+            console.error('Falha ao carregar processos/memÃ³ria:', e);
         }
 
         if (window.lucide) lucide.createIcons();
@@ -2582,10 +2577,10 @@ async function saveExternalAccessSettings() {
     const ipv6 = !!document.getElementById('settings-ext-ipv6')?.checked;
     const res = await safeFetch(`${API_BASE}/system/settings/network`, 'POST', { ipv4, ipv6 });
     if (res?.success) {
-        showToast('Configuração de IPv4/IPv6 externo salva.', 'success');
+        showToast('ConfiguraÃ§Ã£o de IPv4/IPv6 externo salva.', 'success');
         loadSettings();
     } else {
-        showToast(`Erro: ${res?.error || 'Falha ao salvar configuração de rede.'}`, 'error');
+        showToast(`Erro: ${res?.error || 'Falha ao salvar configuraÃ§Ã£o de rede.'}`, 'error');
     }
 }
 
@@ -2597,13 +2592,13 @@ async function toggleBootAutostart() {
     const res = await safeFetch(`${API_BASE}/system/settings/autostart/toggle`, 'POST', { active: nextState });
     if (res?.success) {
         showToast(nextState 
-            ? 'Regra de inicialização (Ao abrir o Termux) configurada com sucesso!' 
-            : 'Regra de inicialização (Ao abrir o Termux) removida.',
+            ? 'Regra de inicializaÃ§Ã£o (Ao abrir o Termux) configurada com sucesso!' 
+            : 'Regra de inicializaÃ§Ã£o (Ao abrir o Termux) removida.',
             'success'
         );
         loadSettings();
     } else {
-        showToast('Falha ao alterar a regra de auto-inicialização.', 'error');
+        showToast('Falha ao alterar a regra de auto-inicializaÃ§Ã£o.', 'error');
     }
 }
 
@@ -2615,8 +2610,8 @@ async function toggleTermuxBoot() {
     const res = await safeFetch(`${API_BASE}/system/settings/autostart-boot/toggle`, 'POST', { active: nextState });
     if (res?.success) {
         showToast(nextState 
-            ? 'Regra de inicialização via Termux:Boot configurada! Instale o app auxiliar "Termux:Boot" para inicialização invisível em segundo plano.' 
-            : 'Regra de inicialização via Termux:Boot removida com sucesso.',
+            ? 'Regra de inicializaÃ§Ã£o via Termux:Boot configurada! Instale o app auxiliar "Termux:Boot" para inicializaÃ§Ã£o invisÃ­vel em segundo plano.' 
+            : 'Regra de inicializaÃ§Ã£o via Termux:Boot removida com sucesso.',
             'success'
         );
         loadSettings();
@@ -2629,22 +2624,22 @@ async function savePanelPort() {
     const input = document.getElementById('settings-port-input');
     const newPort = parseInt(input?.value);
     if (!newPort || newPort < 1 || newPort > 65535) {
-        showToast('Porta inválida! Insira um valor entre 1 e 65535.', 'warning');
+        showToast('Porta invÃ¡lida! Insira um valor entre 1 e 65535.', 'warning');
         return;
     }
 
-    if (!confirm(`⚠️ Você tem certeza que deseja mudar a porta do painel para ${newPort}?\n\nO servidor será desligado e reiniciado automaticamente na nova porta. Você precisará acessar o painel usando o novo endereço.`)) {
+    if (!confirm(`âš ï¸ VocÃª tem certeza que deseja mudar a porta do painel para ${newPort}?\n\nO servidor serÃ¡ desligado e reiniciado automaticamente na nova porta. VocÃª precisarÃ¡ acessar o painel usando o novo endereÃ§o.`)) {
         return;
     }
 
     const res = await safeFetch(`${API_BASE}/system/settings/port`, 'POST', { port: newPort });
     if (res?.success) {
-        showToast('Porta alterada com sucesso! O servidor está reiniciando, redirecionando em 5 segundos...', 'success');
+        showToast('Porta alterada com sucesso! O servidor estÃ¡ reiniciando, redirecionando em 5 segundos...', 'success');
         setTimeout(() => {
             window.location.href = `${window.location.protocol}//${window.location.hostname}:${newPort}`;
         }, 5000);
     } else {
-        showToast(`Erro: ${res?.error || 'Não foi possível alterar a porta.'}`, 'error');
+        showToast(`Erro: ${res?.error || 'NÃ£o foi possÃ­vel alterar a porta.'}`, 'error');
     }
 }
 
@@ -2655,11 +2650,11 @@ async function savePanelAuth() {
     const pass = passInput?.value;
 
     if (!user || !pass || user === '' || pass === '') {
-        showToast('Usuário e senha não podem ficar vazios!', 'warning');
+        showToast('UsuÃ¡rio e senha nÃ£o podem ficar vazios!', 'warning');
         return;
     }
 
-    if (!confirm('Deseja salvar as novas credenciais de acesso? Você precisará usá-las no próximo login.')) {
+    if (!confirm('Deseja salvar as novas credenciais de acesso? VocÃª precisarÃ¡ usÃ¡-las no prÃ³ximo login.')) {
         return;
     }
 
@@ -2668,7 +2663,7 @@ async function savePanelAuth() {
         showToast('Credenciais atualizadas com sucesso!', 'success');
         loadSettings();
     } else {
-        showToast(`Erro: ${res?.error || 'Não foi possível salvar as credenciais.'}`, 'error');
+        showToast(`Erro: ${res?.error || 'NÃ£o foi possÃ­vel salvar as credenciais.'}`, 'error');
     }
 }
 
@@ -2837,22 +2832,22 @@ async function populateExistingTunnelsDropdown() {
     if (!select) return;
     
     try {
-        select.innerHTML = '<option value="">Carregando túneis...</option>';
+        select.innerHTML = '<option value="">Carregando tÃºneis...</option>';
         const res = await fetch(`${API_BASE}/cloudflared/instances`);
         const data = await res.json();
         if (data.success && data.instances) {
             if (data.instances.length === 0) {
-                select.innerHTML = '<option value="">Nenhum túnel cadastrado</option>';
+                select.innerHTML = '<option value="">Nenhum tÃºnel cadastrado</option>';
             } else {
                 select.innerHTML = data.instances.map(inst => 
                     `<option value="${inst.id}">${inst.name} (${inst.tunnelId ? inst.tunnelId.slice(0, 8) : 'Sem ID'})</option>`
                 ).join('');
             }
         } else {
-            select.innerHTML = '<option value="">Erro ao buscar instâncias</option>';
+            select.innerHTML = '<option value="">Erro ao buscar instÃ¢ncias</option>';
         }
     } catch (e) {
-        select.innerHTML = '<option value="">Falha ao listar instâncias</option>';
+        select.innerHTML = '<option value="">Falha ao listar instÃ¢ncias</option>';
     }
 }
 
@@ -2914,7 +2909,7 @@ async function fetchHostingServices() {
             window.hostingServices = res.services || [];
             renderHostingGrid(window.activeFilterType);
         } else {
-            console.error('Falha ao obter lista de serviços de hospedagem:', res?.error);
+            console.error('Falha ao obter lista de serviÃ§os de hospedagem:', res?.error);
         }
     } catch (err) {
         console.error(err);
@@ -2936,8 +2931,8 @@ function renderHostingGrid(filterType = 'all') {
         grid.innerHTML = `
             <div class="card" style="grid-column: 1 / -1; text-align:center; padding:50px; color:var(--text-muted);">
                 <i data-lucide="folder-open" style="width:48px; height:48px; margin:0 auto 16px; display:block; opacity: 0.6;"></i>
-                <h3 style="font-weight:600; color:var(--text)">Nenhum serviço criado</h3>
-                <p style="margin-top:8px; font-size:0.875rem;">Clique em "+ Novo Serviço" para colocar o seu primeiro projeto no ar!</p>
+                <h3 style="font-weight:600; color:var(--text)">Nenhum serviÃ§o criado</h3>
+                <p style="margin-top:8px; font-size:0.875rem;">Clique em "+ Novo ServiÃ§o" para colocar o seu primeiro projeto no ar!</p>
             </div>
         `;
         lucide.createIcons();
@@ -2947,15 +2942,13 @@ function renderHostingGrid(filterType = 'all') {
     grid.innerHTML = filtered.map(svc => {
         const isApp = svc.type === 'node' || svc.type === 'python';
         const isOnline = svc.status === 'online';
-        const openUrl = svc.domain && svc.domain !== '_' 
-            ? `http://${svc.domain}:${svc.listenPort}` 
-            : `http://${window.location.hostname}:${svc.listenPort}`;
+        const openUrl = buildHostingOpenUrl(svc);
         
         let typeLabel = '';
         let typeClass = '';
         switch (svc.type) {
             case 'php': typeLabel = 'Website PHP'; typeClass = 'badge-type-php'; break;
-            case 'static': typeLabel = 'Estático'; typeClass = 'badge-type-static'; break;
+            case 'static': typeLabel = 'EstÃ¡tico'; typeClass = 'badge-type-static'; break;
             case 'node': typeLabel = 'Node.js'; typeClass = 'badge-type-node'; break;
             case 'python': typeLabel = 'Python'; typeClass = 'badge-type-python'; break;
             case 'proxy': typeLabel = 'Proxy'; typeClass = 'badge-type-proxy'; break;
@@ -2982,11 +2975,11 @@ function renderHostingGrid(filterType = 'all') {
 
                 <div class="hosting-card-body">
                     <div class="hosting-card-info-item">
-                        <span class="hosting-card-info-label">Porta Pública</span>
+                        <span class="hosting-card-info-label">Porta PÃºblica</span>
                         <span class="hosting-card-info-value" style="font-family:var(--font-mono); font-weight:600; color:var(--primary);">${svc.listenPort}</span>
                     </div>
                     <div class="hosting-card-info-item">
-                        <span class="hosting-card-info-label">Host/Domínio</span>
+                        <span class="hosting-card-info-label">Host/DomÃ­nio</span>
                         <span class="hosting-card-info-value" style="font-family:var(--font-mono);">${svc.domain}</span>
                     </div>
                     ${svc.path ? `
@@ -3009,7 +3002,7 @@ function renderHostingGrid(filterType = 'all') {
                     ` : ''}
                     ${svc.cloudflareTunnel ? `
                     <div class="hosting-card-info-item" style="background: rgba(46, 204, 113, 0.05); padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(46, 204, 113, 0.2); margin-top: 4px;">
-                        <span class="hosting-card-info-label" style="color: var(--success); font-weight: 600;">☁️ Túnel Cloudflare</span>
+                        <span class="hosting-card-info-label" style="color: var(--success); font-weight: 600;">â˜ï¸ TÃºnel Cloudflare</span>
                         <span class="hosting-card-info-value" style="font-family:var(--font-mono); font-size:0.75rem;"><a href="https://${svc.cloudflareTunnel.hostname}" target="_blank" style="color: var(--success); text-decoration: none;">${svc.cloudflareTunnel.hostname} <i data-lucide="external-link" style="width:10px; height:10px; display:inline-block; vertical-align:middle;"></i></a></span>
                     </div>
                     ` : ''}
@@ -3029,7 +3022,7 @@ function renderHostingGrid(filterType = 'all') {
                         </button>
                     ` : ''}
                     
-                    <button class="btn btn-danger btn-sm" onclick="deleteHostingService('${svc.id}', '${svc.name}')" style="padding:8px 12px;" title="Remover Serviço">
+                    <button class="btn btn-danger btn-sm" onclick="deleteHostingService('${svc.id}', '${svc.name}')" style="padding:8px 12px;" title="Remover ServiÃ§o">
                         <i data-lucide="trash-2"></i>
                     </button>
                 </div>
@@ -3040,6 +3033,35 @@ function renderHostingGrid(filterType = 'all') {
     lucide.createIcons();
 }
 
+function isLikelyLocalHost(hostname) {
+    const host = String(hostname || '').trim().toLowerCase();
+    return host === 'localhost' ||
+        host === '127.0.0.1' ||
+        host === '0.0.0.0' ||
+        host.startsWith('192.168.') ||
+        host.startsWith('10.') ||
+        host.startsWith('172.16.') ||
+        host.startsWith('172.17.') ||
+        host.startsWith('172.18.') ||
+        host.startsWith('172.19.') ||
+        host.startsWith('172.2') ||
+        host.startsWith('172.30.') ||
+        host.startsWith('172.31.');
+}
+
+function buildHostingOpenUrl(svc) {
+    if (svc && svc.cloudflareTunnel && svc.cloudflareTunnel.hostname) {
+        return `https://${svc.cloudflareTunnel.hostname}`;
+    }
+    const domain = String((svc && svc.domain) || '').trim();
+    if (domain && domain !== '_' && !isLikelyLocalHost(domain)) {
+        return `http://${domain}${svc.listenPort ? `:${svc.listenPort}` : ''}`;
+    }
+    if (!isLikelyLocalHost(window.location.hostname)) {
+        return window.location.origin;
+    }
+    return `http://${window.location.hostname}:${svc.listenPort}`;
+}
 function filterHosting(type, btn) {
     document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
     btn.classList.add('active');
@@ -3121,7 +3143,14 @@ async function createHostingService(e) {
 
         if (res?.success) {
             window.hostingLastSuggestedPort = Math.max(window.hostingLastSuggestedPort || 4000, listenPort + 1);
-            showToast('Servi?o criado com sucesso. Reiniciando NGINX e aplicando t?nel...', 'success');
+            const createdLocalUrl = `http://127.0.0.1:${listenPort}`;
+            const tunnelUrl = res?.service?.cloudflareTunnel?.hostname ? `https://${res.service.cloudflareTunnel.hostname}` : '';
+            showToast(
+                tunnelUrl
+                    ? `Serviço criado: local ${createdLocalUrl} | túnel ${tunnelUrl}`
+                    : `Serviço criado com sucesso em ${createdLocalUrl}.`,
+                'success'
+            );
             if (res.cfWarning) {
                 setTimeout(() => {
                     showToast(`Aviso: ${res.cfWarning}`, 'warning');
@@ -3156,17 +3185,25 @@ async function toggleHostingProcess(id, start) {
 }
 
 async function deleteHostingService(id, name) {
-    if (!confirm(`⚠️ Atenção: Você tem certeza que deseja EXCLUIR o serviço "${name}"?\n\nEsta ação irá remover permanentemente a configuração do NGINX, apagar os arquivos de log e encerrar qualquer processo ativo associado.`)) {
+    if (!confirm(`âš ï¸ AtenÃ§Ã£o: VocÃª tem certeza que deseja EXCLUIR o serviÃ§o "${name}"?\n\nEsta aÃ§Ã£o irÃ¡ remover permanentemente a configuraÃ§Ã£o do NGINX, apagar os arquivos de log e encerrar qualquer processo ativo associado.`)) {
         return;
     }
 
     try {
         const res = await safeFetch(`${API_BASE}/hosting/${id}`, 'DELETE');
         if (res?.success) {
-            showToast('Serviço excluído com sucesso!', 'success');
+            if (res.cloudflare?.removed && res.cloudflare?.deletedInstance) {
+                showToast('Serviço excluído e túnel Cloudflare vinculado removido com sucesso!', 'success');
+            } else if (res.cloudflare?.removed) {
+                showToast('Serviço excluído e rota Cloudflare vinculada removida com sucesso!', 'success');
+            } else if (res.cloudflare?.warning) {
+                showToast(`Serviço excluído, mas houve aviso no Cloudflare: ${res.cloudflare.warning}`, 'warning');
+            } else {
+                showToast('Serviço excluído com sucesso!', 'success');
+            }
             fetchHostingServices();
         } else {
-            showToast(`Falha ao excluir serviço: ${res?.error || 'Erro interno.'}`, 'error');
+            showToast(`Falha ao excluir serviÃ§o: ${res?.error || 'Erro interno.'}`, 'error');
         }
     } catch (err) {
         showToast(`Erro de rede: ${err.message}`, 'error');
@@ -3174,7 +3211,7 @@ async function deleteHostingService(id, name) {
 }
 
 function viewHostingLogs(id, name) {
-    document.getElementById('logModalTitle').innerHTML = `📜 Logs em Tempo Real — ${name}`;
+    document.getElementById('logModalTitle').innerHTML = `ðŸ“œ Logs em Tempo Real â€” ${name}`;
     const logsBody = document.getElementById('hostingLogsBody');
     logsBody.textContent = 'Buscando logs...';
     
@@ -3270,7 +3307,7 @@ async function cfFetchInstances() {
             cfRenderInstances();
         }
     } catch (e) {
-        console.error('Erro ao buscar instâncias:', e);
+        console.error('Erro ao buscar instÃ¢ncias:', e);
     }
 }
 
@@ -3279,7 +3316,7 @@ function cfRenderInstances() {
     if (!list) return;
 
     if (cfInstances.length === 0) {
-        list.innerHTML = '<tr><td colspan="6" style="padding: 20px; text-align: center; color: var(--text-muted);">Nenhuma instância configurada.</td></tr>';
+        list.innerHTML = '<tr><td colspan="6" style="padding: 20px; text-align: center; color: var(--text-muted);">Nenhuma instÃ¢ncia configurada.</td></tr>';
         return;
     }
 
@@ -3303,7 +3340,7 @@ function cfRenderInstances() {
                 <td style="padding: 12px 16px;">${typeBadge}</td>
                 <td style="padding: 12px 16px;">${statusBadge}</td>
                 <td style="padding: 12px 16px;">${protectBadge}</td>
-                <td style="padding: 12px 16px;">${inst.autoRestartOnSave ? 'Sim' : 'Não'}</td>
+                <td style="padding: 12px 16px;">${inst.autoRestartOnSave ? 'Sim' : 'NÃ£o'}</td>
                 <td style="padding: 12px 16px; text-align: center;">
                     <div style="display:flex; gap:6px; justify-content:center;">
                         ${isRunning 
@@ -3340,7 +3377,7 @@ function cfShowInstanceModal(id = null) {
     cfTempRoutes = [];
 
     if (id) {
-        title.textContent = '⚙️ Editar Instância';
+        title.textContent = 'âš™ï¸ Editar InstÃ¢ncia';
         const inst = cfInstances.find(i => i.id === id);
         if (inst) {
             document.getElementById('cfInstId').value = inst.id;
@@ -3354,7 +3391,7 @@ function cfShowInstanceModal(id = null) {
             if (inst.routes) cfTempRoutes = inst.routes.map(cfNormalizeRouteForEditor);
         }
     } else {
-        title.textContent = '🚀 Nova Instância';
+        title.textContent = 'ðŸš€ Nova InstÃ¢ncia';
     }
 
     cfRenderTempRoutes();
@@ -3502,20 +3539,20 @@ async function cfSubmitInstance(e) {
         
         cfCloseInstanceModal();
         cfFetchInstances();
-        showToast('Instância salva com sucesso!', 'success');
+        showToast('InstÃ¢ncia salva com sucesso!', 'success');
     } catch (err) {
-        showToast('Erro ao salvar instância: ' + err.message, 'error');
+        showToast('Erro ao salvar instÃ¢ncia: ' + err.message, 'error');
     }
 }
 
 async function cfDeleteInstance(id) {
-    if (!confirm('Excluir esta instância permanentemente?')) return;
+    if (!confirm('Excluir esta instÃ¢ncia permanentemente?')) return;
     try {
         const res = await fetch(`${API_BASE}/cloudflared/instances/${id}`, { method: 'DELETE' });
         const data = await res.json();
         if (!data.success) throw new Error(data.error);
         cfFetchInstances();
-        showToast('Instância excluída!', 'success');
+        showToast('InstÃ¢ncia excluÃ­da!', 'success');
     } catch (e) {
         showToast('Erro ao excluir: ' + e.message, 'error');
     }
@@ -3523,12 +3560,12 @@ async function cfDeleteInstance(id) {
 
 async function cfStartInstance(id) {
     try {
-        showToast('Iniciando instância...', 'info');
+        showToast('Iniciando instÃ¢ncia...', 'info');
         const res = await fetch(`${API_BASE}/cloudflared/instances/${id}/start`, { method: 'POST' });
         const data = await res.json();
         if (!data.success) throw new Error(data.error);
         cfFetchInstances();
-        showToast('Instância iniciada!', 'success');
+        showToast('InstÃ¢ncia iniciada!', 'success');
     } catch (e) {
         showToast('Erro: ' + e.message, 'error');
     }
@@ -3536,12 +3573,12 @@ async function cfStartInstance(id) {
 
 async function cfStopInstance(id) {
     try {
-        showToast('Parando instância...', 'info');
+        showToast('Parando instÃ¢ncia...', 'info');
         const res = await fetch(`${API_BASE}/cloudflared/instances/${id}/stop`, { method: 'POST' });
         const data = await res.json();
         if (!data.success) throw new Error(data.error);
         cfFetchInstances();
-        showToast('Instância parada!', 'success');
+        showToast('InstÃ¢ncia parada!', 'success');
     } catch (e) {
         showToast('Erro: ' + e.message, 'error');
     }
@@ -3554,7 +3591,7 @@ async function cfReloadSafeInstance(id) {
         const data = await res.json();
         if (!data.success) throw new Error(data.error);
         cfFetchInstances();
-        showToast('Reload concluído com sucesso!', 'success');
+        showToast('Reload concluÃ­do com sucesso!', 'success');
     } catch (e) {
         showToast('Erro no Reload: ' + e.message, 'error');
     }
@@ -3596,7 +3633,7 @@ async function cfRemoveLoginConfig() {
         const res = await fetch(`${API_BASE}/cloudflared/system/remove-login-config`, { method: 'POST' });
         const data = await res.json();
         if (!data.success) throw new Error(data.error || 'Falha ao remover cert.pem.');
-        showToast(data.removed ? 'cert.pem removido com sucesso.' : 'cert.pem não encontrado (já removido).', 'success');
+        showToast(data.removed ? 'cert.pem removido com sucesso.' : 'cert.pem nÃ£o encontrado (jÃ¡ removido).', 'success');
     } catch (e) {
         showToast('Erro ao remover cert.pem: ' + e.message, 'error');
     }
@@ -3608,7 +3645,7 @@ function cfEscape(str) {
 
 function cfShowLogsModal(id, name) {
     cfSelectedInstId = id;
-    document.getElementById('cfLogModalTitle').textContent = `📜 Logs: ${name}`;
+    document.getElementById('cfLogModalTitle').textContent = `ðŸ“œ Logs: ${name}`;
     document.getElementById('cfLogsModal').classList.remove('hidden');
     cfLoadLogs();
     cfLogInterval = setInterval(cfLoadLogs, 2000);
@@ -3628,7 +3665,7 @@ async function cfLoadLogs() {
         const res = await fetch(`${API_BASE}/cloudflared/instances/${cfSelectedInstId}/logs?lines=100`);
         const data = await res.json();
         const box = document.getElementById('cfLogsBody');
-        box.textContent = data.logs || 'Nenhum log disponível.';
+        box.textContent = data.logs || 'Nenhum log disponÃ­vel.';
         box.scrollTop = box.scrollHeight;
     } catch {}
 }
@@ -3644,7 +3681,7 @@ function acRenderServices(services = []) {
     const tbody = document.getElementById('acServicesTable');
     if (!tbody) return;
     if (!services.length) {
-        tbody.innerHTML = '<tr><td colspan="6" style="padding:12px; color:var(--text-muted);">Nenhum serviço detectado.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="padding:12px; color:var(--text-muted);">Nenhum serviÃ§o detectado.</td></tr>';
         return;
     }
     tbody.innerHTML = services.map((s) => `
@@ -3654,7 +3691,7 @@ function acRenderServices(services = []) {
             <td style="padding:10px;">${cfEscape((s.protocol || '').toUpperCase())}</td>
             <td style="padding:10px;">${cfEscape(s.path || 'local')}</td>
             <td style="padding:10px;">${s.enabled ? 'Online' : 'Offline'}</td>
-            <td style="padding:10px;">${s.public ? (s.protected ? 'Protegido' : 'Público') : 'Local apenas'}</td>
+            <td style="padding:10px;">${s.public ? (s.protected ? 'Protegido' : 'PÃºblico') : 'Local apenas'}</td>
         </tr>
     `).join('');
 }
@@ -3666,26 +3703,26 @@ function acSetLogs(text) {
 
 async function acDetectServices() {
     const payload = acGetPayload();
-    if (!payload.domain) return showToast('Informe o domínio principal.', 'warning');
+    if (!payload.domain) return showToast('Informe o domÃ­nio principal.', 'warning');
     try {
         const res = await fetch(`${API_BASE}/autoconfig/detect`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
         const data = await res.json();
-        if (!data.success) throw new Error(data.error || 'Falha na detecção.');
+        if (!data.success) throw new Error(data.error || 'Falha na detecÃ§Ã£o.');
         acRenderServices(data.services || []);
-        showToast('Serviços detectados com sucesso.', 'success');
+        showToast('ServiÃ§os detectados com sucesso.', 'success');
     } catch (e) {
-        showToast('Erro ao detectar serviços: ' + e.message, 'error');
+        showToast('Erro ao detectar serviÃ§os: ' + e.message, 'error');
     }
 }
 
 async function acGenerateRoutes() {
     const payload = acGetPayload();
-    if (!payload.domain) return showToast('Informe o domínio principal.', 'warning');
+    if (!payload.domain) return showToast('Informe o domÃ­nio principal.', 'warning');
     try {
         const res = await fetch(`${API_BASE}/autoconfig/generate`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
         const data = await res.json();
         if (!data.success) throw new Error(data.error || 'Falha ao gerar rotas.');
-        showToast('Rotas automáticas geradas.', 'success');
+        showToast('Rotas automÃ¡ticas geradas.', 'success');
         await acDetectServices();
     } catch (e) {
         showToast('Erro ao gerar rotas: ' + e.message, 'error');
@@ -3698,10 +3735,10 @@ async function acValidateConfig() {
         const data = await res.json();
         const lines = (data.checks || []).map(c => `${c.key}: ${c.ok ? 'OK' : 'FALHOU'} ${c.output || ''}`).join('\n');
         acSetLogs(lines || JSON.stringify(data, null, 2));
-        if (!data.success) return showToast('Validação falhou.', 'error');
-        showToast('Validação concluída com sucesso.', 'success');
+        if (!data.success) return showToast('ValidaÃ§Ã£o falhou.', 'error');
+        showToast('ValidaÃ§Ã£o concluÃ­da com sucesso.', 'success');
     } catch (e) {
-        showToast('Erro na validação: ' + e.message, 'error');
+        showToast('Erro na validaÃ§Ã£o: ' + e.message, 'error');
     }
 }
 
@@ -3711,10 +3748,10 @@ async function acApplyConfig() {
         const data = await res.json();
         if (!data.success) {
             acSetLogs(JSON.stringify(data.validation || data, null, 2));
-            throw new Error(data.error || 'Falha ao aplicar configuração.');
+            throw new Error(data.error || 'Falha ao aplicar configuraÃ§Ã£o.');
         }
-        showToast('Configuração aplicada sem derrubar o painel.', 'success');
-        acSetLogs('Aplicação concluída com sucesso.');
+        showToast('ConfiguraÃ§Ã£o aplicada sem derrubar o painel.', 'success');
+        acSetLogs('AplicaÃ§Ã£o concluÃ­da com sucesso.');
     } catch (e) {
         showToast('Erro ao aplicar: ' + e.message, 'error');
     }
@@ -3829,7 +3866,7 @@ async function bootFileBrowser() {
     
     setTimeout(() => { addLog('Verificando daemon de arquivos (porta 8095)...'); progress.style.width = '20%'; status.textContent = 'Checando daemon...'; }, 400);
     setTimeout(() => { addLog('Validando Proxy Reverso NGINX/Node...'); progress.style.width = '40%'; status.textContent = 'Validando rotas...'; }, 1000);
-    setTimeout(() => { addLog('Autenticando sessão interna (NoAuth SSO)...'); progress.style.width = '60%'; status.textContent = 'Autenticando...'; }, 1600);
+    setTimeout(() => { addLog('Autenticando sessÃ£o interna (NoAuth SSO)...'); progress.style.width = '60%'; status.textContent = 'Autenticando...'; }, 1600);
     setTimeout(() => { 
         addLog('Carregando interface Web...'); 
         progress.style.width = '75%'; 
@@ -3840,7 +3877,7 @@ async function bootFileBrowser() {
     iframe.onload = () => {
         if (iframe.src.includes('about:blank')) return;
         
-        addLog('Aplicando injeção de CSS (Termux cPanel Dark Theme)...');
+        addLog('Aplicando injeÃ§Ã£o de CSS (Termux cPanel Dark Theme)...');
         progress.style.width = '90%';
         status.textContent = 'Injetando tema...';
         
@@ -3881,23 +3918,23 @@ async function initFileBrowserShortcuts() {
             html += `<button class="btn btn-secondary" style="justify-content: flex-start;" onclick="document.getElementById('iframe-filebrowser').src='/__filebrowser/files${env.nginx_conf_dir}'"><i data-lucide="globe"></i> NGINX Conf</button>`;
         } else {
             const storageBase = env.storage_path === '/' ? '' : env.storage_path;
-            html += `<button class="btn btn-secondary" style="justify-content: flex-start;" onclick="document.getElementById('iframe-filebrowser').src='/__filebrowser/files${storageBase}/home'"><i data-lucide="home"></i> Diretório Home</button>`;
+            html += `<button class="btn btn-secondary" style="justify-content: flex-start;" onclick="document.getElementById('iframe-filebrowser').src='/__filebrowser/files${storageBase}/home'"><i data-lucide="home"></i> DiretÃ³rio Home</button>`;
             html += `<button class="btn btn-secondary" style="justify-content: flex-start;" onclick="document.getElementById('iframe-filebrowser').src='/__filebrowser/files/etc'"><i data-lucide="terminal-square"></i> Pasta /etc</button>`;
             html += `<button class="btn btn-secondary" style="justify-content: flex-start;" onclick="document.getElementById('iframe-filebrowser').src='/__filebrowser/files/var/www'"><i data-lucide="globe"></i> Pasta /var/www</button>`;
         }
         
         html += `<button class="btn btn-secondary" style="justify-content: flex-start;" onclick="document.getElementById('iframe-filebrowser').src='/__filebrowser/files' + window.location.pathname.replace('/index.html', '') + '/backups'"><i data-lucide="archive"></i> Backups</button>`;
-        html += `<button class="btn btn-secondary" style="justify-content: flex-start;" onclick="document.getElementById('iframe-filebrowser').src='/__filebrowser/files' + window.location.pathname.replace('/index.html', '') + '/config'"><i data-lucide="settings"></i> Configurações</button>`;
+        html += `<button class="btn btn-secondary" style="justify-content: flex-start;" onclick="document.getElementById('iframe-filebrowser').src='/__filebrowser/files' + window.location.pathname.replace('/index.html', '') + '/config'"><i data-lucide="settings"></i> ConfiguraÃ§Ãµes</button>`;
         
         container.innerHTML = html;
         if (window.lucide) lucide.createIcons();
     } catch(e) {
-        console.error('Falha ao carregar atalhos dinâmicos do FileBrowser:', e);
+        console.error('Falha ao carregar atalhos dinÃ¢micos do FileBrowser:', e);
     }
 }
 
 // ============================================================
-//  TESTE DE VELOCIDADE (SPEEDTEST) - CLIENT LÓGICA
+//  TESTE DE VELOCIDADE (SPEEDTEST) - CLIENT LÃ“GICA
 // ============================================================
 let isSpeedtestRunning = false;
 let speedtestUnit = 'Mbps';
@@ -4034,8 +4071,8 @@ function startSpeedTest() {
             }
 
             if (data.stage === 'finished') {
-                statusText.textContent = 'Concluído!';
-                if (statusCompact) statusCompact.textContent = 'Último teste: agora';
+                statusText.textContent = 'ConcluÃ­do!';
+                if (statusCompact) statusCompact.textContent = 'Ãšltimo teste: agora';
                 mainVal.textContent = `${formatSpeed(data.download)} ${speedtestUnit === 'Mbps' ? 'Mb' : 'KB'}`;
                 if (pingVal) pingVal.textContent = data.ping || '--';
                 if (pingValCompact) pingValCompact.textContent = data.ping ? `${data.ping}ms` : '--';
@@ -4082,8 +4119,8 @@ function startSpeedTest() {
     };
 
     eventSource.onerror = function(err) {
-        console.error('Erro na conexão com SSE de speedtest:', err);
-        statusText.textContent = 'Erro de conexão.';
+        console.error('Erro na conexÃ£o com SSE de speedtest:', err);
+        statusText.textContent = 'Erro de conexÃ£o.';
         mainVal.textContent = 'Erro';
         
         isSpeedtestRunning = false;
@@ -4117,14 +4154,14 @@ async function checkNetworkAccess() {
             if (netStatus) netStatus.textContent = "Monitorando sem root";
             if (rootToggle) rootToggle.style.display = "none";
         } else if (data.mode === "root_available") {
-            if (netStatus) netStatus.textContent = "Modo normal falhou. Root disponível.";
+            if (netStatus) netStatus.textContent = "Modo normal falhou. Root disponÃ­vel.";
             if (rootToggle) {
                 rootToggle.style.display = "inline-flex";
-                rootToggle.innerHTML = rootModeActive ? "🔐 Root ON" : "🔓 Normal";
+                rootToggle.innerHTML = rootModeActive ? "ðŸ” Root ON" : "ðŸ”“ Normal";
             }
         } else {
             if (netStatus) {
-                netStatus.textContent = `Erro de permissão ou interface não encontrada`;
+                netStatus.textContent = `Erro de permissÃ£o ou interface nÃ£o encontrada`;
             }
             if (rootToggle) rootToggle.style.display = "none";
         }
@@ -4163,7 +4200,7 @@ async function updateNetworkStatus() {
                 statusEl.textContent = data.root ? "Monitorando com root" : "Monitorando sem root";
             }
             if (rootToggle) {
-                rootToggle.innerHTML = data.root ? "🔐 Root ON" : "🔓 Normal";
+                rootToggle.innerHTML = data.root ? "ðŸ” Root ON" : "ðŸ”“ Normal";
             }
         } else {
             rootModeActive = !!data.root;
@@ -4200,7 +4237,7 @@ async function toggleRootMode(e) {
             rootModeActive = !!data.root;
             const rootToggle = document.getElementById("root-toggle");
             if (rootToggle) {
-                rootToggle.innerHTML = rootModeActive ? "🔐 Root ON" : "🔓 Normal";
+                rootToggle.innerHTML = rootModeActive ? "ðŸ” Root ON" : "ðŸ”“ Normal";
             }
             showToast(`Modo root ${rootModeActive ? 'ativado' : 'desativado'} com sucesso!`, "success");
             updateNetworkStatus();
@@ -4365,7 +4402,7 @@ window.toggleMonitorCard = toggleMonitorCard;
 window.toggleAllMonitorCards = toggleAllMonitorCards;
 
 // ============================================================
-//  CONTROLE DE PROCESSOS E MEMÓRIA (MOTO G52 + ROOT)
+//  CONTROLE DE PROCESSOS E MEMÃ“RIA (MOTO G52 + ROOT)
 // ============================================================
 async function changeNodeMemoryMode() {
     const select = document.getElementById('settings-memory-mode');
@@ -4381,13 +4418,13 @@ async function changeNodeMemoryMode() {
         });
         const res = await response.json();
         if (res.success) {
-            showToast(res.message || 'Configuração de memória alterada. Reinicie para aplicar.', 'success');
+            showToast(res.message || 'ConfiguraÃ§Ã£o de memÃ³ria alterada. Reinicie para aplicar.', 'success');
             if (badge) badge.classList.remove('hidden');
         } else {
-            showToast(res.error || 'Falha ao alterar configuração de memória', 'error');
+            showToast(res.error || 'Falha ao alterar configuraÃ§Ã£o de memÃ³ria', 'error');
         }
     } catch(err) {
-        showToast('Erro ao alterar configuração de memória', 'error');
+        showToast('Erro ao alterar configuraÃ§Ã£o de memÃ³ria', 'error');
         console.error(err);
     }
 }
@@ -4396,7 +4433,7 @@ async function diagnoseProcesses() {
     const modal = document.getElementById('processDiagnosticModal');
     const content = document.getElementById('process-diagnostic-content');
     if (modal) modal.classList.remove('hidden');
-    if (content) content.innerHTML = '[Carregando diagnóstico...]';
+    if (content) content.innerHTML = '[Carregando diagnÃ³stico...]';
 
     try {
         const response = await fetch(`${API_BASE}/system/processes`);
@@ -4405,10 +4442,10 @@ async function diagnoseProcesses() {
             let output = '';
             output += `=== DADOS DO PAINEL ===\n`;
             output += `Porta configurada: ${res.panel.port}\n`;
-            output += `Porta ocupada? ${res.panel.portBusy ? 'SIM (PID: ' + res.panel.portBusyPid + ')' : 'NÃO'}\n`;
-            output += `Lock do Node ativo? ${res.panel.pidFile ? 'SIM (PID no arquivo: ' + res.panel.pidFile + ')' : 'NÃO'}\n`;
-            output += `Lock do Loop (start.sh) ativo? ${res.panel.startPidFile ? 'SIM (PID no arquivo: ' + res.panel.startPidFile + ')' : 'NÃO'}\n`;
-            output += `Modo de memória Node.js: ${res.panel.nodeMemoryMode} (${res.panel.nodeMemoryMb} MB)\n\n`;
+            output += `Porta ocupada? ${res.panel.portBusy ? 'SIM (PID: ' + res.panel.portBusyPid + ')' : 'NÃƒO'}\n`;
+            output += `Lock do Node ativo? ${res.panel.pidFile ? 'SIM (PID no arquivo: ' + res.panel.pidFile + ')' : 'NÃƒO'}\n`;
+            output += `Lock do Loop (start.sh) ativo? ${res.panel.startPidFile ? 'SIM (PID no arquivo: ' + res.panel.startPidFile + ')' : 'NÃƒO'}\n`;
+            output += `Modo de memÃ³ria Node.js: ${res.panel.nodeMemoryMode} (${res.panel.nodeMemoryMb} MB)\n\n`;
 
             output += `=== PROCESSOS DO PAINEL ===\n`;
             output += `Processos de start.sh ativos: ${res.panel.startScripts.length}\n`;
@@ -4421,9 +4458,9 @@ async function diagnoseProcesses() {
             });
             output += `\n`;
 
-            output += `=== SERVIÇOS DO SISTEMA ===\n`;
-            output += `Lock de atualização ativo? ${res.locks.updateLock ? 'SIM' : 'NÃO'}\n`;
-            output += `Lock de start.sh ativo? ${res.locks.startLock ? 'SIM' : 'NÃO'}\n`;
+            output += `=== SERVIÃ‡OS DO SISTEMA ===\n`;
+            output += `Lock de atualizaÃ§Ã£o ativo? ${res.locks.updateLock ? 'SIM' : 'NÃƒO'}\n`;
+            output += `Lock de start.sh ativo? ${res.locks.startLock ? 'SIM' : 'NÃƒO'}\n`;
             output += `Processos MariaDB ativos: ${res.services.mariadb.length}\n`;
             res.services.mariadb.forEach(proc => {
                 output += `  - PID: ${proc.pid} | Comando: ${proc.cmd}\n`;
@@ -4434,7 +4471,7 @@ async function diagnoseProcesses() {
             });
             output += `\n`;
 
-            output += `=== MEMÓRIA RAM DO SISTEMA ===\n`;
+            output += `=== MEMÃ“RIA RAM DO SISTEMA ===\n`;
             output += `Total: ${res.memory.total} MB | Livre: ${res.memory.free} MB | Uso: ${res.memory.usagePercent}%\n\n`;
 
             output += `=== REGISTROS OOM/KILL DO KERNEL (dmesg) ===\n`;
@@ -4442,10 +4479,10 @@ async function diagnoseProcesses() {
 
             if (content) content.textContent = output;
         } else {
-            if (content) content.textContent = 'Erro ao obter dados de diagnóstico: ' + (res.error || 'Erro desconhecido');
+            if (content) content.textContent = 'Erro ao obter dados de diagnÃ³stico: ' + (res.error || 'Erro desconhecido');
         }
     } catch(err) {
-        if (content) content.textContent = 'Erro ao realizar requisição de diagnóstico: ' + err.message;
+        if (content) content.textContent = 'Erro ao realizar requisiÃ§Ã£o de diagnÃ³stico: ' + err.message;
         console.error(err);
     }
 }
@@ -4456,14 +4493,14 @@ function closeProcessDiagnosticModal() {
 }
 
 async function stopDuplicatePanel() {
-    if (!confirm('Deseja realmente parar processos duplicados do painel? Todos os processos antigos serão encerrados e limpos de forma segura.')) {
+    if (!confirm('Deseja realmente parar processos duplicados do painel? Todos os processos antigos serÃ£o encerrados e limpos de forma segura.')) {
         return;
     }
     try {
         const response = await fetch(`${API_BASE}/system/stop`, { method: 'POST' });
         const res = await response.json();
         if (res.success) {
-            showToast('Processo de parada segura disparado. O painel será encerrado em instantes.', 'success');
+            showToast('Processo de parada segura disparado. O painel serÃ¡ encerrado em instantes.', 'success');
         } else {
             showToast(res.error || 'Falha ao solicitar parada de duplicados', 'error');
         }
@@ -4474,11 +4511,11 @@ async function stopDuplicatePanel() {
 }
 
 async function safeRestartPanel() {
-    if (!confirm('Deseja realizar o Reinício Seguro? O painel irá parar todos os seus processos e reiniciará limpo em até 5 segundos. Esta página tentará reconectar automaticamente.')) {
+    if (!confirm('Deseja realizar o ReinÃ­cio Seguro? O painel irÃ¡ parar todos os seus processos e reiniciarÃ¡ limpo em atÃ© 5 segundos. Esta pÃ¡gina tentarÃ¡ reconectar automaticamente.')) {
         return;
     }
     
-    // Mostra tela/loader de carregamento/reinício
+    // Mostra tela/loader de carregamento/reinÃ­cio
     const overlay = document.createElement('div');
     overlay.style.position = 'fixed';
     overlay.style.top = '0';
@@ -4493,9 +4530,9 @@ async function safeRestartPanel() {
     overlay.style.alignItems = 'center';
     overlay.style.zIndex = '999999';
     overlay.innerHTML = `
-        <div style="font-size:2rem; margin-bottom:15px; animation: spin 2s linear infinite;">🔄</div>
-        <div style="font-size:1.2rem; font-weight:bold; margin-bottom:10px;">Executando Reinício Seguro...</div>
-        <div style="font-size:0.9rem; color:#aaa;" id="restart-status">Enviando sinal de reinício...</div>
+        <div style="font-size:2rem; margin-bottom:15px; animation: spin 2s linear infinite;">ðŸ”„</div>
+        <div style="font-size:1.2rem; font-weight:bold; margin-bottom:10px;">Executando ReinÃ­cio Seguro...</div>
+        <div style="font-size:0.9rem; color:#aaa;" id="restart-status">Enviando sinal de reinÃ­cio...</div>
     `;
     document.body.appendChild(overlay);
 
@@ -4503,7 +4540,7 @@ async function safeRestartPanel() {
         const response = await fetch(`${API_BASE}/system/restart`, { method: 'POST' });
         const res = await response.json();
         if (!res.success) {
-            showToast(res.error || 'Erro ao enviar sinal de reinício', 'error');
+            showToast(res.error || 'Erro ao enviar sinal de reinÃ­cio', 'error');
             document.body.removeChild(overlay);
             return;
         }
@@ -4517,7 +4554,7 @@ async function safeRestartPanel() {
             attempts++;
             if (attempts > maxAttempts) {
                 clearInterval(interval);
-                document.getElementById('restart-status').innerHTML = '❌ O servidor está demorando muito para responder.<br>Por favor, verifique no Termux manualmente ou recarregue a página.';
+                document.getElementById('restart-status').innerHTML = 'âŒ O servidor estÃ¡ demorando muito para responder.<br>Por favor, verifique no Termux manualmente ou recarregue a pÃ¡gina.';
                 const closeBtn = document.createElement('button');
                 closeBtn.className = 'btn btn-secondary btn-sm';
                 closeBtn.style.marginTop = '15px';
@@ -4530,7 +4567,7 @@ async function safeRestartPanel() {
                 const check = await fetch(`${API_BASE}/system/settings`, { method: 'GET', signal: AbortSignal.timeout(1000) });
                 if (check.ok) {
                     clearInterval(interval);
-                    document.getElementById('restart-status').textContent = '✅ Painel reconectado! Recarregando página...';
+                    document.getElementById('restart-status').textContent = 'âœ… Painel reconectado! Recarregando pÃ¡gina...';
                     setTimeout(() => {
                         window.location.reload();
                     }, 1000);
@@ -4580,7 +4617,7 @@ async function cfrFetchRoutes() {
     } catch (err) {
         console.error('[cfrFetchRoutes] Erro:', err);
         showToast('Erro ao carregar rotas do Proxy Reverso: ' + err.message, 'error');
-        listEl.innerHTML = `<tr><td colspan="7" style="padding: 20px; text-align: center; color: var(--danger);">❌ Falha ao carregar rotas da API: ${err.message}</td></tr>`;
+        listEl.innerHTML = `<tr><td colspan="7" style="padding: 20px; text-align: center; color: var(--danger);">âŒ Falha ao carregar rotas da API: ${err.message}</td></tr>`;
     }
 }
 
@@ -4589,7 +4626,7 @@ function cfrRenderRoutes(routes) {
     if (!listEl) return;
 
     if (!routes || routes.length === 0) {
-        listEl.innerHTML = `<tr><td colspan="7" style="padding: 20px; text-align: center; color: var(--text-muted);">Nenhuma rota configurada. Clique em "Preset phpMyAdmin" ou "Adicionar Rota" para começar.</td></tr>`;
+        listEl.innerHTML = `<tr><td colspan="7" style="padding: 20px; text-align: center; color: var(--text-muted);">Nenhuma rota configurada. Clique em "Preset phpMyAdmin" ou "Adicionar Rota" para comeÃ§ar.</td></tr>`;
         return;
     }
 
@@ -4602,11 +4639,11 @@ function cfrRenderRoutes(routes) {
         const isFirst = idx === 0;
         const isLast = idx === sorted.length - 1;
 
-        const upBtn = `<button class="btn btn-secondary btn-sm" style="padding: 3px 6px; margin-right: 2px;" onclick="cfrMoveRouteUp('${r.id}')" ${isFirst ? 'disabled style="opacity:0.4; cursor:not-allowed;"' : ''} title="Mover para Cima">▲</button>`;
-        const downBtn = `<button class="btn btn-secondary btn-sm" style="padding: 3px 6px;" onclick="cfrMoveRouteDown('${r.id}')" ${isLast ? 'disabled style="opacity:0.4; cursor:not-allowed;"' : ''} title="Mover para Baixo">▼</button>`;
+        const upBtn = `<button class="btn btn-secondary btn-sm" style="padding: 3px 6px; margin-right: 2px;" onclick="cfrMoveRouteUp('${r.id}')" ${isFirst ? 'disabled style="opacity:0.4; cursor:not-allowed;"' : ''} title="Mover para Cima">â–²</button>`;
+        const downBtn = `<button class="btn btn-secondary btn-sm" style="padding: 3px 6px;" onclick="cfrMoveRouteDown('${r.id}')" ${isLast ? 'disabled style="opacity:0.4; cursor:not-allowed;"' : ''} title="Mover para Baixo">â–¼</button>`;
 
-        const testLocalBtn = `<button class="btn btn-secondary btn-sm" style="padding: 4px 8px;" id="btn-test-local-${r.id}" onclick="cfrTestRoute('${r.id}', '${localUrl}')" title="Testar Conexão Local"><i data-lucide="activity"></i> Local</button>`;
-        const testPublicBtn = `<button class="btn btn-secondary btn-sm" style="padding: 4px 8px;" id="btn-test-pub-${r.id}" onclick="cfrTestPublicUrl('${r.id}', '${publicUrl}')" title="Testar URL Pública"><i data-lucide="globe"></i> Pública</button>`;
+        const testLocalBtn = `<button class="btn btn-secondary btn-sm" style="padding: 4px 8px;" id="btn-test-local-${r.id}" onclick="cfrTestRoute('${r.id}', '${localUrl}')" title="Testar ConexÃ£o Local"><i data-lucide="activity"></i> Local</button>`;
+        const testPublicBtn = `<button class="btn btn-secondary btn-sm" style="padding: 4px 8px;" id="btn-test-pub-${r.id}" onclick="cfrTestPublicUrl('${r.id}', '${publicUrl}')" title="Testar URL PÃºblica"><i data-lucide="globe"></i> PÃºblica</button>`;
 
         const editBtn = `<button class="btn btn-secondary btn-sm" style="padding: 4px 8px;" onclick="cfrOpenRouteModal('${r.id}')" title="Editar"><i data-lucide="edit-2"></i></button>`;
         const deleteBtn = `<button class="btn btn-danger btn-sm" style="padding: 4px 8px;" onclick="cfrDeleteRoute('${r.id}')" title="Excluir"><i data-lucide="trash-2"></i></button>`;
@@ -4677,7 +4714,7 @@ function cfrOpenRouteModal(id = null) {
 
     if (id) {
         // Edit Mode
-        if (modalTitle) modalTitle.textContent = '✏️ Editar Rota Proxy Reverso';
+        if (modalTitle) modalTitle.textContent = 'âœï¸ Editar Rota Proxy Reverso';
         if (submitBtn) submitBtn.textContent = 'Salvar Rota';
 
         const route = cfrRoutesListCached.find(r => r.id === id);
@@ -4693,7 +4730,7 @@ function cfrOpenRouteModal(id = null) {
         }
     } else {
         // Add Mode
-        if (modalTitle) modalTitle.textContent = '🚀 Adicionar Rota Proxy Reverso';
+        if (modalTitle) modalTitle.textContent = 'ðŸš€ Adicionar Rota Proxy Reverso';
         if (submitBtn) submitBtn.textContent = 'Adicionar Rota';
         
         let nextOrder = 1;
@@ -4739,13 +4776,13 @@ async function cfrSubmitRoute(event) {
         enabled: document.getElementById('cfrEnabled').checked
     };
 
-    if (!payload.name) return showToast('Insira o nome do serviço.', 'warning');
-    if (!payload.hostname) return showToast('Insira o domínio público.', 'warning');
+    if (!payload.name) return showToast('Insira o nome do serviÃ§o.', 'warning');
+    if (!payload.hostname) return showToast('Insira o domÃ­nio pÃºblico.', 'warning');
     if (!payload.path) return showToast('Insira o caminho (path).', 'warning');
     if (!payload.targetPort) return showToast('Insira a porta local alvo.', 'warning');
 
     if (payload.hostname.includes(':')) {
-        return showToast('O domínio público não deve conter portas (:8080, etc).', 'warning');
+        return showToast('O domÃ­nio pÃºblico nÃ£o deve conter portas (:8080, etc).', 'warning');
     }
 
     const url = id ? `${API_BASE}/cloudflared/routes-sync/${id}` : `${API_BASE}/cloudflared/routes`;
@@ -4792,7 +4829,7 @@ async function cfrDeleteRoute(id) {
 
         const data = await res.json();
         if (data.success) {
-            showToast('Rota excluída com sucesso!', 'success');
+            showToast('Rota excluÃ­da com sucesso!', 'success');
             cfrFetchRoutes();
         } else {
             throw new Error(data.error || 'Erro desconhecido ao excluir rota.');
@@ -4914,15 +4951,15 @@ async function cfrTestRoute(id, targetUrl) {
         const data = await res.json();
         if (resultDiv) {
             if (data.success) {
-                resultDiv.innerHTML = `<span style="color: var(--success); font-weight: bold;">● Local: Online</span> (${data.time || 'N/A'}) - HTTP ${data.code || '200'}`;
+                resultDiv.innerHTML = `<span style="color: var(--success); font-weight: bold;">â— Local: Online</span> (${data.time || 'N/A'}) - HTTP ${data.code || '200'}`;
             } else {
-                resultDiv.innerHTML = `<span style="color: var(--danger); font-weight: bold;">● Local: Offline</span> - ${data.error || 'Sem resposta'}`;
+                resultDiv.innerHTML = `<span style="color: var(--danger); font-weight: bold;">â— Local: Offline</span> - ${data.error || 'Sem resposta'}`;
             }
         }
     } catch (err) {
         console.error('[cfrTestRoute] Erro:', err);
         if (resultDiv) {
-            resultDiv.innerHTML = `<span style="color: var(--danger); font-weight: bold;">● Local: Erro</span> - ${err.message}`;
+            resultDiv.innerHTML = `<span style="color: var(--danger); font-weight: bold;">â— Local: Erro</span> - ${err.message}`;
         }
     } finally {
         if (btn) {
@@ -4946,7 +4983,7 @@ async function cfrTestPublicUrl(id, publicUrl) {
     }
 
     if (resultDiv) {
-        resultDiv.innerHTML = `<span style="color: var(--text-muted);">Testando Pública...</span>`;
+        resultDiv.innerHTML = `<span style="color: var(--text-muted);">Testando PÃºblica...</span>`;
     }
 
     try {
@@ -4964,19 +5001,19 @@ async function cfrTestPublicUrl(id, publicUrl) {
         const data = await res.json();
         if (resultDiv) {
             if (data.success) {
-                resultDiv.innerHTML = `<span style="color: var(--success); font-weight: bold;">🌐 Pública: Online</span> (${data.time || 'N/A'}) - HTTP ${data.code || '200'}`;
+                resultDiv.innerHTML = `<span style="color: var(--success); font-weight: bold;">ðŸŒ PÃºblica: Online</span> (${data.time || 'N/A'}) - HTTP ${data.code || '200'}`;
             } else {
                 if (data.code === 1033 || data.code === 530 || data.code === 521 || data.code === 523) {
-                    resultDiv.innerHTML = `<span style="color: var(--danger); font-weight: bold;">🌐 Pública: Erro de Túnel (1033 / ${data.code})</span> - O túnel Cloudflared está offline ou a Cloudflare não encontrou uma conexão saudável. Verifique se o processo está "Rodando".`;
+                    resultDiv.innerHTML = `<span style="color: var(--danger); font-weight: bold;">ðŸŒ PÃºblica: Erro de TÃºnel (1033 / ${data.code})</span> - O tÃºnel Cloudflared estÃ¡ offline ou a Cloudflare nÃ£o encontrou uma conexÃ£o saudÃ¡vel. Verifique se o processo estÃ¡ "Rodando".`;
                 } else {
-                    resultDiv.innerHTML = `<span style="color: var(--danger); font-weight: bold;">🌐 Pública: Offline</span> - ${data.error || 'Sem resposta'} (HTTP ${data.code || 0})`;
+                    resultDiv.innerHTML = `<span style="color: var(--danger); font-weight: bold;">ðŸŒ PÃºblica: Offline</span> - ${data.error || 'Sem resposta'} (HTTP ${data.code || 0})`;
                 }
             }
         }
     } catch (err) {
         console.error('[cfrTestPublicUrl] Erro:', err);
         if (resultDiv) {
-            resultDiv.innerHTML = `<span style="color: var(--danger); font-weight: bold;">🌐 Pública: Erro</span> - ${err.message}`;
+            resultDiv.innerHTML = `<span style="color: var(--danger); font-weight: bold;">ðŸŒ PÃºblica: Erro</span> - ${err.message}`;
         }
     } finally {
         if (btn) {
@@ -4989,7 +5026,7 @@ async function cfrTestPublicUrl(id, publicUrl) {
 
 async function cfrApplyConfigYml() {
     if (cfrProcessActionBusy) {
-        return showToast('Já existe uma operação de túnel em andamento. Aguarde finalizar.', 'warning');
+        return showToast('JÃ¡ existe uma operaÃ§Ã£o de tÃºnel em andamento. Aguarde finalizar.', 'warning');
     }
     cfrProcessActionBusy = true;
     const btn = document.querySelector('button[onclick="cfrApplyConfigYml()"]');
@@ -5001,12 +5038,12 @@ async function cfrApplyConfigYml() {
     }
 
     try {
-        // 1. Fazer backup da config antiga (opcional, só para ter histórico antes da geração)
+        // 1. Fazer backup da config antiga (opcional, sÃ³ para ter histÃ³rico antes da geraÃ§Ã£o)
         await fetch(`${API_BASE}/cloudflared/backup`, { method: 'POST' }).catch(() => {});
 
         // 2. Gerar nova config
         const resGen = await fetch(`${API_BASE}/cloudflared/generate-config`, { method: 'POST' });
-        if (!resGen.ok) throw new Error(`HTTP ${resGen.status} na geração da config`);
+        if (!resGen.ok) throw new Error(`HTTP ${resGen.status} na geraÃ§Ã£o da config`);
         const genData = await resGen.json();
         if (!genData.success) throw new Error(genData.error || 'Falha ao gerar config.yml');
 
@@ -5014,17 +5051,17 @@ async function cfrApplyConfigYml() {
         const resVal = await fetch(`${API_BASE}/cloudflared/validate`, { method: 'POST' });
         const valData = await resVal.json();
         if (!valData.success || (valData.output && valData.output.toLowerCase().includes('error'))) {
-            throw new Error(`Validação falhou:\n${valData.error || valData.output}`);
+            throw new Error(`ValidaÃ§Ã£o falhou:\n${valData.error || valData.output}`);
         }
 
-        // 4. Reiniciar somente quando houver mudança real no config.yml
+        // 4. Reiniciar somente quando houver mudanÃ§a real no config.yml
         if (genData.changed) {
             await fetch(`${API_BASE}/cloudflared/process/stop`, { method: 'POST' }).catch(() => {});
             await new Promise(r => setTimeout(r, 1000));
             await fetch(`${API_BASE}/cloudflared/process/start`, { method: 'POST' }).catch(() => {});
-            showToast('Ingress atualizado e túnel reiniciado! Aguardando testes de rota...', 'success');
+            showToast('Ingress atualizado e tÃºnel reiniciado! Aguardando testes de rota...', 'success');
         } else {
-            showToast('Nenhuma alteração real no ingress. Sem reinício global.', 'info');
+            showToast('Nenhuma alteraÃ§Ã£o real no ingress. Sem reinÃ­cio global.', 'info');
         }
         
         // Atualiza UI de status
@@ -5097,11 +5134,11 @@ async function cfrLoadConfigYml() {
             const modal = document.getElementById('cfrYamlModal');
             if (modal) modal.classList.remove('hidden');
         } else {
-            throw new Error(data.error || 'Falha ao obter configuração.');
+            throw new Error(data.error || 'Falha ao obter configuraÃ§Ã£o.');
         }
     } catch (err) {
         console.error('[cfrLoadConfigYml] Erro:', err);
-        showToast('Erro ao carregar arquivo de configuração: ' + err.message, 'error');
+        showToast('Erro ao carregar arquivo de configuraÃ§Ã£o: ' + err.message, 'error');
     }
 }
 
@@ -5117,7 +5154,7 @@ async function cfrSaveYamlText() {
     const configText = textarea.value;
 
     if (/\t/.test(configText)) {
-        return showToast('O arquivo YAML não pode conter caracteres de tabulação (Tab). Use apenas espaços.', 'warning');
+        return showToast('O arquivo YAML nÃ£o pode conter caracteres de tabulaÃ§Ã£o (Tab). Use apenas espaÃ§os.', 'warning');
     }
 
     try {
@@ -5143,7 +5180,7 @@ async function cfrSaveYamlText() {
             cfrCloseYamlModal();
             cfrFetchRoutes();
         } else {
-            throw new Error(data.error || 'Falha ao salvar configuração.');
+            throw new Error(data.error || 'Falha ao salvar configuraÃ§Ã£o.');
         }
     } catch (err) {
         console.error('[cfrSaveYamlText] Erro:', err);
@@ -5169,15 +5206,15 @@ async function cfrValidateYamlText() {
 
         const data = await res.json();
         if (data.success) {
-            alert(`✓ Sucesso! A validação do Ingress passou sem erros:\n\n${data.output || 'OK'}`);
+            alert(`âœ“ Sucesso! A validaÃ§Ã£o do Ingress passou sem erros:\n\n${data.output || 'OK'}`);
             showToast('Ingress validado com sucesso!', 'success');
         } else {
-            alert(`⚠️ Falha na validação do Ingress:\n\n${data.error || 'Erro'}\n\nRetorno:\n${data.output || 'Nenhum'}`);
-            showToast('Erro na validação do Ingress.', 'error');
+            alert(`âš ï¸ Falha na validaÃ§Ã£o do Ingress:\n\n${data.error || 'Erro'}\n\nRetorno:\n${data.output || 'Nenhum'}`);
+            showToast('Erro na validaÃ§Ã£o do Ingress.', 'error');
         }
     } catch (err) {
         console.error('[cfrValidateYamlText] Erro:', err);
-        showToast('Erro ao validar configuração: ' + err.message, 'error');
+        showToast('Erro ao validar configuraÃ§Ã£o: ' + err.message, 'error');
     }
 }
 
@@ -5188,7 +5225,7 @@ async function cfrRestoreBackup() {
     const backupName = select.value;
     if (!backupName) return showToast('Selecione um backup para restaurar.', 'warning');
 
-    if (!confirm(`Deseja realmente restaurar o backup "${backupName}"? O arquivo config.yml atual será sobrescrito.`)) return;
+    if (!confirm(`Deseja realmente restaurar o backup "${backupName}"? O arquivo config.yml atual serÃ¡ sobrescrito.`)) return;
 
     try {
         const res = await fetch(`${API_BASE}/cloudflared/restore`, {
@@ -5241,7 +5278,7 @@ async function cfrBackupConfigManual() {
 
 async function cfrRestartCloudflared() {
     try {
-        showToast('Reiniciando túneis do Cloudflared...', 'info');
+        showToast('Reiniciando tÃºneis do Cloudflared...', 'info');
         const res = await fetch(`${API_BASE}/cloudflared/restart`, {
             method: 'POST'
         });
@@ -5253,7 +5290,7 @@ async function cfrRestartCloudflared() {
 
         const data = await res.json();
         if (data.success) {
-            showToast(data.message || 'Túneis reiniciados!', 'success');
+            showToast(data.message || 'TÃºneis reiniciados!', 'success');
         } else {
             throw new Error(data.error || 'Erro ao reiniciar.');
         }
@@ -5312,7 +5349,7 @@ async function cfrCreatePresetPma() {
             showToast('Preset criado com sucesso!', 'success');
             cfrFetchRoutes();
         } else {
-            showToast('Os presets já existem na lista de rotas.', 'info');
+            showToast('Os presets jÃ¡ existem na lista de rotas.', 'info');
         }
     } catch (err) {
         console.error('[cfrCreatePresetPma] Erro:', err);
@@ -5321,7 +5358,7 @@ async function cfrCreatePresetPma() {
 }
 
 function cfrShowLogs() {
-    document.getElementById('cfLogModalTitle').textContent = `📜 Logs: Cloudflared Ingress`;
+    document.getElementById('cfLogModalTitle').textContent = `ðŸ“œ Logs: Cloudflared Ingress`;
     document.getElementById('cfLogsModal').classList.remove('hidden');
     
     if (cfLogInterval) {
@@ -5347,7 +5384,7 @@ async function cfrLoadLogs() {
         const data = await res.json();
         const box = document.getElementById('cfLogsBody');
         if (box) {
-            box.textContent = data.logs || 'Nenhum log de ingress disponível no momento.';
+            box.textContent = data.logs || 'Nenhum log de ingress disponÃ­vel no momento.';
             box.scrollTop = box.scrollHeight;
         }
     } catch (err) {
@@ -5366,8 +5403,8 @@ async function cfrCheckStatus() {
         if (data.success) {
             if (data.isRunning) {
                 const connStatus = data.connected 
-                    ? `<span style="color: var(--success); font-weight: bold;">● Rodando &amp; Conectado</span>` 
-                    : `<span style="color: var(--warning); font-weight: bold;">● Rodando (Não Conectado)</span>`;
+                    ? `<span style="color: var(--success); font-weight: bold;">â— Rodando &amp; Conectado</span>` 
+                    : `<span style="color: var(--warning); font-weight: bold;">â— Rodando (NÃ£o Conectado)</span>`;
                 
                 let details = `<div style="margin-top: 8px; font-size: 0.8rem; line-height: 1.4;">`;
                 details += `<strong>Status:</strong> ${connStatus}<br>`;
@@ -5375,30 +5412,30 @@ async function cfrCheckStatus() {
                     details += `<strong>PIDs Ativos:</strong> ${data.pids.join(', ')}<br>`;
                 }
                 if (data.binaryPath) {
-                    details += `<strong>Binário:</strong> <code style="background: var(--bg-hover); padding: 1px 4px; border-radius: 3px;">${data.binaryPath}</code><br>`;
+                    details += `<strong>BinÃ¡rio:</strong> <code style="background: var(--bg-hover); padding: 1px 4px; border-radius: 3px;">${data.binaryPath}</code><br>`;
                 }
                 if (data.configPath) {
-                    details += `<strong>Configuração:</strong> <code style="background: var(--bg-hover); padding: 1px 4px; border-radius: 3px;">${data.configPath}</code><br>`;
+                    details += `<strong>ConfiguraÃ§Ã£o:</strong> <code style="background: var(--bg-hover); padding: 1px 4px; border-radius: 3px;">${data.configPath}</code><br>`;
                 }
                 if (data.warning) {
-                    details += `<div style="margin-top: 6px; padding: 6px 10px; background: rgba(255, 193, 7, 0.15); border-left: 3px solid #ffc107; border-radius: 4px; color: #e0a800; font-weight: 500;">⚠️ ${data.warning}</div>`;
+                    details += `<div style="margin-top: 6px; padding: 6px 10px; background: rgba(255, 193, 7, 0.15); border-left: 3px solid #ffc107; border-radius: 4px; color: #e0a800; font-weight: 500;">âš ï¸ ${data.warning}</div>`;
                 }
                 details += `</div>`;
                 statusText.innerHTML = details;
             } else {
                 let details = `<div style="margin-top: 8px; font-size: 0.8rem; line-height: 1.4;">`;
-                details += `<span style="color: var(--danger); font-weight: bold;">● Parado</span> - Nenhum processo Cloudflared ativo no sistema.<br>`;
+                details += `<span style="color: var(--danger); font-weight: bold;">â— Parado</span> - Nenhum processo Cloudflared ativo no sistema.<br>`;
                 if (data.warning) {
-                    details += `<div style="margin-top: 6px; padding: 6px 10px; background: rgba(220, 53, 69, 0.1); border-left: 3px solid var(--danger); border-radius: 4px; color: var(--danger); font-weight: 500;">⚠️ ${data.warning}</div>`;
+                    details += `<div style="margin-top: 6px; padding: 6px 10px; background: rgba(220, 53, 69, 0.1); border-left: 3px solid var(--danger); border-radius: 4px; color: var(--danger); font-weight: 500;">âš ï¸ ${data.warning}</div>`;
                 }
                 details += `</div>`;
                 statusText.innerHTML = details;
             }
         } else {
-            statusText.innerHTML = `<span style="color: var(--danger); font-weight: bold;">❌ Erro</span> - ${data.error || 'Falha ao processar status.'}`;
+            statusText.innerHTML = `<span style="color: var(--danger); font-weight: bold;">âŒ Erro</span> - ${data.error || 'Falha ao processar status.'}`;
         }
     } catch (e) {
-        statusText.innerHTML = `<span style="color: var(--warning); font-weight: bold;">⚠️ Desconhecido</span> - Erro de comunicação com o painel: ${e.message}`;
+        statusText.innerHTML = `<span style="color: var(--warning); font-weight: bold;">âš ï¸ Desconhecido</span> - Erro de comunicaÃ§Ã£o com o painel: ${e.message}`;
     }
 }
 
@@ -5416,19 +5453,19 @@ async function cfrTestAllRules() {
 
         const data = await res.json();
         if (data.success && data.results) {
-            let msg = `🔍 RESULTADO DO TESTE DE REGRAS INGRESS:\n\n`;
+            let msg = `ðŸ” RESULTADO DO TESTE DE REGRAS INGRESS:\n\n`;
             data.results.forEach(r => {
-                msg += `URL pública: ${r.url}\n`;
+                msg += `URL pÃºblica: ${r.url}\n`;
                 if (r.success) {
-                    msg += `➔ ✅ SUCESSO: ${r.output || 'Regra correspondente encontrada.'}\n`;
+                    msg += `âž” âœ… SUCESSO: ${r.output || 'Regra correspondente encontrada.'}\n`;
                 } else {
-                    msg += `➔ ❌ FALHA: ${r.error || ''}\n`;
+                    msg += `âž” âŒ FALHA: ${r.error || ''}\n`;
                     if (r.output) msg += `   Log: ${r.output.trim()}\n`;
                 }
                 msg += `\n`;
             });
             alert(msg);
-            showToast('Teste de regras concluído!', 'success');
+            showToast('Teste de regras concluÃ­do!', 'success');
         } else {
             showToast('Erro ao testar regras: ' + (data.error || 'Erro desconhecido'), 'error');
         }
@@ -5443,7 +5480,7 @@ function cfrSetProcessButtonsBusy(activeAction, busy) {
     const stopBtn = document.getElementById('cfrStopBtn');
     const restartBtn = document.getElementById('cfrRestartBtn');
     const buttons = [startBtn, stopBtn, restartBtn].filter(Boolean);
-    const symbols = { start: '◌', stop: '↻', restart: '⟳' };
+    const symbols = { start: 'â—Œ', stop: 'â†»', restart: 'âŸ³' };
     const labels = { start: 'Iniciando...', stop: 'Parando...', restart: 'Reiniciando...' };
 
     if (busy) {
@@ -5475,7 +5512,7 @@ function cfrSetProcessButtonsBusy(activeAction, busy) {
 
 async function cfrStartProcess() {
     if (cfrProcessActionBusy) {
-        return showToast('Já existe uma operação de túnel em andamento. Aguarde finalizar.', 'warning');
+        return showToast('JÃ¡ existe uma operaÃ§Ã£o de tÃºnel em andamento. Aguarde finalizar.', 'warning');
     }
     cfrProcessActionBusy = true;
     cfrSetProcessButtonsBusy('start', true);
@@ -5484,10 +5521,10 @@ async function cfrStartProcess() {
         const res = await fetch(`${API_BASE}/cloudflared/process/start`, { method: 'POST' });
         const data = await res.json();
         if (data.success) {
-            showToast('Túnel iniciado!', 'success');
+            showToast('TÃºnel iniciado!', 'success');
             setTimeout(cfrCheckStatus, 1000);
         } else {
-            throw new Error(data.error || 'Erro ao iniciar túnel');
+            throw new Error(data.error || 'Erro ao iniciar tÃºnel');
         }
     } catch (err) {
         showToast('Erro: ' + err.message, 'error');
@@ -5499,7 +5536,7 @@ async function cfrStartProcess() {
 
 async function cfrStopProcess() {
     if (cfrProcessActionBusy) {
-        return showToast('Já existe uma operação de túnel em andamento. Aguarde finalizar.', 'warning');
+        return showToast('JÃ¡ existe uma operaÃ§Ã£o de tÃºnel em andamento. Aguarde finalizar.', 'warning');
     }
     cfrProcessActionBusy = true;
     cfrSetProcessButtonsBusy('stop', true);
@@ -5508,10 +5545,10 @@ async function cfrStopProcess() {
         const res = await fetch(`${API_BASE}/cloudflared/process/stop`, { method: 'POST' });
         const data = await res.json();
         if (data.success) {
-            showToast('Túnel parado!', 'success');
+            showToast('TÃºnel parado!', 'success');
             setTimeout(cfrCheckStatus, 1000);
         } else {
-            throw new Error(data.error || 'Erro ao parar túnel');
+            throw new Error(data.error || 'Erro ao parar tÃºnel');
         }
     } catch (err) {
         showToast('Erro: ' + err.message, 'error');
@@ -5523,7 +5560,7 @@ async function cfrStopProcess() {
 
 async function cfrRestartProcess() {
     if (cfrProcessActionBusy) {
-        return showToast('Já existe uma operação de túnel em andamento. Aguarde finalizar.', 'warning');
+        return showToast('JÃ¡ existe uma operaÃ§Ã£o de tÃºnel em andamento. Aguarde finalizar.', 'warning');
     }
     cfrProcessActionBusy = true;
     cfrSetProcessButtonsBusy('restart', true);
@@ -5532,7 +5569,7 @@ async function cfrRestartProcess() {
         await fetch(`${API_BASE}/cloudflared/process/stop`, { method: 'POST' }).catch(() => {});
         await new Promise(r => setTimeout(r, 1000));
         await fetch(`${API_BASE}/cloudflared/process/start`, { method: 'POST' });
-        showToast('Túnel reiniciado!', 'success');
+        showToast('TÃºnel reiniciado!', 'success');
         setTimeout(cfrCheckStatus, 1000);
     } catch (err) {
         showToast('Erro: ' + err.message, 'error');
@@ -5545,7 +5582,7 @@ async function cfrRestartProcess() {
 // Inicia polling de status a cada 5s se estiver na aba
 setInterval(() => {
     const el = document.getElementById('cfrProcessStatusText');
-    if (el && el.offsetParent !== null) { // Verifica se está visível
+    if (el && el.offsetParent !== null) { // Verifica se estÃ¡ visÃ­vel
         cfrCheckStatus();
     }
 }, 5000);
@@ -5613,16 +5650,16 @@ window.cfrRestartProcess = cfrRestartProcess;
 
 
 async function cfMigrateLegacy() {
-    if (!confirm('Deseja procurar por instâncias/rotas do painel antigo e importá-las para a nova versão?')) return;
+    if (!confirm('Deseja procurar por instÃ¢ncias/rotas do painel antigo e importÃ¡-las para a nova versÃ£o?')) return;
     try {
-        showToast('Procurando instâncias antigas...', 'info');
+        showToast('Procurando instÃ¢ncias antigas...', 'info');
         const res = await fetch(`${API_BASE}/cloudflared/system/migrate-legacy`, { method: 'POST' });
         const data = await res.json();
         if (data.success) {
-            showToast(data.message || 'Instâncias resgatadas com sucesso!', 'success');
+            showToast(data.message || 'InstÃ¢ncias resgatadas com sucesso!', 'success');
             cfFetchInstances();
         } else {
-            showToast('Nenhuma instância antiga para resgatar ou erro: ' + data.error, 'warning');
+            showToast('Nenhuma instÃ¢ncia antiga para resgatar ou erro: ' + data.error, 'warning');
         }
     } catch (e) {
         showToast('Erro: ' + e.message, 'error');
@@ -5684,3 +5721,6 @@ window.closeModal = function(id) {
         modal.classList.add('hidden');
     }
 };
+
+
+
