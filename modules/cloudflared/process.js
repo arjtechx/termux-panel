@@ -129,7 +129,12 @@ function startInstance(instance, isTempReplica = false) {
     let args = ['--no-autoupdate', '--metrics', `127.0.0.1:${metricsPort}`];
     
     if (instance.configPath) {
-        args.push('--config', configToRun, 'tunnel', 'run');
+        // cloudflared exige tunnelId no config ou como argumento final do "tunnel run".
+        if (instance.tunnelId) {
+            args.push('--config', configToRun, 'tunnel', 'run', instance.tunnelId);
+        } else {
+            return { success: false, error: 'Instância sem tunnelId. Faça login e vincule/crie o túnel antes de iniciar.' };
+        }
     } else {
         // Fallback or tokens
         if (instance.token) {

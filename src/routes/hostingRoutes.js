@@ -257,7 +257,7 @@ router.post('/', async (req, res) => {
         const cleanName = safeServiceName(slug || name || domain || type);
         const displayName = String(name || cleanName).trim();
         const bindAddress = String(bindHost || domain || '0.0.0.0').trim() || '0.0.0.0';
-        const localAddress = String(localHost || '127.0.0.1').trim() || '127.0.0.1';
+        const localAddress = 'localhost';
         const serverName = safeServerName(bindAddress === '0.0.0.0' ? '_' : bindAddress);
         const nginxConf = `hosting-${cleanName}-${id}.conf`;
         const confPath = path.join(NGINX_CONF_DIR, nginxConf);
@@ -431,7 +431,10 @@ router.post('/', async (req, res) => {
                     
                     // Start the newly created instance
                     try {
-                        cfProcess.startInstance(newInst);
+                        const startResult = cfProcess.startInstance(newInst);
+                        if (!startResult || !startResult.success) {
+                            throw new Error((startResult && startResult.error) || 'Falha ao iniciar processo cloudflared.');
+                        }
                     } catch (startErr) {
                         console.error(`[Hosting - Tunnel] Falha ao iniciar novo tÃºnel:`, startErr.message);
                         cfWarning = `ServiÃ§o criado, mas falhou ao iniciar o processo do tÃºnel: ${startErr.message}`;
@@ -517,7 +520,7 @@ router.post('/', async (req, res) => {
             cloudflareTunnel: createTunnel && tunnelHostname ? {
                 action: tunnelAction,
                 hostname: String(tunnelHostname).trim().toLowerCase(),
-                tunnelId: tunnelAction === 'existing' ? tunnelExistingId : (cfTunnelInstanceId || 'new'),
+                instanceId: tunnelAction === 'existing' ? tunnelExistingId : (cfTunnelInstanceId || ''),
                 tunnelName: tunnelAction === 'new' ? safeServiceName(tunnelName || cleanName) : ''
             } : null,
             createdAt: new Date().toISOString(),
@@ -539,15 +542,18 @@ router.post('/', async (req, res) => {
                 console.error('[Hosting post-action] Falha ao reiniciar NGINX:', e.message);
             }
 
-            if (newService.cloudflareTunnel && newService.cloudflareTunnel.tunnelId && newService.cloudflareTunnel.tunnelId !== 'new') {
+            if (newService.cloudflareTunnel && newService.cloudflareTunnel.instanceId) {
                 try {
                     const cfManager = require('../../modules/cloudflared/manager');
                     const cfProcess = require('../../modules/cloudflared/process');
-                    cfProcess.stopInstance(newService.cloudflareTunnel.tunnelId);
+                    cfProcess.stopInstance(newService.cloudflareTunnel.instanceId);
                     await new Promise(r => setTimeout(r, 1000));
-                    const inst = cfManager.getInstances().find(i => i.id === newService.cloudflareTunnel.tunnelId);
+                    const inst = cfManager.getInstances().find(i => i.id === newService.cloudflareTunnel.instanceId);
                     if (inst) {
-                        cfProcess.startInstance(inst);
+                        const restartResult = cfProcess.startInstance(inst);
+                        if (!restartResult || !restartResult.success) {
+                            throw new Error((restartResult && restartResult.error) || 'Falha ao reiniciar túnel.');
+                        }
                     }
                 } catch (e) {
                     console.error('[Hosting post-action] Falha ao reiniciar túnel do serviço:', e.message);

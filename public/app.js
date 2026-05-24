@@ -2727,7 +2727,7 @@ function updateHostingDerivedFields() {
 function updateTunnelTargetPreview() {
     const preview = document.getElementById('hsTunnelTargetPreview');
     const port = parseInt(document.getElementById('hsListenPort')?.value, 10) || 4000;
-    if (preview) preview.textContent = `http://127.0.0.1:${port}`;
+    if (preview) preview.textContent = `http://localhost:${port}`;
 }
 
 function installHostingFormWatchers() {
@@ -3124,7 +3124,7 @@ async function createHostingService(e) {
             slug,
             domain,
             bindHost: domain,
-            localHost: '127.0.0.1',
+            localHost: 'localhost',
             type,
             listenPort,
             targetPort: targetPort || listenPort,
@@ -3143,7 +3143,7 @@ async function createHostingService(e) {
 
         if (res?.success) {
             window.hostingLastSuggestedPort = Math.max(window.hostingLastSuggestedPort || 4000, listenPort + 1);
-            const createdLocalUrl = `http://127.0.0.1:${listenPort}`;
+            const createdLocalUrl = `http://localhost:${listenPort}`;
             const tunnelUrl = res?.service?.cloudflareTunnel?.hostname ? `https://${res.service.cloudflareTunnel.hostname}` : '';
             showToast(
                 tunnelUrl

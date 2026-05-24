@@ -1201,7 +1201,7 @@
                                             O tráfego enviado a este domínio será direcionado para a porta pública deste serviço.
                                         </p>
                                         <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">
-                                            Destino interno do túnel: <code id="hsTunnelTargetPreview">http://127.0.0.1:4000</code>
+                                            Destino interno do túnel: <code id="hsTunnelTargetPreview">http://localhost:4000</code>
                                         </p>
                                     </div>
                                 </div>
@@ -1803,7 +1803,7 @@
 <div class="fm-toast-container" id="fm-toast-container"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.154"></script>
+<script src="filemanager.js?v=0.2.155"></script>
 <script>
 window.toggleHostingTunnelFields = window.toggleHostingTunnelFields || function () {
     var checked = document.getElementById('hsCreateTunnel') && document.getElementById('hsCreateTunnel').checked;
