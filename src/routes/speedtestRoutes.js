@@ -6,16 +6,18 @@ const crypto = require('crypto');
 // 1. Função auxiliar para medir a latência (Ping HTTP RTT)
 async function measurePing() {
     const urls = ['https://1.1.1.1', 'https://www.google.com'];
-    let minPing = Infinity;
+    const samples = [];
+    let attempts = 0;
+    let fails = 0;
 
     for (const url of urls) {
-        try {
-            // Executamos 3 medições rápidas por alvo
-            for (let i = 0; i < 3; i++) {
-                const start = Date.now();
+        for (let i = 0; i < 3; i++) {
+            attempts++;
+            const start = Date.now();
+            try {
                 await new Promise((resolve, reject) => {
                     const req = https.get(url, { timeout: 1500 }, (res) => {
-                        res.resume(); // Consome a resposta
+                        res.resume();
                         resolve();
                     });
                     req.on('error', reject);
@@ -25,16 +27,31 @@ async function measurePing() {
                     });
                 });
                 const rtt = Date.now() - start;
-                if (rtt < minPing) {
-                    minPing = rtt;
-                }
+                samples.push(rtt);
+            } catch (_) {
+                fails++;
             }
-        } catch (e) {
-            // Ignora falhas de resolução ou timeout e tenta o próximo
         }
     }
 
-    return minPing === Infinity ? 999 : minPing;
+    if (!samples.length) {
+        return { ping: 999, jitter: 0, packetLoss: 100, samples: [] };
+    }
+
+    const avg = samples.reduce((a, b) => a + b, 0) / samples.length;
+    let jitter = 0;
+    if (samples.length > 1) {
+        const diffs = [];
+        for (let i = 1; i < samples.length; i++) diffs.push(Math.abs(samples[i] - samples[i - 1]));
+        jitter = diffs.reduce((a, b) => a + b, 0) / diffs.length;
+    }
+    const packetLoss = attempts > 0 ? Math.max(0, Math.min(100, Math.round((fails / attempts) * 100))) : 0;
+    return {
+        ping: Math.round(avg),
+        jitter: Math.round(jitter),
+        packetLoss,
+        samples
+    };
 }
 
 // Função auxiliar para lidar com redirects no GET
@@ -260,8 +277,8 @@ router.get('/speedtest', (req, res) => {
 
             // Fase 1: Latência (Ping)
             send({ stage: 'ping', status: 'running' });
-            const ping = await measurePing();
-            send({ stage: 'ping', status: 'done', ping });
+            const pingStats = await measurePing();
+            send({ stage: 'ping', status: 'done', ...pingStats });
 
             // Pequeno delay entre fases para estabilizar a rede local
             await new Promise(resolve => setTimeout(resolve, 500));
@@ -295,7 +312,9 @@ router.get('/speedtest', (req, res) => {
             // Finalizado
             send({
                 stage: 'finished',
-                ping,
+                ping: pingStats.ping,
+                jitter: pingStats.jitter,
+                packetLoss: pingStats.packetLoss,
                 download: downloadSpeed,
                 upload: uploadSpeed
             });

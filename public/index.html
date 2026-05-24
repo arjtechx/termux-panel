@@ -376,10 +376,11 @@
 
                         <div class="monitor-card-compact" style="z-index: 2; margin-top: 8px;" onclick="if(event.target.closest('button')) return; startSpeedTest()">
                             <div style="display: flex; gap: 8px;">
-                                <div style="flex: 1;">
-                                    <small>Ping</small><br>
-                                    <strong id="speedtest-ping-compact" style="font-size: 0.85rem;">--</strong>
-                                </div>
+                                  <div style="flex: 1;">
+                                      <small>Ping</small><br>
+                                      <strong id="speedtest-ping-compact" style="font-size: 0.85rem;">--</strong>
+                                      <div style="font-size: 0.65rem; color: var(--text-muted);">Jit <span id="speedtest-jitter-compact">--</span>ms</div>
+                                  </div>
                                 <div style="flex: 1;">
                                     <small>Down</small><br>
                                     <strong id="speedtest-down-compact" style="font-size: 0.85rem;">--</strong>
@@ -412,6 +413,7 @@
                             
                             <div id="speedtest-mini-results" style="display: flex; justify-content: space-between; margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 0.7rem; color: var(--text-muted); z-index: 2;">
                                 <span><i data-lucide="arrow-down-right" style="width: 10px; height: 10px; display: inline-block; vertical-align: middle;"></i> <span id="speedtest-ping">--</span>ms</span>
+                                <span><i data-lucide="activity" style="width: 10px; height: 10px; display: inline-block; vertical-align: middle; color: var(--info);"></i> <span id="speedtest-jitter">--</span>ms</span>
                                 <span><i data-lucide="download" style="width: 10px; height: 10px; display: inline-block; vertical-align: middle; color: var(--success);"></i> <span id="speedtest-download">--</span><span class="speedtest-unit-label">Mb</span></span>
                                 <span><i data-lucide="upload" style="width: 10px; height: 10px; display: inline-block; vertical-align: middle; color: var(--warning);"></i> <span id="speedtest-upload">--</span><span class="speedtest-unit-label">Mb</span></span>
                             </div>
@@ -1841,7 +1843,7 @@
 <div class="fm-toast-container" id="fm-toast-container"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.171"></script>
+<script src="filemanager.js?v=0.2.172"></script>
 <script>
 window.toggleHostingTunnelFields = window.toggleHostingTunnelFields || function () {
     var checked = document.getElementById('hsCreateTunnel') && document.getElementById('hsCreateTunnel').checked;
@@ -1865,7 +1867,7 @@ window.toggleHostingTunnelActionFields = window.toggleHostingTunnelActionFields 
     }
 };
 </script>
-<script src="app.js?v=4.20"></script>
+<script src="app.js?v=4.21"></script>
 
 </body>
 </html>

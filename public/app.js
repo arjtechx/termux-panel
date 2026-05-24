@@ -4234,10 +4234,12 @@ function startSpeedTest() {
     const mainVal = document.getElementById('speedtest-main-value');
     const statusText = document.getElementById('speedtest-status-text');
     const pingVal = document.getElementById('speedtest-ping');
+    const jitterVal = document.getElementById('speedtest-jitter');
     const downVal = document.getElementById('speedtest-download');
     const upVal = document.getElementById('speedtest-upload');
 
     const pingValCompact = document.getElementById('speedtest-ping-compact');
+    const jitterValCompact = document.getElementById('speedtest-jitter-compact');
     const downValCompact = document.getElementById('speedtest-down-compact');
     const upValCompact = document.getElementById('speedtest-up-compact');
     const statusCompact = document.getElementById('speedtest-status');
@@ -4260,6 +4262,8 @@ function startSpeedTest() {
     if (statusCompact) statusCompact.textContent = 'Conectando...';
     if (pingVal) pingVal.textContent = '--';
     if (pingValCompact) pingValCompact.textContent = '--';
+    if (jitterVal) jitterVal.textContent = '--';
+    if (jitterValCompact) jitterValCompact.textContent = '--';
     if (downVal) downVal.textContent = '--';
     if (downValCompact) downValCompact.textContent = '--';
     if (upVal) upVal.textContent = '--';
@@ -4280,6 +4284,8 @@ function startSpeedTest() {
                 } else if (data.status === 'done') {
                     if (pingVal) pingVal.textContent = data.ping;
                     if (pingValCompact) pingValCompact.textContent = `${data.ping}ms`;
+                    if (jitterVal) jitterVal.textContent = data.jitter ?? '--';
+                    if (jitterValCompact) jitterValCompact.textContent = data.jitter ?? '--';
                     statusText.textContent = 'Download...';
                     if (statusCompact) statusCompact.textContent = 'Down...';
                 }
@@ -4319,10 +4325,15 @@ function startSpeedTest() {
                 mainVal.textContent = `${formatSpeed(data.download)} ${speedtestUnit === 'Mbps' ? 'Mb' : 'KB'}`;
                 if (pingVal) pingVal.textContent = data.ping || '--';
                 if (pingValCompact) pingValCompact.textContent = data.ping ? `${data.ping}ms` : '--';
+                if (jitterVal) jitterVal.textContent = data.jitter ?? '--';
+                if (jitterValCompact) jitterValCompact.textContent = data.jitter ?? '--';
                 if (downVal) downVal.textContent = formatSpeed(data.download);
                 if (downValCompact) downValCompact.textContent = `${formatSpeed(data.download)} ${speedtestUnit === 'Mbps' ? 'M' : 'K'}`;
                 if (upVal) upVal.textContent = formatSpeed(data.upload);
                 if (upValCompact) upValCompact.textContent = `${formatSpeed(data.upload)} ${speedtestUnit === 'Mbps' ? 'M' : 'K'}`;
+                if (statusText && data.packetLoss !== undefined) {
+                    statusText.textContent = `Concluído! Ping ${data.ping}ms | Jitter ${data.jitter ?? '--'}ms | Loss ${data.packetLoss}%`;
+                }
                 
                 // Restaura estado
                 isSpeedtestRunning = false;
