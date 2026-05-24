@@ -2678,7 +2678,7 @@ async function savePanelAuth() {
 window.hostingServices = [];
 window.logInterval = null;
 window.activeFilterType = 'all';
-window.hostingLastSuggestedPort = 3001;
+window.hostingLastSuggestedPort = 4000;
 
 function slugifyServiceName(name) {
     return String(name || '')
@@ -2708,7 +2708,7 @@ function isValidPublicHostname(value) {
     return /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/.test(host);
 }
 
-async function suggestNextHostingPort(start = 3001) {
+async function suggestNextHostingPort(start = 4000) {
     const res = await safeFetch(`${API_BASE}/hosting/next-port?start=${encodeURIComponent(start)}`);
     if (res?.success && res.port) {
         window.hostingLastSuggestedPort = Number(res.port) || start;
@@ -2731,7 +2731,7 @@ function updateHostingDerivedFields() {
 
 function updateTunnelTargetPreview() {
     const preview = document.getElementById('hsTunnelTargetPreview');
-    const port = parseInt(document.getElementById('hsListenPort')?.value, 10) || 3001;
+    const port = parseInt(document.getElementById('hsListenPort')?.value, 10) || 4000;
     if (preview) preview.textContent = `http://127.0.0.1:${port}`;
 }
 
@@ -2757,7 +2757,7 @@ function openHostingModal() {
     // Reset form fields
     document.getElementById('hsName').value = '';
     document.getElementById('hsDomain').value = '0.0.0.0';
-    document.getElementById('hsListenPort').value = '3001';
+    document.getElementById('hsListenPort').value = '4000';
     document.getElementById('hsPath').value = '/data/data/com.termux/files/home/www/servico';
     document.getElementById('hsTargetPort').value = '';
     document.getElementById('hsStartCmd').value = '';
@@ -2791,7 +2791,7 @@ function openHostingModal() {
     toggleHostingFormFields();
     installHostingFormWatchers();
     updateHostingDerivedFields();
-    suggestNextHostingPort(window.hostingLastSuggestedPort || 3001).then((port) => {
+    suggestNextHostingPort(window.hostingLastSuggestedPort || 4000).then((port) => {
         const portEl = document.getElementById('hsListenPort');
         if (portEl) portEl.value = String(port);
     });
@@ -3117,9 +3117,10 @@ async function createHostingService(e) {
             tunnelHostname
         };
 
-        const res = await safeFetch(`${API_BASE}/hosting`, 'POST', payload);
+        const res = await safeFetch(`${API_BASE}/hosting`, 'POST', payload, 45000);
 
         if (res?.success) {
+            window.hostingLastSuggestedPort = Math.max(window.hostingLastSuggestedPort || 4000, listenPort + 1);
             showToast('Servi?o criado com sucesso. Reiniciando NGINX e aplicando t?nel...', 'success');
             if (res.cfWarning) {
                 setTimeout(() => {

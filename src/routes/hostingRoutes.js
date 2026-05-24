@@ -129,9 +129,9 @@ function ensureSafeProjectPath(sitePath, fallbackSlug) {
     return resolved;
 }
 
-async function findNextAvailablePort(startPort = 3001) {
+async function findNextAvailablePort(startPort = 4000) {
     let port = Number.parseInt(startPort, 10);
-    if (!Number.isInteger(port) || port < 1) port = 3001;
+    if (!Number.isInteger(port) || port < 1) port = 4000;
     while (port <= 65535) {
         const busy = await isPortListening(port);
         const nginxOwns = busy ? await isNginxAlreadyUsingPort(port) : false;
@@ -208,7 +208,7 @@ router.get('/', async (req, res) => {
 
 router.get('/next-port', async (req, res) => {
     try {
-        const start = Number.parseInt(req.query.start, 10) || 3001;
+        const start = Number.parseInt(req.query.start, 10) || 4000;
         const port = await findNextAvailablePort(start);
         res.json({ success: true, port });
     } catch (err) {
