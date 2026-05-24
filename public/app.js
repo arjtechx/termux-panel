@@ -3879,6 +3879,7 @@ function normalizeMojibakeText(input) {
         ['Ã¡', 'á'], ['Ã¢', 'â'], ['Ã£', 'ã'], ['Ã©', 'é'], ['Ãª', 'ê'], ['Ã­', 'í'], ['Ã³', 'ó'], ['Ã´', 'ô'], ['Ãµ', 'õ'], ['Ãº', 'ú'], ['Ã§', 'ç'],
         ['Ã', 'Á'], ['Ã‰', 'É'], ['Ã“', 'Ó'], ['Ãš', 'Ú'], ['Ã‡', 'Ç'],
         ['NÃ£o', 'Não'], ['nÃ£o', 'não'], ['jÃ¡', 'já'], ['estÃ¡', 'está'], ['serÃ¡', 'será'],
+        ['Inst�ncias', 'Instâncias'], ['inst�ncias', 'instâncias'], ['pr�prio', 'próprio'], ['TÃºnel', 'Túnel'],
         ['configuraÃ§Ã£o', 'configuração'], ['conexÃ£o', 'conexão'], ['domÃ­nio', 'domínio'], ['pÃºblico', 'público'],
         ['invÃ¡lido', 'inválido'], ['serviÃ§o', 'serviço'], ['ServiÃ§o', 'Serviço'], ['instÃ¢ncia', 'instância'], ['InstÃ¢ncia', 'Instância'],
         ['usuÃ¡rio', 'usuário'], ['UsuÃ¡rio', 'Usuário'], ['validaÃ§Ã£o', 'validação'], ['aplicaÃ§Ã£o', 'aplicação'], ['inicializaÃ§Ã£o', 'inicialização'],
