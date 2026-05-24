@@ -3847,7 +3847,7 @@ async function acGenerateSshAccess() {
             `Destino: ${ssh.service || 'ssh://localhost:8022'}`,
             '',
             'Cloudflare Access (terminal):',
-            ssh.cloudflareAccessSsh || '',
+            ssh.cloudflaredAccessSsh || '',
             '',
             'SSH com ProxyCommand:',
             ssh.proxyCommand || '',
