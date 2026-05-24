@@ -447,6 +447,11 @@ router.post('/', async (req, res) => {
                     });
                     cfTunnelInstanceId = newInst.id;
                     if (!newInst.tunnelId) {
+                        // Evita deixar instância quebrada (sem tunnelId) que falha ao iniciar/reiniciar.
+                        try {
+                            if (newInst.id) cfManager.deleteInstance(newInst.id);
+                        } catch (_) {}
+                        cfTunnelInstanceId = null;
                         cfWarning = 'Serviço criado, mas o túnel não recebeu tunnelId. Verifique login Cloudflare e permissões DNS da zona.';
                     } else if (newInst.dnsWarnings && newInst.dnsWarnings.length) {
                         cfWarning = `Serviço criado, mas houve falha ao criar DNS: ${newInst.dnsWarnings.join(' | ')}`;
@@ -572,14 +577,16 @@ router.post('/', async (req, res) => {
                 try {
                     const cfManager = require('../../modules/cloudflared/manager');
                     const cfProcess = require('../../modules/cloudflared/process');
-                    cfProcess.stopInstance(newService.cloudflareTunnel.instanceId);
-                    await new Promise(r => setTimeout(r, 1000));
                     const inst = cfManager.getInstances().find(i => i.id === newService.cloudflareTunnel.instanceId);
-                    if (inst) {
+                    if (inst && inst.tunnelId) {
+                        cfProcess.stopInstance(newService.cloudflareTunnel.instanceId);
+                        await new Promise(r => setTimeout(r, 1000));
                         const restartResult = cfProcess.startInstance(inst);
                         if (!restartResult || !restartResult.success) {
                             throw new Error((restartResult && restartResult.error) || 'Falha ao reiniciar túnel.');
                         }
+                    } else {
+                        console.warn('[Hosting post-action] Instância sem tunnelId, pulando restart automático do túnel.');
                     }
                 } catch (e) {
                     console.error('[Hosting post-action] Falha ao reiniciar túnel do serviço:', e.message);
