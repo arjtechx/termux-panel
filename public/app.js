@@ -3139,7 +3139,7 @@ async function createHostingService(e) {
             tunnelHostname
         };
 
-        const res = await safeFetch(`${API_BASE}/hosting`, 'POST', payload, 45000);
+        const res = await safeFetch(`${API_BASE}/hosting`, 'POST', payload, 120000);
 
         if (res?.success) {
             window.hostingLastSuggestedPort = Math.max(window.hostingLastSuggestedPort || 4000, listenPort + 1);

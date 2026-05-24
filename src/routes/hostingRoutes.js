@@ -527,33 +527,33 @@ router.post('/', async (req, res) => {
         services.push(newService);
         fs.writeFileSync(HOSTING_FILE, JSON.stringify(services, null, 2));
         
-        // PÃ³s-criaÃ§Ã£o: reinicia NGINX apÃ³s 3s e reinicia apenas o tÃºnel desse serviÃ§o
-        let postActions = { nginxRestarted: false, tunnelRestarted: false };
-        await new Promise(r => setTimeout(r, 3000));
-        try {
-            await reloadOrStartNginx(requireRoot);
-            postActions.nginxRestarted = true;
-        } catch (e) {
-            cfWarning = cfWarning || `ServiÃ§o criado, mas houve falha ao reiniciar NGINX: ${e.message}`;
-        }
-
-        if (newService.cloudflareTunnel && newService.cloudflareTunnel.tunnelId && newService.cloudflareTunnel.tunnelId !== 'new') {
-            try {
-                const cfManager = require('../../modules/cloudflared/manager');
-                const cfProcess = require('../../modules/cloudflared/process');
-                cfProcess.stopInstance(newService.cloudflareTunnel.tunnelId);
-                await new Promise(r => setTimeout(r, 1000));
-                const inst = cfManager.getInstances().find(i => i.id === newService.cloudflareTunnel.tunnelId);
-                if (inst) {
-                    cfProcess.startInstance(inst);
-                    postActions.tunnelRestarted = true;
-                }
-            } catch (e) {
-                cfWarning = cfWarning || `ServiÃ§o criado, mas falhou ao reiniciar o tÃºnel deste serviÃ§o: ${e.message}`;
-            }
-        }
-
+        // Responde imediatamente para evitar timeout em acesso via domínio tunelado.
+        // Pós-ações rodam assíncronas em background.
+        const postActions = { scheduled: true, nginxRestarted: false, tunnelRestarted: false };
         res.json({ success: true, service: newService, cfWarning, postActions });
+
+        setTimeout(async () => {
+            try {
+                await reloadOrStartNginx(requireRoot);
+            } catch (e) {
+                console.error('[Hosting post-action] Falha ao reiniciar NGINX:', e.message);
+            }
+
+            if (newService.cloudflareTunnel && newService.cloudflareTunnel.tunnelId && newService.cloudflareTunnel.tunnelId !== 'new') {
+                try {
+                    const cfManager = require('../../modules/cloudflared/manager');
+                    const cfProcess = require('../../modules/cloudflared/process');
+                    cfProcess.stopInstance(newService.cloudflareTunnel.tunnelId);
+                    await new Promise(r => setTimeout(r, 1000));
+                    const inst = cfManager.getInstances().find(i => i.id === newService.cloudflareTunnel.tunnelId);
+                    if (inst) {
+                        cfProcess.startInstance(inst);
+                    }
+                } catch (e) {
+                    console.error('[Hosting post-action] Falha ao reiniciar túnel do serviço:', e.message);
+                }
+            }
+        }, 3000);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
