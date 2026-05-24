@@ -110,10 +110,37 @@ router.get('/api/db/test', async (req, res) => {
 
 router.post('/api/db/setup', (req, res) => {
     try {
-        fs.writeFileSync(DB_FILE, JSON.stringify(req.body, null, 2));
-        res.json({ success: true });
+        const current = fs.existsSync(DB_FILE) ? JSON.parse(fs.readFileSync(DB_FILE, 'utf8') || '{}') : {};
+        const next = {
+            host: String(req.body.host || current.host || '127.0.0.1').trim(),
+            user: String(req.body.user || current.user || 'root').trim(),
+            password: String(req.body.password ?? current.password ?? ''),
+            port: Number.parseInt(req.body.port ?? current.port ?? 3306, 10) || 3306,
+            database: String(req.body.database || current.database || 'painel').trim()
+        };
+        fs.writeFileSync(DB_FILE, JSON.stringify(next, null, 2));
+        res.json({ success: true, config: { ...next, hasPassword: !!next.password } });
     } catch (err) {
         res.status(500).json({ error: err.message });
+    }
+});
+
+router.get('/api/db/setup', (req, res) => {
+    try {
+        const current = fs.existsSync(DB_FILE) ? JSON.parse(fs.readFileSync(DB_FILE, 'utf8') || '{}') : {};
+        res.json({
+            success: true,
+            config: {
+                host: current.host || '127.0.0.1',
+                user: current.user || 'root',
+                password: current.password || '',
+                port: current.port || 3306,
+                database: current.database || 'painel',
+                hasPassword: !!current.password
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 

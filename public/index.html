@@ -1132,18 +1132,18 @@
                             <div style="display:flex; gap:10px;">
                                 <div style="flex:1;">
                                     <label class="form-label">Domínio / Host</label>
-                                    <input type="text" id="hsDomain" placeholder="ex: meusite.com" required>
+                                    <input type="text" id="hsDomain" value="0.0.0.0" placeholder="0.0.0.0" required>
                                 </div>
                                 <div style="flex:1;">
                                     <label class="form-label">Porta Pública</label>
-                                    <input type="number" id="hsListenPort" placeholder="ex: 8080" required>
+                                    <input type="number" id="hsListenPort" value="3001" placeholder="3001" required>
                                 </div>
                             </div>
 
                             <!-- Dynamic fields -->
                             <div id="hsPathGroup">
                                 <label class="form-label">Caminho da Pasta Absoluto</label>
-                                <input type="text" id="hsPath" placeholder="ex: /data/data/com.termux/files/home/www/projeto">
+                                <input type="text" id="hsPath" placeholder="/data/data/com.termux/files/home/www/meu-servico">
                             </div>
 
                             <div id="hsTargetPortGroup" class="hidden">
@@ -1199,6 +1199,9 @@
                                         <input type="text" id="hsTunnelHostname" placeholder="ex: wordpress.meudominio.com" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-lighter); color:var(--text-color);">
                                         <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">
                                             O tráfego enviado a este domínio será direcionado para a porta pública deste serviço.
+                                        </p>
+                                        <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">
+                                            Destino interno do túnel: <code id="hsTunnelTargetPreview">http://127.0.0.1:3001</code>
                                         </p>
                                     </div>
                                 </div>
@@ -1800,7 +1803,7 @@
 <div class="fm-toast-container" id="fm-toast-container"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.144"></script>
+<script src="filemanager.js?v=0.2.145"></script>
 <script>
 window.toggleHostingTunnelFields = window.toggleHostingTunnelFields || function () {
     var checked = document.getElementById('hsCreateTunnel') && document.getElementById('hsCreateTunnel').checked;
@@ -1824,7 +1827,7 @@ window.toggleHostingTunnelActionFields = window.toggleHostingTunnelActionFields 
     }
 };
 </script>
-<script src="app.js?v=4.7"></script>
+<script src="app.js?v=4.9"></script>
 
 </body>
 </html>

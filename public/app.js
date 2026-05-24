@@ -709,7 +709,7 @@ function renderCpuCoreList(cores) {
 
 function updateCpuRootButton(enabled) {
     cpuRootEnabled = Boolean(enabled);
-    localStorage.setItem('cpu-root-enabled', String(cpuRootEnabled));
+    try { localStorage.setItem('cpu-root-enabled', String(cpuRootEnabled)); } catch (_) {}
 
     if (!el.cpuRootToggle) return;
     el.cpuRootToggle.classList.toggle('is-active', cpuRootEnabled);
@@ -928,6 +928,7 @@ async function fetchDbStatus() {
 }
 
 async function fetchDatabases() {
+    await preloadDbSetupFields();
     await fetchDbStatus();
     const data  = await safeFetch(`${API_BASE}/db`);
     const listContainer = document.getElementById('db-list-container');
@@ -1562,7 +1563,10 @@ async function restoreDbBackup() {
     }
 }
 
-function showDbSetup() { document.getElementById('dbSetupModal').classList.remove('hidden'); }
+async function showDbSetup() {
+    await preloadDbSetupFields();
+    document.getElementById('dbSetupModal').classList.remove('hidden');
+}
 
 async function saveDbSetup() {
     const body = {
@@ -2674,13 +2678,87 @@ async function savePanelAuth() {
 window.hostingServices = [];
 window.logInterval = null;
 window.activeFilterType = 'all';
+window.hostingLastSuggestedPort = 3001;
+
+function slugifyServiceName(name) {
+    return String(name || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+}
+
+async function preloadDbSetupFields() {
+    const res = await safeFetch(`${API_BASE}/db/setup`);
+    if (!res?.success || !res.config) return;
+    const cfg = res.config;
+    const hostEl = document.getElementById('dbRootHost');
+    const userEl = document.getElementById('dbRootUser');
+    const passEl = document.getElementById('dbRootPass');
+    if (hostEl) hostEl.value = cfg.host || '127.0.0.1';
+    if (userEl) userEl.value = cfg.user || 'root';
+    if (passEl) passEl.value = cfg.password || '';
+}
+
+function isValidPublicHostname(value) {
+    const host = String(value || '').trim().toLowerCase();
+    if (!host || host.includes('://') || host.includes('/')) return false;
+    return /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/.test(host);
+}
+
+async function suggestNextHostingPort(start = 3001) {
+    const res = await safeFetch(`${API_BASE}/hosting/next-port?start=${encodeURIComponent(start)}`);
+    if (res?.success && res.port) {
+        window.hostingLastSuggestedPort = Number(res.port) || start;
+        return window.hostingLastSuggestedPort;
+    }
+    return start;
+}
+
+function updateHostingDerivedFields() {
+    const hsName = document.getElementById('hsName');
+    const hsPath = document.getElementById('hsPath');
+    const hsTunnelName = document.getElementById('hsTunnelName');
+    if (!hsName) return;
+
+    const slug = slugifyServiceName(hsName.value);
+    if (hsPath) hsPath.value = `/data/data/com.termux/files/home/www/${slug || 'servico'}`;
+    if (hsTunnelName && !hsTunnelName.dataset.userEdited) hsTunnelName.value = slug || '';
+    updateTunnelTargetPreview();
+}
+
+function updateTunnelTargetPreview() {
+    const preview = document.getElementById('hsTunnelTargetPreview');
+    const port = parseInt(document.getElementById('hsListenPort')?.value, 10) || 3001;
+    if (preview) preview.textContent = `http://127.0.0.1:${port}`;
+}
+
+function installHostingFormWatchers() {
+    const hsName = document.getElementById('hsName');
+    const hsTunnelName = document.getElementById('hsTunnelName');
+    if (hsName && !hsName.dataset.boundSlug) {
+        hsName.addEventListener('input', updateHostingDerivedFields);
+        hsName.dataset.boundSlug = '1';
+    }
+    if (hsTunnelName && !hsTunnelName.dataset.boundEdit) {
+        hsTunnelName.addEventListener('input', () => { hsTunnelName.dataset.userEdited = '1'; });
+        hsTunnelName.dataset.boundEdit = '1';
+    }
+    const hsListenPort = document.getElementById('hsListenPort');
+    if (hsListenPort && !hsListenPort.dataset.boundPreview) {
+        hsListenPort.addEventListener('input', updateTunnelTargetPreview);
+        hsListenPort.dataset.boundPreview = '1';
+    }
+}
 
 function openHostingModal() {
     // Reset form fields
     document.getElementById('hsName').value = '';
-    document.getElementById('hsDomain').value = window.location.hostname || '192.168.1.103';
-    document.getElementById('hsListenPort').value = '8080';
-    document.getElementById('hsPath').value = '/data/data/com.termux/files/home/www/meu-projeto';
+    document.getElementById('hsDomain').value = '0.0.0.0';
+    document.getElementById('hsListenPort').value = '3001';
+    document.getElementById('hsPath').value = '/data/data/com.termux/files/home/www/servico';
     document.getElementById('hsTargetPort').value = '';
     document.getElementById('hsStartCmd').value = '';
     document.getElementById('hsType').value = 'php';
@@ -2694,7 +2772,10 @@ function openHostingModal() {
         toggleHostingTunnelFields();
     }
     const hsTunnelName = document.getElementById('hsTunnelName');
-    if (hsTunnelName) hsTunnelName.value = '';
+    if (hsTunnelName) {
+        hsTunnelName.value = '';
+        hsTunnelName.dataset.userEdited = '';
+    }
     const hsTunnelHostname = document.getElementById('hsTunnelHostname');
     if (hsTunnelHostname) hsTunnelHostname.value = '';
     const hsTunnelAction = document.getElementById('hsTunnelAction');
@@ -2708,6 +2789,12 @@ function openHostingModal() {
 
     // Trigger dynamic visible fields logic
     toggleHostingFormFields();
+    installHostingFormWatchers();
+    updateHostingDerivedFields();
+    suggestNextHostingPort(window.hostingLastSuggestedPort || 3001).then((port) => {
+        const portEl = document.getElementById('hsListenPort');
+        if (portEl) portEl.value = String(port);
+    });
 
     // Open Modal overlay
     const modal = document.getElementById('hostingModal');
@@ -2963,38 +3050,42 @@ async function createHostingService(e) {
     e.preventDefault();
     
     const name = document.getElementById('hsName').value.trim();
-    const domain = document.getElementById('hsDomain').value.trim();
+    const slug = slugifyServiceName(name);
+    const domain = (document.getElementById('hsDomain').value.trim() || '0.0.0.0');
     const type = document.getElementById('hsType').value;
-    const listenPort = document.getElementById('hsListenPort').value;
+    const listenPort = parseInt(document.getElementById('hsListenPort').value, 10);
     const targetPort = document.getElementById('hsTargetPort').value;
     const path = document.getElementById('hsPath').value.trim();
     const startCmd = document.getElementById('hsStartCmd').value.trim();
     const autoRestart = document.getElementById('hsAutoRestart').checked;
     const createIndex = document.getElementById('hsCreateIndex').checked;
 
-    // Tunnel integration
     const createTunnel = document.getElementById('hsCreateTunnel')?.checked || false;
     const tunnelAction = document.getElementById('hsTunnelAction')?.value || 'new';
     const tunnelName = document.getElementById('hsTunnelName')?.value?.trim() || '';
     const tunnelExistingId = document.getElementById('hsTunnelExistingId')?.value || '';
     const tunnelHostname = document.getElementById('hsTunnelHostname')?.value?.trim() || '';
 
-    if (!name || !listenPort) {
-        showToast('Nome e Porta Pública são obrigatórios!', 'warning');
+    if (!name || !slug || !Number.isInteger(listenPort)) {
+        showToast('Nome e Porta P?blica s?o obrigat?rios!', 'warning');
+        return;
+    }
+    if (listenPort < 1 || listenPort > 65535) {
+        showToast('Porta p?blica inv?lida (1-65535).', 'warning');
         return;
     }
 
     if (createTunnel) {
-        if (!tunnelHostname) {
-            showToast('Hostname Público é obrigatório para configurar o túnel!', 'warning');
+        if (!tunnelHostname || !isValidPublicHostname(tunnelHostname)) {
+            showToast('Hostname p?blico inv?lido para t?nel Cloudflare.', 'warning');
             return;
         }
         if (tunnelAction === 'new' && !tunnelName) {
-            showToast('Nome do Novo Túnel é obrigatório!', 'warning');
+            showToast('Nome do novo t?nel ? obrigat?rio.', 'warning');
             return;
         }
         if (tunnelAction === 'existing' && !tunnelExistingId) {
-            showToast('Selecione um túnel existente!', 'warning');
+            showToast('Selecione um t?nel existente.', 'warning');
             return;
         }
     }
@@ -3006,26 +3097,30 @@ async function createHostingService(e) {
     lucide.createIcons();
 
     try {
-        const payload = { 
-            name, 
-            domain, 
-            type, 
-            listenPort, 
-            targetPort, 
-            path, 
-            startCmd, 
-            autoRestart, 
+        const payload = {
+            name,
+            slug,
+            domain,
+            bindHost: domain,
+            localHost: '127.0.0.1',
+            type,
+            listenPort,
+            targetPort: targetPort || listenPort,
+            path,
+            startCmd,
+            autoRestart,
             createIndex,
             createTunnel,
             tunnelAction,
-            tunnelName,
+            tunnelName: tunnelName || slug,
             tunnelExistingId,
             tunnelHostname
         };
+
         const res = await safeFetch(`${API_BASE}/hosting`, 'POST', payload);
-        
+
         if (res?.success) {
-            showToast('Serviço de Hospedagem criado com sucesso!', 'success');
+            showToast('Servi?o criado com sucesso. Reiniciando NGINX e aplicando t?nel...', 'success');
             if (res.cfWarning) {
                 setTimeout(() => {
                     showToast(`Aviso: ${res.cfWarning}`, 'warning');
@@ -3034,7 +3129,7 @@ async function createHostingService(e) {
             closeHostingModal();
             fetchHostingServices();
         } else {
-            showToast(`Falha ao criar serviço: ${res?.error || 'Erro desconhecido.'}`, 'error');
+            showToast(`Falha ao criar servi?o: ${res?.error || 'Erro desconhecido.'}`, 'error');
         }
     } catch (err) {
         showToast(`Falha de rede: ${err.message}`, 'error');

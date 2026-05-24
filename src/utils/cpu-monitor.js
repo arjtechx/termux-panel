@@ -12,6 +12,7 @@ let cpuUseRoot = false;
 let lastCpuTimes = null;
 let cachedCpuName = null;
 let cachedCoreIds = null;
+const UI_STATE_FILE = path.join(__dirname, '..', '..', 'config', 'ui-state.json');
 
 // Silenciamento de logs repetitivos
 const lastErrorLogByKey = new Map();
@@ -436,6 +437,7 @@ function readCpuUsageFromPsSafe() {
 function setCpuRootMode(enabled) {
     cpuUseRoot = Boolean(enabled);
     lastCpuTimes = null;
+    persistCpuRootMode();
     return {
         success: true,
         root: cpuUseRoot
@@ -608,6 +610,33 @@ function startTermuxNativeCpuEstimator() {
 
 function getCpuRootMode() {
     return cpuUseRoot;
+}
+
+loadCpuRootMode();
+
+function loadCpuRootMode() {
+    try {
+        if (!fs.existsSync(UI_STATE_FILE)) return;
+        const raw = fs.readFileSync(UI_STATE_FILE, 'utf8');
+        const state = JSON.parse(raw || '{}');
+        if (typeof state.cpuRootEnabled === 'boolean') {
+            cpuUseRoot = state.cpuRootEnabled;
+        }
+    } catch (_) {}
+}
+
+function persistCpuRootMode() {
+    try {
+        const dir = path.dirname(UI_STATE_FILE);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        let current = {};
+        if (fs.existsSync(UI_STATE_FILE)) {
+            try { current = JSON.parse(fs.readFileSync(UI_STATE_FILE, 'utf8') || '{}'); } catch (_) {}
+        }
+        current.cpuRootEnabled = !!cpuUseRoot;
+        current.updatedAt = new Date().toISOString();
+        fs.writeFileSync(UI_STATE_FILE, JSON.stringify(current, null, 2), 'utf8');
+    } catch (_) {}
 }
 
 function getCpuStats() {

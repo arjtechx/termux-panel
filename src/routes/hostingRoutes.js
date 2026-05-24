@@ -12,6 +12,7 @@ const NGINX_CONF_DIR = systemConfig.nginx_conf_dir || `${PREFIX}/etc/nginx/conf.
 const HOSTING_FILE = path.join(__dirname, '..', '..', 'config', 'hosting.json');
 const HOSTING_LOGS_DIR = path.join(__dirname, '..', '..', 'logs');
 const NGINX_REPAIR_SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'nginx-termux-repair.sh');
+const HOSTING_BASE_DIR = '/data/data/com.termux/files/home/www';
 
 if (!fs.existsSync(HOSTING_FILE)) {
     fs.writeFileSync(HOSTING_FILE, '[]');
@@ -98,9 +99,46 @@ function validatePort(value, label) {
 }
 
 function safeServiceName(value) {
-    const clean = String(value || 'site').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    const clean = String(value || 'site')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
     if (!clean) throw new Error('Nome do servico invalido.');
     return clean.slice(0, 64);
+}
+
+function isValidHostname(value) {
+    const host = String(value || '').trim().toLowerCase();
+    if (!host || host.includes('://') || host.includes('/')) return false;
+    return /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/.test(host);
+}
+
+function ensureSafeProjectPath(sitePath, fallbackSlug) {
+    const raw = String(sitePath || '').trim();
+    const base = path.resolve(HOSTING_BASE_DIR);
+    const resolved = raw ? path.resolve(raw) : path.resolve(base, fallbackSlug);
+    if (!resolved.startsWith(base)) {
+        throw new Error(`Caminho fora da base permitida: ${HOSTING_BASE_DIR}`);
+    }
+    if (/\.\./.test(raw) || /[;&|`$]/.test(raw)) {
+        throw new Error('Caminho do projeto contem caracteres nao permitidos.');
+    }
+    return resolved;
+}
+
+async function findNextAvailablePort(startPort = 3001) {
+    let port = Number.parseInt(startPort, 10);
+    if (!Number.isInteger(port) || port < 1) port = 3001;
+    while (port <= 65535) {
+        const busy = await isPortListening(port);
+        const nginxOwns = busy ? await isNginxAlreadyUsingPort(port) : false;
+        if (!busy || nginxOwns) return port;
+        port++;
+    }
+    throw new Error('Nao foi possivel encontrar porta livre.');
 }
 
 function safeServerName(value) {
@@ -168,8 +206,18 @@ router.get('/', async (req, res) => {
     }
 });
 
+router.get('/next-port', async (req, res) => {
+    try {
+        const start = Number.parseInt(req.query.start, 10) || 3001;
+        const port = await findNextAvailablePort(start);
+        res.json({ success: true, port });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 router.post('/', async (req, res) => {
-    const { name, domain, type, listenPort, targetPort, path: sitePath, startCmd, autoRestart, createIndex, createTunnel, tunnelAction, tunnelName, tunnelExistingId, tunnelHostname } = req.body;
+    const { name, slug, domain, bindHost, localHost, type, listenPort, targetPort, path: sitePath, startCmd, autoRestart, createIndex, createTunnel, tunnelAction, tunnelName, tunnelExistingId, tunnelHostname } = req.body;
     
     const id = Date.now().toString();
     let parsedListenPort;
@@ -206,16 +254,19 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ error: 'Pasta do projeto/site e obrigatoria.' });
         }
 
-        const cleanName = safeServiceName(name || domain || type);
-        const serverName = safeServerName(domain);
+        const cleanName = safeServiceName(slug || name || domain || type);
+        const displayName = String(name || cleanName).trim();
+        const bindAddress = String(bindHost || domain || '0.0.0.0').trim() || '0.0.0.0';
+        const localAddress = String(localHost || '127.0.0.1').trim() || '127.0.0.1';
+        const serverName = safeServerName(bindAddress === '0.0.0.0' ? '_' : bindAddress);
         const nginxConf = `hosting-${cleanName}-${id}.conf`;
         const confPath = path.join(NGINX_CONF_DIR, nginxConf);
         const logFile = `logs/hosting-${cleanName}-${id}.log`;
         const errorLog = `logs/hosting-${cleanName}-${id}-error.log`;
-        const publicHost = serverName === '_' ? '127.0.0.1' : serverName.split(/\s+/)[0];
+        const publicHost = '127.0.0.1';
         const publicUrl = `http://${publicHost}:${parsedListenPort}`;
         
-        let resolvedPath = sitePath ? path.resolve(sitePath.trim()) : '';
+        let resolvedPath = ensureSafeProjectPath(sitePath, cleanName);
         if (resolvedPath && (type === 'php' || type === 'static' || type === 'node' || type === 'python')) {
             if (!fs.existsSync(resolvedPath)) {
                 fs.mkdirSync(resolvedPath, { recursive: true });
@@ -345,14 +396,19 @@ router.post('/', async (req, res) => {
         }
         
         let cfWarning = null;
+        let cfTunnelInstanceId = null;
         if (createTunnel && tunnelHostname) {
             try {
                 const cfManager = require('../../modules/cloudflared/manager');
                 const cfProcess = require('../../modules/cloudflared/process');
+                const publicHostname = String(tunnelHostname || '').trim().toLowerCase();
+                if (!isValidHostname(publicHostname)) {
+                    throw new Error('Hostname público inválido.');
+                }
                 
                 if (tunnelAction === 'new') {
                     // Create new Cloudflare instance
-                    const instName = tunnelName ? tunnelName.trim() : `Túnel ${name.trim()}`;
+                    const instName = safeServiceName(tunnelName ? tunnelName.trim() : cleanName);
                     const newInst = cfManager.createInstance({
                         name: instName,
                         type: 'service',
@@ -361,16 +417,17 @@ router.post('/', async (req, res) => {
                         createCloudflareTunnel: true, // CLI creates tunnel
                         routes: [
                             {
-                                name: name.trim(),
-                                hostname: tunnelHostname.trim(),
+                                name: displayName,
+                                hostname: publicHostname,
                                 path: '/',
                                 targetProtocol: 'http',
-                                targetHost: '127.0.0.1',
+                                targetHost: localAddress,
                                 targetPort: parsedListenPort,
                                 routeType: 'http'
                             }
                         ]
                     });
+                    cfTunnelInstanceId = newInst.id;
                     
                     // Start the newly created instance
                     try {
@@ -387,14 +444,14 @@ router.post('/', async (req, res) => {
                     if (existingInst) {
                         const updatedRoutes = [...(existingInst.routes || [])];
                         // Avoid duplicates
-                        const routeExists = updatedRoutes.some(r => r.hostname === tunnelHostname.trim());
+                        const routeExists = updatedRoutes.some(r => r.hostname === publicHostname);
                         if (!routeExists) {
                             updatedRoutes.push({
-                                name: name.trim(),
-                                hostname: tunnelHostname.trim(),
+                                name: displayName,
+                                hostname: publicHostname,
                                 path: '/',
                                 targetProtocol: 'http',
-                                targetHost: '127.0.0.1',
+                                targetHost: localAddress,
                                 targetPort: parsedListenPort,
                                 routeType: 'http'
                             });
@@ -403,6 +460,7 @@ router.post('/', async (req, res) => {
                             const updatedInst = cfManager.updateInstance(existingInst.id, {
                                 routes: updatedRoutes
                             });
+                            cfTunnelInstanceId = updatedInst.id;
                             
                             // Check if instance is running, and if so, perform Zero Downtime reload
                             const status = await cfProcess.getInstanceStatus(existingInst.id);
@@ -439,8 +497,9 @@ router.post('/', async (req, res) => {
         const services = JSON.parse(fs.readFileSync(HOSTING_FILE, 'utf8'));
         const newService = {
             id,
-            name: name.trim(),
-            domain: domain ? domain.trim() : '_',
+            name: displayName,
+            slug: cleanName,
+            domain: bindAddress ? bindAddress.trim() : '0.0.0.0',
             type,
             listenPort: parsedListenPort,
             targetPort: parsedTargetPort,
@@ -450,22 +509,51 @@ router.post('/', async (req, res) => {
             pid,
             status: activeStatus,
             publicUrl,
-            bindHost: '0.0.0.0',
+            bindHost: bindAddress,
+            localHost: localAddress,
             nginxConf,
             logFile,
             errorLog,
             cloudflareTunnel: createTunnel && tunnelHostname ? {
                 action: tunnelAction,
-                hostname: tunnelHostname,
-                tunnelId: tunnelAction === 'existing' ? tunnelExistingId : 'new'
+                hostname: String(tunnelHostname).trim().toLowerCase(),
+                tunnelId: tunnelAction === 'existing' ? tunnelExistingId : (cfTunnelInstanceId || 'new'),
+                tunnelName: tunnelAction === 'new' ? safeServiceName(tunnelName || cleanName) : ''
             } : null,
-            createdAt: new Date().toISOString()
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
         };
         
         services.push(newService);
         fs.writeFileSync(HOSTING_FILE, JSON.stringify(services, null, 2));
         
-        res.json({ success: true, service: newService, cfWarning });
+        // Pós-criação: reinicia NGINX após 3s e reinicia apenas o túnel desse serviço
+        let postActions = { nginxRestarted: false, tunnelRestarted: false };
+        await new Promise(r => setTimeout(r, 3000));
+        try {
+            await reloadOrStartNginx(requireRoot);
+            postActions.nginxRestarted = true;
+        } catch (e) {
+            cfWarning = cfWarning || `Serviço criado, mas houve falha ao reiniciar NGINX: ${e.message}`;
+        }
+
+        if (newService.cloudflareTunnel && newService.cloudflareTunnel.tunnelId && newService.cloudflareTunnel.tunnelId !== 'new') {
+            try {
+                const cfManager = require('../../modules/cloudflared/manager');
+                const cfProcess = require('../../modules/cloudflared/process');
+                cfProcess.stopInstance(newService.cloudflareTunnel.tunnelId);
+                await new Promise(r => setTimeout(r, 1000));
+                const inst = cfManager.getInstances().find(i => i.id === newService.cloudflareTunnel.tunnelId);
+                if (inst) {
+                    cfProcess.startInstance(inst);
+                    postActions.tunnelRestarted = true;
+                }
+            } catch (e) {
+                cfWarning = cfWarning || `Serviço criado, mas falhou ao reiniciar o túnel deste serviço: ${e.message}`;
+            }
+        }
+
+        res.json({ success: true, service: newService, cfWarning, postActions });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
