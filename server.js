@@ -85,17 +85,9 @@ app.use(session({
     cookie: { maxAge: 24 * 60 * 60 * 1000 } // 24 hours
 }));
 
-// Auth Middleware
-const { checkAuth } = require('./src/utils/auth');
-
-app.use(checkAuth);
-
-// Proxy local do phpMyAdmin para evitar 404 em /phpmyadmin no painel/tunel.
-app.use('/phpmyadmin', (req, res) => {
+function proxyPhpMyAdmin(req, res, targetPath, onDone) {
     const upstreamHost = '127.0.0.1';
     const upstreamPort = 8080;
-    const targetPath = req.originalUrl || req.url || '/phpmyadmin';
-
     const proxyReq = http.request({
         host: upstreamHost,
         port: upstreamPort,
@@ -105,25 +97,65 @@ app.use('/phpmyadmin', (req, res) => {
             ...req.headers,
             host: `${upstreamHost}:${upstreamPort}`
         }
-    }, (proxyRes) => {
-        res.status(proxyRes.statusCode || 502);
-        Object.entries(proxyRes.headers || {}).forEach(([key, value]) => {
-            if (value !== undefined) res.setHeader(key, value);
-        });
-        proxyRes.pipe(res);
-    });
+    }, (proxyRes) => onDone(null, proxyRes));
 
-    proxyReq.on('error', (error) => {
-        if (!res.headersSent) {
-            res.status(502).json({
-                error: 'phpMyAdmin local indisponivel em 127.0.0.1:8080',
-                details: error.message
+    proxyReq.on('error', (error) => onDone(error));
+
+    if (req.method === 'GET' || req.method === 'HEAD') {
+        proxyReq.end();
+        return;
+    }
+    req.pipe(proxyReq);
+}
+
+// Proxy local do phpMyAdmin para localhost e dominio tunelado.
+app.use('/phpmyadmin', (req, res) => {
+    const originalPath = req.originalUrl || req.url || '/phpmyadmin';
+    const fallbackPath = originalPath.replace(/^\/phpmyadmin(?=\/|$)/, '') || '/';
+
+    proxyPhpMyAdmin(req, res, originalPath, (err, upstreamRes) => {
+        if (err) {
+            if (!res.headersSent) {
+                res.status(502).json({
+                    error: 'phpMyAdmin local indisponivel em 127.0.0.1:8080',
+                    details: err.message
+                });
+            }
+            return;
+        }
+
+        if ((upstreamRes.statusCode === 404 || upstreamRes.statusCode === 301 || upstreamRes.statusCode === 302) && fallbackPath !== originalPath) {
+            upstreamRes.resume();
+            return proxyPhpMyAdmin(req, res, fallbackPath, (err2, upstreamRes2) => {
+                if (err2) {
+                    if (!res.headersSent) {
+                        res.status(502).json({
+                            error: 'phpMyAdmin local indisponivel em 127.0.0.1:8080',
+                            details: err2.message
+                        });
+                    }
+                    return;
+                }
+                res.status(upstreamRes2.statusCode || 502);
+                Object.entries(upstreamRes2.headers || {}).forEach(([key, value]) => {
+                    if (value !== undefined) res.setHeader(key, value);
+                });
+                upstreamRes2.pipe(res);
             });
         }
-    });
 
-    req.pipe(proxyReq);
+        res.status(upstreamRes.statusCode || 502);
+        Object.entries(upstreamRes.headers || {}).forEach(([key, value]) => {
+            if (value !== undefined) res.setHeader(key, value);
+        });
+        upstreamRes.pipe(res);
+    });
 });
+
+// Auth Middleware
+const { checkAuth } = require('./src/utils/auth');
+
+app.use(checkAuth);
 
 app.use(express.static(path.join(__dirname, 'public')));
 // --- Auth Routes ---
