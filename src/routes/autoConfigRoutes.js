@@ -31,7 +31,12 @@ router.post('/generate-ssh', async (req, res) => {
   try {
     const domain = String(req.body.domain || '').trim();
     if (!domain) throw new Error('Domínio principal é obrigatório.');
-    res.json(autoConfig.generateSshAccess({ domain }));
+    res.json(autoConfig.generateSshAccess({
+      domain,
+      sshHostname: req.body.sshHostname,
+      targetHost: req.body.targetHost,
+      targetPort: req.body.targetPort
+    }));
   } catch (e) {
     res.status(400).json({ success: false, error: e.message });
   }

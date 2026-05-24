@@ -3829,14 +3829,42 @@ async function acGenerateRoutes() {
     }
 }
 
-async function acGenerateSshAccess() {
-    const payload = acGetPayload();
-    if (!payload.domain) return showToast('Informe o domínio principal.', 'warning');
+function acOpenSshAssistModal() {
+    const modal = document.getElementById('acSshAssistModal');
+    if (!modal) return;
+    const domain = (document.getElementById('acDomain')?.value || '').trim();
+    const domainInput = document.getElementById('acSshDomain');
+    const hostInput = document.getElementById('acSshHostname');
+    if (domainInput) domainInput.value = domain;
+    if (hostInput && !hostInput.value) {
+        const parts = domain.split('.').filter(Boolean);
+        hostInput.value = parts.length >= 2 ? `ssh.${parts.slice(1).join('.')}` : `ssh.${domain || 'seu-dominio.com'}`;
+    }
+    modal.classList.remove('hidden');
+}
+
+function acCloseSshAssistModal() {
+    const modal = document.getElementById('acSshAssistModal');
+    if (modal) modal.classList.add('hidden');
+}
+
+async function acGenerateSshAccessFromModal() {
+    const domain = (document.getElementById('acSshDomain')?.value || '').trim();
+    const sshHostname = (document.getElementById('acSshHostname')?.value || '').trim();
+    const targetHost = (document.getElementById('acSshTargetHost')?.value || 'localhost').trim();
+    const targetPort = parseInt(document.getElementById('acSshTargetPort')?.value, 10) || 8022;
+    if (!domain) return showToast('Informe o domínio principal.', 'warning');
+    if (targetPort < 1 || targetPort > 65535) return showToast('Porta SSH inválida (1-65535).', 'warning');
+    try {
+        const acDomain = document.getElementById('acDomain');
+        if (acDomain && !acDomain.value.trim()) acDomain.value = domain;
+    } catch (_) {}
+
     try {
         const res = await fetch(`${API_BASE}/autoconfig/generate-ssh`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ domain: payload.domain })
+            body: JSON.stringify({ domain, sshHostname, targetHost, targetPort })
         });
         const data = await res.json();
         if (!data.success) throw new Error(data.error || 'Falha ao gerar acesso SSH.');
@@ -3857,7 +3885,8 @@ async function acGenerateSshAccess() {
             'No Termius: Host 127.0.0.1 | Porta 2222'
         ].join('\n');
         acSetLogs(logs);
-        showToast(`Acesso SSH gerado para ${ssh.hostname || payload.domain}.`, 'success');
+        showToast(`Acesso SSH gerado para ${ssh.hostname || domain}.`, 'success');
+        acCloseSshAssistModal();
         try { await cfFetchInstances(); } catch (_) {}
     } catch (e) {
         showToast('Erro ao gerar acesso SSH: ' + e.message, 'error');
@@ -3947,7 +3976,10 @@ window.cfCloudflareLogin = cfCloudflareLogin;
 window.cfRemoveLoginConfig = cfRemoveLoginConfig;
 window.acDetectServices = acDetectServices;
 window.acGenerateRoutes = acGenerateRoutes;
-window.acGenerateSshAccess = acGenerateSshAccess;
+window.acOpenSshAssistModal = acOpenSshAssistModal;
+window.acCloseSshAssistModal = acCloseSshAssistModal;
+window.acGenerateSshAccessFromModal = acGenerateSshAccessFromModal;
+window.acGenerateSshAccess = acGenerateSshAccessFromModal;
 window.acValidateConfig = acValidateConfig;
 window.acApplyConfig = acApplyConfig;
 window.acRestoreBackup = acRestoreBackup;

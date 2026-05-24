@@ -184,21 +184,27 @@ function deriveSshHostname(domain) {
   return `ssh.${parts.slice(1).join('.')}`;
 }
 
-function buildSshRoute(hostname) {
+function buildSshRoute({ hostname, targetHost = 'localhost', targetPort = 8022 }) {
+  const host = String(targetHost || 'localhost').trim() || 'localhost';
+  const port = Number.parseInt(targetPort, 10) || 8022;
   return {
     name: 'SSH Termux',
     hostname,
     path: '',
     routeType: 'ssh',
     targetProtocol: 'ssh',
-    targetHost: 'localhost',
-    targetPort: 8022
+    targetHost: host,
+    targetPort: port
   };
 }
 
-function upsertSshRouteInInstance(inst, sshHostname) {
+function upsertSshRouteInInstance(inst, sshHostname, options = {}) {
   const currentRoutes = Array.isArray(inst.routes) ? inst.routes : [];
-  const sshRoute = buildSshRoute(sshHostname);
+  const sshRoute = buildSshRoute({
+    hostname: sshHostname,
+    targetHost: options.targetHost || 'localhost',
+    targetPort: options.targetPort || 8022
+  });
   const kept = currentRoutes.filter((r) => {
     const isSsh = String(r?.targetProtocol || '').toLowerCase() === 'ssh' || String(r?.routeType || '').toLowerCase() === 'ssh';
     const sameHost = String(r?.hostname || '').toLowerCase() === sshHostname.toLowerCase();
@@ -224,14 +230,22 @@ function ensureAutoconfigBaseInstance(domain, tunnelContext) {
   });
 }
 
-function generateSshAccess({ domain }) {
+function generateSshAccess({ domain, sshHostname, targetHost, targetPort }) {
   const cleanDomain = String(domain || '').trim();
   if (!cleanDomain) throw new Error('Domínio principal é obrigatório.');
 
   const tunnelContext = resolveTunnelContext();
-  const sshHostname = deriveSshHostname(cleanDomain);
+  const desiredHostname = String(sshHostname || '').trim().toLowerCase() || deriveSshHostname(cleanDomain);
+  const desiredTargetHost = String(targetHost || 'localhost').trim() || 'localhost';
+  const desiredTargetPort = Number.parseInt(targetPort, 10) || 8022;
+  if (desiredTargetPort < 1 || desiredTargetPort > 65535) {
+    throw new Error('Porta SSH inválida. Use 1-65535.');
+  }
   const base = ensureAutoconfigBaseInstance(cleanDomain, tunnelContext);
-  const nextRoutes = upsertSshRouteInInstance(base, sshHostname);
+  const nextRoutes = upsertSshRouteInInstance(base, desiredHostname, {
+    targetHost: desiredTargetHost,
+    targetPort: desiredTargetPort
+  });
 
   const payload = {
     id: AUTOCONFIG_INSTANCE_ID,
@@ -246,16 +260,16 @@ function generateSshAccess({ domain }) {
   };
 
   const updated = cloudflaredManager.updateInstance(AUTOCONFIG_INSTANCE_ID, payload);
-  logLine('services', `Acesso SSH gerado: ${sshHostname} -> ssh://localhost:8022`);
+  logLine('services', `Acesso SSH gerado: ${desiredHostname} -> ssh://${desiredTargetHost}:${desiredTargetPort}`);
 
   return {
     success: true,
     ssh: {
-      hostname: sshHostname,
-      service: 'ssh://localhost:8022',
-      cloudflaredAccessSsh: `cloudflared access ssh --hostname ${sshHostname}`,
-      proxyCommand: `ssh -o ProxyCommand=\"cloudflared access ssh --hostname ${sshHostname}\" USUARIO@${sshHostname}`,
-      termiusBridge: `cloudflared access tcp --hostname ${sshHostname} --url 127.0.0.1:2222`
+      hostname: desiredHostname,
+      service: `ssh://${desiredTargetHost}:${desiredTargetPort}`,
+      cloudflaredAccessSsh: `cloudflared access ssh --hostname ${desiredHostname}`,
+      proxyCommand: `ssh -o ProxyCommand=\"cloudflared access ssh --hostname ${desiredHostname}\" USUARIO@${desiredHostname}`,
+      termiusBridge: `cloudflared access tcp --hostname ${desiredHostname} --url 127.0.0.1:2222`
     },
     instance: updated
   };

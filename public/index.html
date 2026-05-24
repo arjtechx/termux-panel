@@ -1362,7 +1362,7 @@
                     <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px;">
                         <button class="btn btn-secondary btn-sm" onclick="acDetectServices()">Detectar Serviços</button>
                         <button class="btn btn-primary btn-sm" onclick="acGenerateRoutes()">Gerar Rotas Automaticamente</button>
-                        <button class="btn btn-info btn-sm" onclick="acGenerateSshAccess()">Gerar Acesso SSH</button>
+                        <button class="btn btn-info btn-sm" onclick="acOpenSshAssistModal()">Gerar Acesso SSH</button>
                         <button class="btn btn-warning btn-sm" onclick="acValidateConfig()">Validar Configuração</button>
                         <button class="btn btn-success btn-sm" onclick="acApplyConfig()">Aplicar Configuração</button>
                         <button class="btn btn-danger btn-sm" onclick="acRestoreBackup()">Restaurar Backup</button>
@@ -1481,6 +1481,43 @@
                     <div id="cfLogsBody" class="terminal-box" style="height:400px; font-family:var(--font-mono); margin-top:12px; white-space:pre-wrap; overflow-y:auto;">Carregando logs...</div>
                     <div class="modal-actions" style="margin-top:20px; display:flex; justify-content:flex-end; gap:10px;">
                         <button type="button" class="btn btn-secondary btn-sm" onclick="cfCloseLogsModal()">Fechar</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="acSshAssistModal" class="modal-overlay hidden">
+                <div class="modal-card" style="max-width:760px;">
+                    <div class="modal-header">
+                        <h2>🔐 Gerar Acesso SSH (Assistido)</h2>
+                        <button class="btn-icon-ghost" type="button" onclick="acCloseSshAssistModal()"><i data-lucide="x"></i></button>
+                    </div>
+                    <div style="display:grid; gap:12px; margin-top:8px;">
+                        <div>
+                            <label class="form-label">Domínio principal</label>
+                            <input id="acSshDomain" type="text" placeholder="ex: ctpanel.arjtechbr.site" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
+                        </div>
+                        <div>
+                            <label class="form-label">Hostname SSH público</label>
+                            <input id="acSshHostname" type="text" placeholder="ex: ssh.arjtechbr.site" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
+                            <small style="font-size:0.78rem; color:var(--text-muted);">Opcional. Se vazio, será gerado automaticamente como <code>ssh.seu-dominio</code>.</small>
+                        </div>
+                        <div style="display:grid; grid-template-columns:1fr 180px; gap:10px;">
+                            <div>
+                                <label class="form-label">Host interno SSH</label>
+                                <input id="acSshTargetHost" type="text" value="localhost" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
+                            </div>
+                            <div>
+                                <label class="form-label">Porta interna SSH</label>
+                                <input id="acSshTargetPort" type="number" min="1" max="65535" value="8022" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-secondary); color:var(--text-color);">
+                            </div>
+                        </div>
+                        <div style="padding:10px; border:1px solid var(--border-color); border-radius:6px; background:var(--surface2); font-size:0.8rem; color:var(--text-muted);">
+                            Este assistente cria rota SSH no Cloudflare Manager usando o túnel já configurado. SSH não é acesso por navegador.
+                        </div>
+                    </div>
+                    <div class="modal-actions" style="margin-top:18px; display:flex; justify-content:flex-end; gap:10px;">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="acCloseSshAssistModal()">Cancelar</button>
+                        <button type="button" class="btn btn-info btn-sm" onclick="acGenerateSshAccessFromModal()">Gerar Acesso SSH</button>
                     </div>
                 </div>
             </div>
@@ -1804,7 +1841,7 @@
 <div class="fm-toast-container" id="fm-toast-container"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.168"></script>
+<script src="filemanager.js?v=0.2.169"></script>
 <script>
 window.toggleHostingTunnelFields = window.toggleHostingTunnelFields || function () {
     var checked = document.getElementById('hsCreateTunnel') && document.getElementById('hsCreateTunnel').checked;
@@ -1828,7 +1865,7 @@ window.toggleHostingTunnelActionFields = window.toggleHostingTunnelActionFields 
     }
 };
 </script>
-<script src="app.js?v=4.17"></script>
+<script src="app.js?v=4.18"></script>
 
 </body>
 </html>
