@@ -2127,6 +2127,25 @@ function resetUpdateProgress(label = 'Preparando atualizaÃ§Ã£o...') {
     setUpdateProgress(0, label, false);
 }
 
+function schedulePostUpdateReload(writeLine, btnRun, btnCheck, btnManual, seconds = 10) {
+    let remaining = Math.max(5, Number(seconds) || 10);
+    const tick = () => {
+        if (writeLine) {
+            writeLine(`\n<span style="color:var(--warning)">Servidor reiniciando... recarregando em ${remaining}s</span>`);
+        }
+        if (remaining <= 0) {
+            if (btnRun) btnRun.disabled = false;
+            if (btnCheck) btnCheck.disabled = false;
+            if (btnManual) btnManual.disabled = false;
+            location.reload();
+            return;
+        }
+        remaining -= 1;
+        setTimeout(tick, 1000);
+    };
+    tick();
+}
+
 function advanceUpdateProgressFromLine(line) {
     const normalized = String(line || '').toLowerCase();
     const stages = [
@@ -2218,8 +2237,8 @@ async function runManualSystemUpdate() {
                 writeLine(`\n<span style="color:${code == 0 ? 'var(--success)' : 'var(--warning)'}">Processo finalizado com cÃ³digo ${code}.</span>`);
                 if (code == 0) {
                     setUpdateProgress(100, 'AtualizaÃ§Ã£o concluÃ­da');
-                    writeLine(`<span style="color:var(--success)">âœ… VersÃ£o ${tag} aplicada com sucesso! Recarregando em 5s...</span>`);
-                    setTimeout(() => location.reload(), 5000);
+                    writeLine(`<span style="color:var(--success)">âœ… VersÃ£o ${tag} aplicada com sucesso! Aguardando 10s para o servidor subir...</span>`);
+                    schedulePostUpdateReload(writeLine, btnRun, btnCheck, btnManual, 10);
                 } else {
                     setUpdateProgress(100, 'Falha na atualizaÃ§Ã£o', true);
                     writeLine(`<span style="color:var(--danger)">âŒ Falha na aplicaÃ§Ã£o da versÃ£o. Verifique as mensagens acima.</span>`);
@@ -2248,12 +2267,7 @@ async function runManualSystemUpdate() {
         setUpdateProgress(96, 'Reiniciando servidor...');
         writeLine('\n<span style="color:var(--warning)">Aviso: Conectando/Reiniciando servidor para aplicar as alteraÃ§Ãµes...</span>');
         evtSource.close();
-        setTimeout(() => {
-            if (btnRun)    btnRun.disabled    = false;
-            if (btnCheck)  btnCheck.disabled  = false;
-            if (btnManual) btnManual.disabled = false;
-            location.reload();
-        }, 5000);
+        schedulePostUpdateReload(writeLine, btnRun, btnCheck, btnManual, 10);
     };
 }
 
@@ -2322,8 +2336,8 @@ function runSystemUpdate() {
                 writeLine(`\n<span style="color:${code == 0 ? 'var(--success)' : 'var(--warning)'}">Processo finalizado com cÃ³digo ${code}.</span>`);
                 if (code == 0) {
                     setUpdateProgress(100, 'AtualizaÃ§Ã£o concluÃ­da');
-                    writeLine(`<span style="color:var(--success)">âœ… AtualizaÃ§Ã£o concluÃ­da com sucesso! Recarregando em 5s...</span>`);
-                    setTimeout(() => location.reload(), 5000);
+                    writeLine(`<span style="color:var(--success)">âœ… AtualizaÃ§Ã£o concluÃ­da com sucesso! Aguardando 10s para o servidor subir...</span>`);
+                    schedulePostUpdateReload(writeLine, btnRun, btnCheck, null, 10);
                 } else {
                     setUpdateProgress(100, 'Falha na atualizaÃ§Ã£o', true);
                     writeLine(`<span style="color:var(--danger)">âŒ Falha na atualizaÃ§Ã£o. Verifique os logs acima.</span>`);
@@ -2350,11 +2364,7 @@ function runSystemUpdate() {
         setUpdateProgress(96, 'Reiniciando servidor...');
         writeLine('\n<span style="color:var(--warning)">Aviso: Conectando/Reiniciando servidor para aplicar as alteraÃ§Ãµes...</span>');
         evtSource.close();
-        setTimeout(() => {
-            if (btnRun)  btnRun.disabled  = false;
-            if (btnCheck) btnCheck.disabled = false;
-            location.reload();
-        }, 5000);
+        schedulePostUpdateReload(writeLine, btnRun, btnCheck, null, 10);
     };
 }
 
@@ -3165,6 +3175,19 @@ async function createHostingService(e) {
                     }
                 }, 1400);
             }
+            setTimeout(async () => {
+                showToast('Reiniciando servidor NGINX automaticamente...', 'info');
+                const nginxRes = await safeFetch(`${API_BASE}/nginx/action`, 'POST', { action: 'restart' }, 30000);
+                if (nginxRes?.success) {
+                    showToast('NGINX reiniciado com sucesso. Atualizando seção de Hospedagem...', 'success');
+                } else {
+                    showToast('Serviço criado, mas falhou ao reiniciar NGINX automaticamente.', 'warning');
+                }
+                // Atualiza somente a seção de hospedagem (mesmo botão "Atualizar" da aba).
+                const refreshBtn = document.querySelector('#tab-hosting > div.page-header > div.toolbar-group > button.btn.btn-secondary.btn-sm');
+                if (refreshBtn) refreshBtn.click();
+                else fetchHostingServices();
+            }, 3000);
             closeHostingModal();
             fetchHostingServices();
         } else {
