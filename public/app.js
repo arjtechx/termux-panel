@@ -392,7 +392,7 @@ function connectTerminal() {
 }
 
 let tempUnit = 'C';
-let lastTemperatureStr = '--Â°C';
+let lastTemperatureStr = '--°C';
 
 function toggleTempUnit(e) {
     if (e) {
@@ -401,20 +401,20 @@ function toggleTempUnit(e) {
     }
     tempUnit = tempUnit === 'C' ? 'F' : 'C';
     const btn = document.getElementById('temp-unit-btn');
-    if (btn) btn.textContent = 'Â°' + tempUnit;
+    if (btn) btn.textContent = '°' + tempUnit;
     updateTemperatureDisplay();
     renderTempChart();
 }
 
 function updateTemperatureDisplay() {
     if (!el.temp) return;
-    if (lastTemperatureStr === '--Â°C' || lastTemperatureStr === 'N/A' || !lastTemperatureStr) {
-        el.temp.textContent = lastTemperatureStr || '--Â°C';
-        if (el.tempExpanded) el.tempExpanded.textContent = lastTemperatureStr || '--Â°C';
+    if (lastTemperatureStr === '--°C' || lastTemperatureStr === 'N/A' || !lastTemperatureStr) {
+        el.temp.textContent = lastTemperatureStr || '--°C';
+        if (el.tempExpanded) el.tempExpanded.textContent = lastTemperatureStr || '--°C';
         return;
     }
     
-    // Extract number from string like "45.0Â°C"
+    // Extract number from string like "45.0°C"
     const val = parseFloat(lastTemperatureStr);
     if (isNaN(val)) {
         el.temp.textContent = lastTemperatureStr;
@@ -424,11 +424,11 @@ function updateTemperatureDisplay() {
     
     if (tempUnit === 'F') {
         const f = (val * 9/5) + 32;
-        el.temp.textContent = `${f.toFixed(1)}Â°F`;
-        if (el.tempExpanded) el.tempExpanded.textContent = `${f.toFixed(1)}Â°F`;
+        el.temp.textContent = `${f.toFixed(1)}°F`;
+        if (el.tempExpanded) el.tempExpanded.textContent = `${f.toFixed(1)}°F`;
     } else {
-        el.temp.textContent = `${val.toFixed(1)}Â°C`;
-        if (el.tempExpanded) el.tempExpanded.textContent = `${val.toFixed(1)}Â°C`;
+        el.temp.textContent = `${val.toFixed(1)}°C`;
+        if (el.tempExpanded) el.tempExpanded.textContent = `${val.toFixed(1)}°C`;
     }
 }
 
@@ -502,7 +502,7 @@ async function fetchStatus() {
     }
 
     if (el.temp) {
-        lastTemperatureStr = data.temperature || '--Â°C';
+        lastTemperatureStr = data.temperature || '--°C';
         updateTemperatureDisplay();
     }
     if (el.netSpeed) {
@@ -3860,10 +3860,24 @@ function normalizeMojibakeText(input) {
         ['invÃ¡lido', 'inválido'], ['serviÃ§o', 'serviço'], ['ServiÃ§o', 'Serviço'], ['instÃ¢ncia', 'instância'], ['InstÃ¢ncia', 'Instância'],
         ['usuÃ¡rio', 'usuário'], ['UsuÃ¡rio', 'Usuário'], ['validaÃ§Ã£o', 'validação'], ['aplicaÃ§Ã£o', 'aplicação'], ['inicializaÃ§Ã£o', 'inicialização'],
         ['â€”', '—'], ['â€“', '–'], ['â€˜', '‘'], ['â€™', '’'], ['â€œ', '“'], ['â€', '”'], ['â€¢', '•'], ['â€¦', '…'],
+        ['â˜ï¸', '☁️'], ['âœ…', '✅'], ['âŒ', '❌'], ['âš ï¸', '⚠️'],
         ['Â°', '°'], ['Âº', 'º'], ['Âª', 'ª'],
-        ['ðŸš€', '🚀'], ['ðŸŒ', '🌐'], ['ðŸ“œ', '📜'], ['âœ…', '✅'], ['âŒ', '❌'], ['âš ï¸', '⚠️']
+        ['ðŸš€', '🚀'], ['ðŸŒ', '🌐'], ['ðŸ“œ', '📜'], ['ðŸ”„', '🔄']
     ];
     for (const [from, to] of fixes) s = s.split(from).join(to);
+
+    // Decodificação robusta para textos com mojibake remanescente.
+    // Exemplo: "TÃºnel" -> "Túnel", "â˜ï¸" -> "☁️"
+    const likelyBroken = /[ÃÂâð�]/.test(s);
+    if (likelyBroken) {
+        try {
+            const bytes = new Uint8Array(Array.from(s, ch => ch.charCodeAt(0) & 0xff));
+            const repaired = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+            if (repaired && repaired.length && /[^\u0000-\u001F]/.test(repaired)) {
+                s = repaired;
+            }
+        } catch {}
+    }
     return s;
 }
 
@@ -3894,6 +3908,12 @@ function installMojibakeFixes() {
     patchToast();
     setTimeout(patchToast, 800);
     setTimeout(() => fixDomTextMojibake(document.body), 1000);
+
+    // Corrige textos que entram depois (render dinâmico, tabelas, badges, toasts).
+    const observer = new MutationObserver(() => {
+        fixDomTextMojibake(document.body);
+    });
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
 }
 
 // ============================================================

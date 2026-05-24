@@ -1,9 +1,5 @@
 [
   {
-    "timestamp": 1779377358995,
-    "temperature": 29.9
-  },
-  {
     "timestamp": 1779380958997,
     "temperature": 29.1
   },
@@ -206,5 +202,9 @@
   {
     "timestamp": 1779634994034,
     "temperature": 34.5
+  },
+  {
+    "timestamp": 1779638594037,
+    "temperature": 32.1
   }
 ]
