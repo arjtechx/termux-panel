@@ -3868,6 +3868,7 @@ async function acGenerateSshAccessFromModal() {
         });
         const data = await res.json();
         if (!data.success) throw new Error(data.error || 'Falha ao gerar acesso SSH.');
+        if (!data.instance || !data.instance.id) throw new Error('Resposta inválida: instância SSH não retornada.');
 
         const ssh = data.ssh || {};
         const logs = [
@@ -3889,7 +3890,10 @@ async function acGenerateSshAccessFromModal() {
         acSetLogs(logs);
         showToast(`Acesso SSH gerado para ${ssh.hostname || domain}${data.started ? ' e instância iniciada.' : '.'}`, data.started ? 'success' : 'warning');
         acCloseSshAssistModal();
-        try { await cfFetchInstances(); } catch (_) {}
+        try {
+            await cfFetchInstances();
+            setTimeout(() => cfFetchInstances(), 800);
+        } catch (_) {}
     } catch (e) {
         showToast('Erro ao gerar acesso SSH: ' + e.message, 'error');
     }

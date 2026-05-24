@@ -242,7 +242,20 @@ function generateSshAccess({ domain, sshHostname, targetHost, targetPort }) {
   if (desiredTargetPort < 1 || desiredTargetPort > 65535) {
     throw new Error('Porta SSH inválida. Use 1-65535.');
   }
-  const base = ensureAutoconfigBaseInstance(cleanDomain, tunnelContext);
+  const instances = cloudflaredManager.getInstances();
+  const existing = instances.find(i => i.id === AUTOCONFIG_INSTANCE_ID);
+  const base = existing || {
+    id: AUTOCONFIG_INSTANCE_ID,
+    name: AUTOCONFIG_INSTANCE_NAME,
+    type: 'service',
+    protected: true,
+    autoRestartOnSave: !!tunnelContext.tunnelId,
+    hostname: cleanDomain,
+    tunnelId: tunnelContext.tunnelId,
+    credentialsFile: tunnelContext.credentialsFile,
+    routes: []
+  };
+
   const nextRoutes = upsertSshRouteInInstance(base, desiredHostname, {
     targetHost: desiredTargetHost,
     targetPort: desiredTargetPort
@@ -260,14 +273,21 @@ function generateSshAccess({ domain, sshHostname, targetHost, targetPort }) {
     routes: nextRoutes
   };
 
-  const updated = cloudflaredManager.updateInstance(AUTOCONFIG_INSTANCE_ID, payload);
+  const updated = existing
+    ? cloudflaredManager.updateInstance(AUTOCONFIG_INSTANCE_ID, payload)
+    : cloudflaredManager.createInstance(payload);
   logLine('services', `Acesso SSH gerado: ${desiredHostname} -> ssh://${desiredTargetHost}:${desiredTargetPort}`);
+
+  const afterUpsert = cloudflaredManager.getInstances().find(i => i.id === AUTOCONFIG_INSTANCE_ID);
+  if (!afterUpsert) {
+    throw new Error('Falha ao salvar a instância SSH na lista do Cloudflared Manager.');
+  }
 
   let started = false;
   let startMessage = '';
-  if (updated.tunnelId || updated.tunnelName) {
+  if (afterUpsert.tunnelId || afterUpsert.tunnelName) {
     try {
-      const startRes = cloudflaredProcess.startInstance(updated);
+      const startRes = cloudflaredProcess.startInstance(afterUpsert);
       started = !!startRes?.success;
       startMessage = started ? 'Instância iniciada automaticamente.' : (startRes?.error || 'Não foi possível iniciar a instância.');
     } catch (e) {
@@ -288,7 +308,7 @@ function generateSshAccess({ domain, sshHostname, targetHost, targetPort }) {
       proxyCommand: `ssh -o ProxyCommand=\"cloudflared access ssh --hostname ${desiredHostname}\" USUARIO@${desiredHostname}`,
       termiusBridge: `cloudflared access tcp --hostname ${desiredHostname} --url 127.0.0.1:2222`
     },
-    instance: updated
+    instance: afterUpsert
   };
 }
 
