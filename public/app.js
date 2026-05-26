@@ -3306,7 +3306,7 @@ async function createHostingService(e) {
 }
 
 async function toggleHostingProcess(id, start) {
-    const svc = window.hostingServices ? window.hostingServices.find(s => s.id === id) : null;
+    const svc = window.hostingServices ? window.hostingServices.find(s => String(s.id) === String(id)) : null;
     if (start && svc && svc.type === 'node') {
         openHostingStartModal(id);
         return;
@@ -6112,7 +6112,7 @@ window.closeModal = function(id) {
 
 
 function editHostingService(id) {
-    const svc = window.hostingServices.find(s => s.id === id);
+    const svc = window.hostingServices.find(s => String(s.id) === String(id));
     if (!svc) return;
 
     window.editingHostingId = id;
