@@ -3306,6 +3306,11 @@ async function createHostingService(e) {
 }
 
 async function toggleHostingProcess(id, start) {
+    const svc = window.hostingServices ? window.hostingServices.find(s => s.id === id) : null;
+    if (start && svc && svc.type === 'node') {
+        openHostingStartModal(id);
+        return;
+    }
     try {
         const res = await safeFetch(`${API_BASE}/hosting/${id}/toggle`, 'POST', { active: start });
         if (res?.success) {
@@ -6148,3 +6153,120 @@ function editHostingService(id) {
     }
 }
 window.editHostingService = editHostingService;
+
+function openHostingStartModal(id) {
+    window.startingHostingId = id;
+    
+    // Reset options
+    const hsStartOption = document.getElementById('hsStartOption');
+    if (hsStartOption) hsStartOption.value = 'default';
+    
+    const hsStartCustomCmd = document.getElementById('hsStartCustomCmd');
+    if (hsStartCustomCmd) hsStartCustomCmd.value = '';
+    
+    const hsStartScriptSelect = document.getElementById('hsStartScriptSelect');
+    if (hsStartScriptSelect) {
+        hsStartScriptSelect.innerHTML = '<option value="">Carregando scripts...</option>';
+    }
+    
+    toggleHostingStartOptionFields();
+    
+    // Fetch package.json scripts
+    safeFetch(`${API_BASE}/hosting/${id}/scripts`, 'GET').then(res => {
+        if (res?.success && res.scripts) {
+            const scripts = res.scripts;
+            const keys = Object.keys(scripts);
+            if (keys.length === 0) {
+                if (hsStartScriptSelect) {
+                    hsStartScriptSelect.innerHTML = '<option value="">Nenhum script encontrado no package.json</option>';
+                }
+            } else {
+                if (hsStartScriptSelect) {
+                    hsStartScriptSelect.innerHTML = keys.map(k => `<option value="${k}">"${k}": "${scripts[k]}"</option>`).join('');
+                }
+            }
+        } else {
+            if (hsStartScriptSelect) {
+                hsStartScriptSelect.innerHTML = '<option value="">Falha ao ler scripts ou package.json não existe.</option>';
+            }
+        }
+    }).catch(err => {
+        if (hsStartScriptSelect) {
+            hsStartScriptSelect.innerHTML = '<option value="">Erro ao carregar scripts.</option>';
+        }
+    });
+
+    const modal = document.getElementById('hostingStartModal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        lucide.createIcons();
+    }
+}
+window.openHostingStartModal = openHostingStartModal;
+
+function closeHostingStartModal() {
+    window.startingHostingId = null;
+    const modal = document.getElementById('hostingStartModal');
+    if (modal) modal.classList.add('hidden');
+}
+window.closeHostingStartModal = closeHostingStartModal;
+
+function toggleHostingStartOptionFields() {
+    const opt = document.getElementById('hsStartOption')?.value;
+    const scriptGroup = document.getElementById('hsStartScriptGroup');
+    const customGroup = document.getElementById('hsStartCustomGroup');
+    
+    if (opt === 'script') {
+        scriptGroup?.classList.remove('hidden');
+        customGroup?.classList.add('hidden');
+    } else if (opt === 'custom') {
+        scriptGroup?.classList.add('hidden');
+        customGroup?.classList.remove('hidden');
+    } else {
+        scriptGroup?.classList.add('hidden');
+        customGroup?.classList.add('hidden');
+    }
+}
+window.toggleHostingStartOptionFields = toggleHostingStartOptionFields;
+
+async function submitHostingStartOption() {
+    const id = window.startingHostingId;
+    if (!id) return;
+    
+    const opt = document.getElementById('hsStartOption')?.value;
+    let customCmd = null;
+    
+    if (opt === 'script') {
+        const scriptVal = document.getElementById('hsStartScriptSelect')?.value;
+        if (!scriptVal) {
+            showToast('Selecione um script válido do package.json!', 'warning');
+            return;
+        }
+        customCmd = `npm run ${scriptVal}`;
+    } else if (opt === 'custom') {
+        const val = document.getElementById('hsStartCustomCmd')?.value?.trim();
+        if (!val) {
+            showToast('Digite um comando customizado!', 'warning');
+            return;
+        }
+        customCmd = val;
+    }
+    
+    closeHostingStartModal();
+    
+    try {
+        const payload = { active: true };
+        if (customCmd) payload.customCmd = customCmd;
+        
+        const res = await safeFetch(`${API_BASE}/hosting/${id}/toggle`, 'POST', payload);
+        if (res?.success) {
+            showToast(customCmd ? `Processo iniciado com: ${customCmd}` : 'Processo iniciado com sucesso!', 'success');
+            fetchHostingServices();
+        } else {
+            showToast(`Falha ao iniciar processo: ${res?.error || 'Erro interno.'}`, 'error');
+        }
+    } catch (err) {
+        showToast(`Erro de rede: ${err.message}`, 'error');
+    }
+}
+window.submitHostingStartOption = submitHostingStartOption;

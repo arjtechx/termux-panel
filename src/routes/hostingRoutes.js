@@ -1,4 +1,4 @@
-﻿const express = require('express');
+const express = require('express');
 const router = express.Router();
 const fs = require('fs');
 const path = require('path');
@@ -282,7 +282,7 @@ async function handleNodeErrorAndRestart(svcId, stderrStr) {
     }
 }
 
-async function startNodeProcess(svc, index, services) {
+async function startNodeProcess(svc, index, services, customCmd) {
     const fullLogPath = path.join(__dirname, '..', '..', svc.logFile);
     const logStream = fs.createWriteStream(fullLogPath, { flags: 'a' });
     
@@ -321,7 +321,11 @@ async function startNodeProcess(svc, index, services) {
     }
 
     // 4. Inicia o processo
-    const parts = svc.startCmd.trim().split(/\s+/);
+    const cmdToRun = customCmd || svc.startCmd;
+    if (customCmd) {
+        logStream.write(`\n[cPanel] Iniciando processo Node.js com comando customizado: ${cmdToRun}\n`);
+    }
+    const parts = cmdToRun.trim().split(/\s+/);
     const cmd = parts[0];
     const args = parts.slice(1);
     
@@ -1124,6 +1128,25 @@ router.delete('/:id', async (req, res) => {
     }
 });
 
+router.get('/:id/scripts', (req, res) => {
+    try {
+        const services = JSON.parse(fs.readFileSync(HOSTING_FILE, 'utf8'));
+        const svc = services.find(s => s.id === req.params.id);
+        if (!svc) {
+            return res.status(404).json({ error: 'Serviço não encontrado' });
+        }
+        
+        const packageJsonPath = path.join(svc.path, 'package.json');
+        if (fs.existsSync(packageJsonPath)) {
+            const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+            return res.json({ success: true, scripts: pkg.scripts || {} });
+        }
+        res.json({ success: true, scripts: {} });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 router.get('/dns-check', async (req, res) => {
     try {
         const host = String(req.query.host || '').trim();
@@ -1136,7 +1159,7 @@ router.get('/dns-check', async (req, res) => {
 });
 
 router.post('/:id/toggle', async (req, res) => {
-    const { active } = req.body;
+    const { active, customCmd } = req.body;
     try {
         const services = JSON.parse(fs.readFileSync(HOSTING_FILE, 'utf8'));
         const index = services.findIndex(s => s.id === req.params.id);
@@ -1152,7 +1175,7 @@ router.post('/:id/toggle', async (req, res) => {
             }
             
             if (svc.type === 'node') {
-                await startNodeProcess(svc, index, services);
+                await startNodeProcess(svc, index, services, customCmd);
             } else {
                 if (svc.targetPort && await isPortListening(svc.targetPort)) {
                     return res.status(400).json({ error: `A porta interna ${svc.targetPort} já está ocupada.` });

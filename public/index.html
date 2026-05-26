@@ -1106,6 +1106,47 @@
                 </div>
             </div>
 
+            <!-- === MODAL: OPÇÕES DE INICIALIZAÇÃO === -->
+            <div id="hostingStartModal" class="modal-overlay hidden">
+                <div class="modal-card">
+                    <div class="modal-header">
+                        <h2>⚡ Iniciar App Node.js</h2>
+                        <button class="btn-icon-ghost" type="button" onclick="closeHostingStartModal()"><i data-lucide="x"></i></button>
+                    </div>
+                    <div class="form-stack" style="margin-top: 12px; display: flex; flex-direction: column; gap: 16px;">
+                        <p style="font-size: 0.875rem; color: var(--text-muted);">
+                            Selecione como deseja iniciar a sua aplicação Node.js:
+                        </p>
+                        
+                        <div>
+                            <label class="form-label" style="display: block; margin-bottom: 6px;">Opção de Execução</label>
+                            <select id="hsStartOption" onchange="toggleHostingStartOptionFields()" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-lighter); color:var(--text-color);">
+                                <option value="default">▶️ Comando Padrão (configurado)</option>
+                                <option value="script">📦 Script do package.json (dev, build, etc.)</option>
+                                <option value="custom">🛠️ Comando Customizado</option>
+                            </select>
+                        </div>
+                        
+                        <div id="hsStartScriptGroup" class="hidden">
+                            <label class="form-label" style="display: block; margin-bottom: 6px;">Selecionar Script</label>
+                            <select id="hsStartScriptSelect" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-lighter); color:var(--text-color);">
+                                <option value="">Carregando scripts...</option>
+                            </select>
+                        </div>
+                        
+                        <div id="hsStartCustomGroup" class="hidden">
+                            <label class="form-label" style="display: block; margin-bottom: 6px;">Comando Customizado</label>
+                            <input type="text" id="hsStartCustomCmd" placeholder="ex: npm run dev" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-lighter); color:var(--text-color);">
+                        </div>
+                    </div>
+                    
+                    <div class="modal-actions" style="margin-top:24px; display:flex; justify-content:flex-end; gap:10px;">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="closeHostingStartModal()">Cancelar</button>
+                        <button type="button" class="btn btn-success btn-sm" onclick="submitHostingStartOption()">Iniciar Processo</button>
+                    </div>
+                </div>
+            </div>
+
             <!-- === MODAL: NOVO SERVIÇO === -->
             <div id="hostingModal" class="modal-overlay hidden">
                 <div class="modal-card">
@@ -1843,7 +1884,7 @@
 <div class="fm-toast-container" id="fm-toast-container"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.174"></script>
+<script src="filemanager.js?v=0.2.175"></script>
 <script>
 window.toggleHostingTunnelFields = window.toggleHostingTunnelFields || function () {
     var checked = document.getElementById('hsCreateTunnel') && document.getElementById('hsCreateTunnel').checked;
