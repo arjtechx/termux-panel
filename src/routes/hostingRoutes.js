@@ -285,6 +285,23 @@ async function handleNodeErrorAndRestart(svcId, stderrStr) {
     }
 }
 
+function spawnProcess(cmd, args, cwd, targetPort, runAsRoot) {
+    if (runAsRoot) {
+        const fullCmd = [cmd, ...args].join(' ');
+        return spawn('su', ['-c', `cd "${cwd}" && PORT=${targetPort} ${fullCmd}`], {
+            detached: true,
+            stdio: ['ignore', 'pipe', 'pipe']
+        });
+    } else {
+        return spawn(cmd, args, {
+            cwd: cwd,
+            env: { ...process.env, PORT: targetPort.toString() },
+            detached: true,
+            stdio: ['ignore', 'pipe', 'pipe']
+        });
+    }
+}
+
 async function startNodeProcess(svc, index, services, customCmd) {
     const fullLogPath = path.join(__dirname, '..', '..', svc.logFile);
     const logStream = fs.createWriteStream(fullLogPath, { flags: 'a' });
@@ -342,12 +359,10 @@ async function startNodeProcess(svc, index, services, customCmd) {
     const cmd = parts[0];
     const args = parts.slice(1);
     
-    const child = spawn(cmd, args, {
-        cwd: svc.path,
-        env: { ...process.env, PORT: svc.targetPort.toString() },
-        detached: true,
-        stdio: ['ignore', 'pipe', 'pipe']
-    });
+    if (svc.runAsRoot) {
+        logStream.write(`[cPanel] Executando processo Node.js como ROOT (su -c)\n`);
+    }
+    const child = spawnProcess(cmd, args, svc.path, svc.targetPort, svc.runAsRoot);
     
     // Captura stderr para monitorar erros de módulo ausente
     let stderrAccumulator = '';
@@ -638,12 +653,11 @@ router.post('/', async (req, res) => {
                 const cmd = parts[0];
                 const args = parts.slice(1);
                 
-                const child = spawn(cmd, args, {
-                    cwd: resolvedPath,
-                    env: { ...process.env, PORT: parsedTargetPort.toString() },
-                    detached: true,
-                    stdio: ['ignore', 'pipe', 'pipe']
-                });
+                const runAsRoot = !!req.body.runAsRoot;
+                if (runAsRoot) {
+                    logStream.write(`[cPanel] Executando processo Node.js como ROOT (su -c)\n`);
+                }
+                const child = spawnProcess(cmd, args, resolvedPath, parsedTargetPort, runAsRoot);
 
                 // Monitora erros para auto-instalação
                 let stderrAccumulator = '';
@@ -815,6 +829,7 @@ router.post('/', async (req, res) => {
             path: resolvedPath,
             startCmd: startCmd ? startCmd.trim() : '',
             autoRestart: !!autoRestart,
+            runAsRoot: !!req.body.runAsRoot,
             pid,
             status: activeStatus,
             publicUrl,
@@ -1012,6 +1027,7 @@ router.post('/:id/edit', async (req, res) => {
         svc.path = resolvedPath;
         svc.startCmd = startCmd ? startCmd.trim() : '';
         svc.autoRestart = !!autoRestart;
+        svc.runAsRoot = !!req.body.runAsRoot;
         svc.updatedAt = new Date().toISOString();
 
         // 2. Se mudou parâmetros do app ou está online, reinicia processo

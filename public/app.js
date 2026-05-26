@@ -2940,6 +2940,8 @@ function closeHostingModal() {
 }
 
 function toggleHostingFormFields() {
+    const runAsRootLabel = document.getElementById('hsRunAsRootLabel');
+    if (runAsRootLabel) runAsRootLabel.classList.add('hidden');
     const type = document.getElementById('hsType').value;
     
     const pathGroup = document.getElementById('hsPathGroup');
@@ -2962,6 +2964,7 @@ function toggleHostingFormFields() {
         createIndexLabel.classList.remove('hidden');
         document.getElementById('hsPath').placeholder = 'ex: /data/data/com.termux/files/home/www/html-site';
     } else if (type === 'node') {
+        if (runAsRootLabel) runAsRootLabel.classList.remove('hidden');
         targetPortGroup.classList.remove('hidden');
         startCmdGroup.classList.remove('hidden');
         autoRestartLabel.classList.remove('hidden');
@@ -2970,6 +2973,7 @@ function toggleHostingFormFields() {
         document.getElementById('hsStartCmd').value = 'node server.js';
         document.getElementById('hsPath').placeholder = 'ex: /data/data/com.termux/files/home/www/node-app';
     } else if (type === 'python') {
+        if (runAsRootLabel) runAsRootLabel.classList.remove('hidden');
         targetPortGroup.classList.remove('hidden');
         startCmdGroup.classList.remove('hidden');
         autoRestartLabel.classList.remove('hidden');
@@ -3167,6 +3171,7 @@ async function createHostingService(e) {
     const path = document.getElementById('hsPath').value.trim();
     const startCmd = document.getElementById('hsStartCmd').value.trim();
     const autoRestart = document.getElementById('hsAutoRestart').checked;
+    const runAsRoot = document.getElementById('hsRunAsRoot')?.checked || false;
     const createIndex = document.getElementById('hsCreateIndex').checked;
 
     const createTunnel = document.getElementById('hsCreateTunnel')?.checked || false;
@@ -3220,6 +3225,7 @@ async function createHostingService(e) {
             path,
             startCmd,
             autoRestart,
+            runAsRoot,
             createIndex,
             createTunnel,
             tunnelAction,
@@ -6132,6 +6138,8 @@ function editHostingService(id) {
     document.getElementById('hsStartCmd').value = svc.startCmd || '';
     document.getElementById('hsType').value = svc.type || 'php';
     document.getElementById('hsAutoRestart').checked = !!svc.autoRestart;
+    const runAsRootCb = document.getElementById('hsRunAsRoot');
+    if (runAsRootCb) runAsRootCb.checked = !!svc.runAsRoot;
     document.getElementById('hsCreateIndex').checked = false;
 
     // Esconde opçoes nao editaveis
@@ -6156,6 +6164,7 @@ window.editHostingService = editHostingService;
 
 function openHostingStartModal(id) {
     window.startingHostingId = id;
+    const svc = window.hostingServices ? window.hostingServices.find(s => String(s.id) === String(id)) : null;
     
     // Reset options
     const hsStartOption = document.getElementById('hsStartOption');
@@ -6163,6 +6172,9 @@ function openHostingStartModal(id) {
     
     const hsStartCustomCmd = document.getElementById('hsStartCustomCmd');
     if (hsStartCustomCmd) hsStartCustomCmd.value = '';
+    
+    const hsStartRunAsRoot = document.getElementById('hsStartRunAsRoot');
+    if (hsStartRunAsRoot && svc) hsStartRunAsRoot.checked = !!svc.runAsRoot;
     
     const hsStartScriptSelect = document.getElementById('hsStartScriptSelect');
     if (hsStartScriptSelect) {
@@ -6252,10 +6264,11 @@ async function submitHostingStartOption() {
         customCmd = val;
     }
     
+    const runAsRoot = document.getElementById('hsStartRunAsRoot')?.checked || false;
     closeHostingStartModal();
     
     try {
-        const payload = { active: true };
+        const payload = { active: true, runAsRoot };
         if (customCmd) payload.customCmd = customCmd;
         
         const res = await safeFetch(`${API_BASE}/hosting/${id}/toggle`, 'POST', payload);

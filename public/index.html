@@ -1138,6 +1138,12 @@
                             <label class="form-label" style="display: block; margin-bottom: 6px;">Comando Customizado</label>
                             <input type="text" id="hsStartCustomCmd" placeholder="ex: npm run dev" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:4px; background:var(--bg-lighter); color:var(--text-color);">
                         </div>
+                        
+                        <div>
+                            <label style="display:flex; align-items:center; gap:8px; font-size:0.85rem; cursor:pointer;">
+                                <input type="checkbox" id="hsStartRunAsRoot"> ⚙️ Executar este processo como Root (su)
+                            </label>
+                        </div>
                     </div>
                     
                     <div class="modal-actions" style="margin-top:24px; display:flex; justify-content:flex-end; gap:10px;">
@@ -1202,6 +1208,9 @@
                             <div id="hsCheckboxesGroup" style="display:flex; flex-direction:column; gap:8px; margin-top:8px;">
                                 <label style="display:flex; align-items:center; gap:8px; font-size:0.85rem;" id="hsAutoRestartLabel">
                                     <input type="checkbox" id="hsAutoRestart" checked> Auto-Restart (Manter vivo se cair)
+                                </label>
+                                <label style="display:flex; align-items:center; gap:8px; font-size:0.85rem;" id="hsRunAsRootLabel">
+                                    <input type="checkbox" id="hsRunAsRoot"> ⚙️ Executar como Root (Burlar bloqueios do Android/Termux)
                                 </label>
                                 <label style="display:flex; align-items:center; gap:8px; font-size:0.85rem;" id="hsCreateIndexLabel">
                                     <input type="checkbox" id="hsCreateIndex" checked> Criar arquivo inicial de cortesia (index.html / index.php)
@@ -1884,7 +1893,7 @@
 <div class="fm-toast-container" id="fm-toast-container"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.178"></script>
+<script src="filemanager.js?v=0.2.179"></script>
 <script>
 window.toggleHostingTunnelFields = window.toggleHostingTunnelFields || function () {
     var checked = document.getElementById('hsCreateTunnel') && document.getElementById('hsCreateTunnel').checked;
