@@ -185,6 +185,194 @@ async function reloadOrStartNginx(requireRoot = false) {
         await execStrict('nginx');
     }
 }
+async function killProcessHoldingPort(port) {
+    if (!port) return;
+    try {
+        let pid = null;
+        
+        // Método 1: ss (comum no Termux/Linux)
+        try {
+            let ssOut = await runCmd(`ss -ltnp 2>/dev/null | grep ":${port} " | sed -n 's/.*pid=\\([0-9]*\\).*/\\1/p' | head -n1`);
+            ssOut = ssOut.trim();
+            if (ssOut) pid = parseInt(ssOut, 10);
+        } catch (_) {}
+
+        // Método 2: lsof (Linux/macOS)
+        if (!pid) {
+            try {
+                let lsofOut = await runCmd(`lsof -t -i:${port} 2>/dev/null | head -n1`);
+                lsofOut = lsofOut.trim();
+                if (lsofOut) pid = parseInt(lsofOut, 10);
+            } catch (_) {}
+        }
+
+        // Método 3: fuser (Linux)
+        if (!pid) {
+            try {
+                let fuserOut = await runCmd(`fuser ${port}/tcp 2>/dev/null | awk '{print $1}' | head -n1`);
+                fuserOut = fuserOut.trim();
+                if (fuserOut) pid = parseInt(fuserOut, 10);
+            } catch (_) {}
+        }
+
+        if (pid && pid !== process.pid) {
+            console.log(`[Hosting] Matando processo fantasma na porta ${port} (PID: ${pid})`);
+            try {
+                process.kill(pid, 'SIGKILL');
+                await new Promise(r => setTimeout(r, 800)); // espera liberar a porta
+            } catch (err) {
+                if (systemConfig.has_root) {
+                    await runCmd(`kill -9 ${pid}`, true);
+                } else {
+                    await runCmd(`kill -9 ${pid}`);
+                }
+            }
+        }
+    } catch (e) {
+        console.error(`[Hosting] Falha ao matar processo fantasma na porta ${port}:`, e.message);
+    }
+}
+
+async function handleNodeErrorAndRestart(svcId, stderrStr) {
+    try {
+        const services = JSON.parse(fs.readFileSync(HOSTING_FILE, 'utf8'));
+        const index = services.findIndex(s => s.id === svcId);
+        if (index === -1) return;
+        const svc = services[index];
+        
+        if (svc.isInstallingModule) return;
+
+        const match = stderrStr.match(/Error: Cannot find module ['"]([^'"]+)['"]/);
+        if (match) {
+            const missingModule = match[1];
+            if (!missingModule.startsWith('.') && !missingModule.startsWith('/') && !path.isAbsolute(missingModule)) {
+                services[index].isInstallingModule = true;
+                fs.writeFileSync(HOSTING_FILE, JSON.stringify(services, null, 2));
+
+                const fullLogPath = path.join(__dirname, '..', '..', svc.logFile);
+                const logStream = fs.createWriteStream(fullLogPath, { flags: 'a' });
+                logStream.write(`\n[cPanel Auto-Setup] Detectado módulo ausente: '${missingModule}'\n`);
+                logStream.write(`[cPanel Auto-Setup] Executando 'npm install ${missingModule}'...\n`);
+                
+                exec(`npm install ${missingModule}`, { cwd: svc.path }, async (err, stdout, stderr) => {
+                    const freshServices = JSON.parse(fs.readFileSync(HOSTING_FILE, 'utf8'));
+                    const freshIdx = freshServices.findIndex(s => s.id === svcId);
+                    if (freshIdx !== -1) {
+                        freshServices[freshIdx].isInstallingModule = false;
+                        fs.writeFileSync(HOSTING_FILE, JSON.stringify(freshServices, null, 2));
+                    }
+
+                    if (err) {
+                        logStream.write(`[cPanel Auto-Setup] Erro ao instalar '${missingModule}': ${err.message}\n\n`);
+                        return;
+                    }
+
+                    logStream.write(`[cPanel Auto-Setup] Módulo '${missingModule}' instalado com sucesso! Reiniciando aplicação...\n\n`);
+                    
+                    try {
+                        await restartNodeService(svcId);
+                    } catch (e) {
+                        console.error('[cPanel Auto-Setup] Erro ao reiniciar serviço após instalação:', e.message);
+                    }
+                });
+            }
+        }
+    } catch (e) {
+        console.error('[cPanel Auto-Setup] Erro no processamento de erro do Node:', e.message);
+    }
+}
+
+async function startNodeProcess(svc, index, services) {
+    const fullLogPath = path.join(__dirname, '..', '..', svc.logFile);
+    const logStream = fs.createWriteStream(fullLogPath, { flags: 'a' });
+    
+    // 1. Mata processo fantasma ocupando a porta targetPort
+    await killProcessHoldingPort(svc.targetPort);
+
+    // 2. Auto-instalação de dependências inicial se node_modules não existir
+    const packageJsonPath = path.join(svc.path, 'package.json');
+    const nodeModulesPath = path.join(svc.path, 'node_modules');
+    if (fs.existsSync(packageJsonPath) && !fs.existsSync(nodeModulesPath)) {
+        console.log(`[Hosting] node_modules não encontrado em ${svc.path}. Iniciando npm install...`);
+        logStream.write(`\n[cPanel Auto-Setup] node_modules não encontrado. Executando 'npm install'...\n`);
+        try {
+            await execStrict('npm install', { cwd: svc.path, timeout: 180000 });
+            logStream.write(`[cPanel Auto-Setup] 'npm install' concluído com sucesso!\n\n`);
+        } catch (npmErr) {
+            logStream.write(`[cPanel Auto-Setup] Erro ao executar 'npm install': ${npmErr.message}\n\n`);
+        }
+    }
+
+    // 3. Ajuste de porta no arquivo .env (se existir) para bater com a targetPort configurada
+    const envPath = path.join(svc.path, '.env');
+    if (fs.existsSync(envPath)) {
+        try {
+            let envContent = fs.readFileSync(envPath, 'utf8');
+            if (envContent.includes('PORT=')) {
+                envContent = envContent.replace(/PORT=\d+/g, `PORT=${svc.targetPort}`);
+            } else {
+                envContent += `\nPORT=${svc.targetPort}\n`;
+            }
+            fs.writeFileSync(envPath, envContent, 'utf8');
+            logStream.write(`[cPanel Auto-Setup] Porta ajustada no arquivo .env para PORT=${svc.targetPort}\n`);
+        } catch (e) {
+            console.error(`[Hosting] Falha ao ajustar porta no .env:`, e.message);
+        }
+    }
+
+    // 4. Inicia o processo
+    const parts = svc.startCmd.trim().split(/\s+/);
+    const cmd = parts[0];
+    const args = parts.slice(1);
+    
+    const child = spawn(cmd, args, {
+        cwd: svc.path,
+        env: { ...process.env, PORT: svc.targetPort.toString() },
+        detached: true,
+        stdio: ['ignore', 'pipe', 'pipe']
+    });
+    
+    // Captura stderr para monitorar erros de módulo ausente
+    let stderrAccumulator = '';
+    child.stderr.on('data', (data) => {
+        const str = data.toString();
+        stderrAccumulator += str;
+        if (stderrAccumulator.length > 5000) {
+            stderrAccumulator = stderrAccumulator.slice(-5000);
+        }
+        
+        if (str.includes('MODULE_NOT_FOUND') || str.includes('Cannot find module')) {
+            setTimeout(() => {
+                handleNodeErrorAndRestart(svc.id, stderrAccumulator);
+            }, 1000);
+        }
+    });
+
+    child.stdout.pipe(logStream);
+    child.stderr.pipe(logStream);
+    child.unref();
+    
+    services[index].pid = child.pid;
+    services[index].status = 'online';
+    services[index].updatedAt = new Date().toISOString();
+}
+
+async function restartNodeService(svcId) {
+    const services = JSON.parse(fs.readFileSync(HOSTING_FILE, 'utf8'));
+    const index = services.findIndex(s => s.id === svcId);
+    if (index === -1) return;
+    const svc = services[index];
+
+    if (svc.pid) {
+        try {
+            process.kill(svc.pid, 'SIGKILL');
+        } catch (e) {}
+    }
+
+    await startNodeProcess(svc, index, services);
+    fs.writeFileSync(HOSTING_FILE, JSON.stringify(services, null, 2));
+}
+
 
 router.get('/', async (req, res) => {
     try {
@@ -391,24 +579,97 @@ router.post('/', async (req, res) => {
         let activeStatus = 'stopped';
         
         if (type === 'node' || type === 'python') {
-            const logStream = fs.createWriteStream(fullLogPath, { flags: 'a' });
-            const parts = startCmd.trim().split(/\s+/);
-            const cmd = parts[0];
-            const args = parts.slice(1);
-            
-            const child = spawn(cmd, args, {
-                cwd: resolvedPath,
-                env: { ...process.env, PORT: parsedTargetPort.toString() },
-                detached: true,
-                stdio: ['ignore', 'pipe', 'pipe']
-            });
-            
-            child.stdout.pipe(logStream);
-            child.stderr.pipe(logStream);
-            child.unref();
-            
-            pid = child.pid;
-            activeStatus = 'online';
+            if (type === 'node') {
+                // Mata processo fantasma ocupando a porta targetPort
+                await killProcessHoldingPort(parsedTargetPort);
+
+                // Auto-instalação de dependências inicial se node_modules não existir
+                const packageJsonPath = path.join(resolvedPath, 'package.json');
+                const nodeModulesPath = path.join(resolvedPath, 'node_modules');
+                if (fs.existsSync(packageJsonPath) && !fs.existsSync(nodeModulesPath)) {
+                    console.log(`[Hosting] node_modules não encontrado em ${resolvedPath}. Iniciando npm install...`);
+                    const logStream = fs.createWriteStream(fullLogPath, { flags: 'a' });
+                    logStream.write(`\n[cPanel Auto-Setup] node_modules não encontrado. Executando 'npm install'...\n`);
+                    try {
+                        await execStrict('npm install', { cwd: resolvedPath, timeout: 180000 });
+                        logStream.write(`[cPanel Auto-Setup] 'npm install' concluído com sucesso!\n\n`);
+                    } catch (npmErr) {
+                        logStream.write(`[cPanel Auto-Setup] Erro ao executar 'npm install': ${npmErr.message}\n\n`);
+                    }
+                }
+
+                // Ajuste de porta no arquivo .env (se existir) para bater com a targetPort configurada
+                const envPath = path.join(resolvedPath, '.env');
+                if (fs.existsSync(envPath)) {
+                    try {
+                        let envContent = fs.readFileSync(envPath, 'utf8');
+                        if (envContent.includes('PORT=')) {
+                            envContent = envContent.replace(/PORT=\d+/g, `PORT=${parsedTargetPort}`);
+                        } else {
+                            envContent += `\nPORT=${parsedTargetPort}\n`;
+                        }
+                        fs.writeFileSync(envPath, envContent, 'utf8');
+                        const logStream = fs.createWriteStream(fullLogPath, { flags: 'a' });
+                        logStream.write(`[cPanel Auto-Setup] Porta ajustada no arquivo .env para PORT=${parsedTargetPort}\n`);
+                    } catch (e) {
+                        console.error(`[Hosting] Falha ao ajustar porta no .env:`, e.message);
+                    }
+                }
+
+                const logStream = fs.createWriteStream(fullLogPath, { flags: 'a' });
+                const parts = startCmd.trim().split(/\s+/);
+                const cmd = parts[0];
+                const args = parts.slice(1);
+                
+                const child = spawn(cmd, args, {
+                    cwd: resolvedPath,
+                    env: { ...process.env, PORT: parsedTargetPort.toString() },
+                    detached: true,
+                    stdio: ['ignore', 'pipe', 'pipe']
+                });
+
+                // Monitora erros para auto-instalação
+                let stderrAccumulator = '';
+                child.stderr.on('data', (data) => {
+                    const str = data.toString();
+                    stderrAccumulator += str;
+                    if (stderrAccumulator.length > 5000) {
+                        stderrAccumulator = stderrAccumulator.slice(-5000);
+                    }
+                    if (str.includes('MODULE_NOT_FOUND') || str.includes('Cannot find module')) {
+                        setTimeout(() => {
+                            handleNodeErrorAndRestart(id, stderrAccumulator);
+                        }, 1000);
+                    }
+                });
+                
+                child.stdout.pipe(logStream);
+                child.stderr.pipe(logStream);
+                child.unref();
+                
+                pid = child.pid;
+                activeStatus = 'online';
+            } else {
+                // Python
+                const logStream = fs.createWriteStream(fullLogPath, { flags: 'a' });
+                const parts = startCmd.trim().split(/\s+/);
+                const cmd = parts[0];
+                const args = parts.slice(1);
+                
+                const child = spawn(cmd, args, {
+                    cwd: resolvedPath,
+                    env: { ...process.env, PORT: parsedTargetPort.toString() },
+                    detached: true,
+                    stdio: ['ignore', 'pipe', 'pipe']
+                });
+                
+                child.stdout.pipe(logStream);
+                child.stderr.pipe(logStream);
+                child.unref();
+                
+                pid = child.pid;
+                activeStatus = 'online';
+            }
         } else {
             activeStatus = 'online';
         }
@@ -598,6 +859,210 @@ router.post('/', async (req, res) => {
     }
 });
 
+
+router.post('/:id/edit', async (req, res) => {
+    const { id } = req.params;
+    const { name, domain, listenPort, targetPort, startCmd, path: sitePath, autoRestart } = req.body;
+
+    try {
+        const services = JSON.parse(fs.readFileSync(HOSTING_FILE, 'utf8'));
+        const index = services.findIndex(s => s.id === id);
+        if (index === -1) {
+            return res.status(404).json({ error: 'Serviço não encontrado' });
+        }
+
+        const svc = services[index];
+        const oldListenPort = svc.listenPort;
+        const oldTargetPort = svc.targetPort;
+        const oldPath = svc.path;
+        const oldStartCmd = svc.startCmd;
+        const oldDomain = svc.domain;
+
+        const parsedListenPort = validatePort(listenPort, 'Porta publica');
+        const parsedTargetPort = targetPort ? validatePort(targetPort, 'Porta interna') : null;
+
+        // Verifica portas se mudaram
+        if (parsedListenPort !== oldListenPort) {
+            if (await isPortListening(parsedListenPort) && !await isNginxAlreadyUsingPort(parsedListenPort)) {
+                return res.status(400).json({ error: `A porta pública ${parsedListenPort} já está em uso por outro serviço.` });
+            }
+        }
+        if (parsedTargetPort && parsedTargetPort !== oldTargetPort && (svc.type === 'node' || svc.type === 'python')) {
+            if (await isPortListening(parsedTargetPort)) {
+                return res.status(400).json({ error: `A porta interna ${parsedTargetPort} já está em uso por outra aplicação.` });
+            }
+        }
+
+        const cleanName = svc.slug;
+        const displayName = String(name || svc.name).trim();
+        const bindAddress = String(domain || svc.domain || '0.0.0.0').trim();
+        const serverName = safeServerName(bindAddress === '0.0.0.0' ? '_' : bindAddress);
+        const confPath = path.join(NGINX_CONF_DIR, svc.nginxConf);
+
+        let resolvedPath = svc.path;
+        if (sitePath && sitePath.trim() !== oldPath) {
+            resolvedPath = ensureSafeProjectPath(sitePath, cleanName);
+            if (!fs.existsSync(resolvedPath)) {
+                fs.mkdirSync(resolvedPath, { recursive: true });
+            }
+        }
+
+        // 1. Atualiza configuração do NGINX
+        if (bindAddress !== oldDomain || parsedListenPort !== oldListenPort || parsedTargetPort !== oldTargetPort || resolvedPath !== oldPath) {
+            let contentStr = '';
+            const fullLogPath = path.join(__dirname, '..', '..', svc.logFile);
+            const fullErrorLogPath = path.join(__dirname, '..', '..', svc.errorLog);
+
+            if (svc.type === 'php' || svc.type === 'static') {
+                const fastcgiInclude = nginxFastcgiInclude();
+                contentStr = `server {
+    listen 0.0.0.0:${parsedListenPort};
+    server_name ${serverName};
+    root ${nginxPath(resolvedPath)};
+    index index.php index.html index.htm;
+    access_log ${nginxPath(fullLogPath)};
+    error_log ${nginxPath(fullErrorLogPath)};
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location ~ \\.php$ {
+        include ${fastcgiInclude};
+        fastcgi_pass 127.0.0.1:9070;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+    }
+}`;
+            } else {
+                const proxyPort = parsedTargetPort;
+                contentStr = `server {
+    listen 0.0.0.0:${parsedListenPort};
+    server_name ${serverName};
+    access_log ${nginxPath(fullLogPath)};
+    error_log ${nginxPath(fullErrorLogPath)};
+
+    location / {
+        proxy_pass http://127.0.0.1:${proxyPort};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}`;
+            }
+
+            fs.writeFileSync(confPath, contentStr);
+
+            // Valida NGINX
+            const requireRoot = (parsedListenPort < 1024);
+            let isNginxOk = true;
+            let nginxError = '';
+            await repairNginxBootstrap();
+
+            let testCmd = requireRoot && systemConfig.is_termux ? `su -c 'nginx -t'` : (requireRoot && !systemConfig.is_termux ? `sudo nginx -t` : `nginx -t`);
+            await new Promise((resolve) => {
+                exec(testCmd, (error, stdout, stderr) => {
+                    if (error) {
+                        isNginxOk = false;
+                        nginxError = stderr || stdout || error.message;
+                    }
+                    resolve();
+                });
+            });
+
+            if (!isNginxOk) {
+                return res.status(400).json({ error: `Erro na sintaxe do NGINX:\n${nginxError}` });
+            }
+
+            try {
+                await reloadOrStartNginx(requireRoot);
+                if (requireRoot) {
+                    await chownToUser([NGINX_CONF_DIR, HOSTING_LOGS_DIR]);
+                }
+            } catch (e) {
+                console.error("Nginx reload falhou", e);
+            }
+        }
+
+        // Atualiza campos do banco
+        svc.name = displayName;
+        svc.domain = bindAddress;
+        svc.listenPort = parsedListenPort;
+        svc.targetPort = parsedTargetPort;
+        svc.path = resolvedPath;
+        svc.startCmd = startCmd ? startCmd.trim() : '';
+        svc.autoRestart = !!autoRestart;
+        svc.updatedAt = new Date().toISOString();
+
+        // 2. Se mudou parâmetros do app ou está online, reinicia processo
+        if (svc.type === 'node' || svc.type === 'python') {
+            const processParamsChanged = (startCmd && startCmd.trim() !== oldStartCmd) || (parsedTargetPort !== oldTargetPort) || (resolvedPath !== oldPath);
+            if (processParamsChanged || svc.status === 'online') {
+                if (svc.pid) {
+                    try {
+                        process.kill(svc.pid, 'SIGKILL');
+                    } catch (e) {}
+                }
+                
+                if (svc.status === 'online' || processParamsChanged) {
+                    if (svc.type === 'node') {
+                        await startNodeProcess(svc, index, services);
+                    } else {
+                        // python
+                        const fullLogPath = path.join(__dirname, '..', '..', svc.logFile);
+                        const logStream = fs.createWriteStream(fullLogPath, { flags: 'a' });
+                        const parts = svc.startCmd.trim().split(/\s+/);
+                        const cmd = parts[0];
+                        const args = parts.slice(1);
+                        
+                        const child = spawn(cmd, args, {
+                            cwd: svc.path,
+                            env: { ...process.env, PORT: svc.targetPort.toString() },
+                            detached: true,
+                            stdio: ['ignore', 'pipe', 'pipe']
+                        });
+                        child.stdout.pipe(logStream);
+                        child.stderr.pipe(logStream);
+                        child.unref();
+                        svc.pid = child.pid;
+                        svc.status = 'online';
+                    }
+                }
+            }
+        }
+
+        // 3. Atualiza Cloudflare se houver
+        if (svc.cloudflareTunnel && svc.cloudflareTunnel.hostname) {
+            try {
+                const { upsertCloudflareRouteFromHosting } = require('../../modules/cloudflared/hostingIntegration');
+                upsertCloudflareRouteFromHosting({
+                    serviceName: displayName,
+                    publicHost: svc.cloudflareTunnel.hostname,
+                    internalProtocol: 'http',
+                    internalHost: '127.0.0.1',
+                    internalPort: parsedListenPort,
+                    routePath: '/',
+                    tunnelName: svc.cloudflareTunnel.tunnelName || svc.slug
+                });
+            } catch (cfErr) {
+                console.error('[Hosting edit] Falha ao atualizar rota do túnel Cloudflare:', cfErr.message);
+            }
+        }
+
+        services[index] = svc;
+        fs.writeFileSync(HOSTING_FILE, JSON.stringify(services, null, 2));
+
+        res.json({ success: true, service: svc });
+
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+
 router.delete('/:id', async (req, res) => {
     try {
         const services = JSON.parse(fs.readFileSync(HOSTING_FILE, 'utf8'));
@@ -686,29 +1151,33 @@ router.post('/:id/toggle', async (req, res) => {
                 return res.status(400).json({ error: 'Este tipo de serviço não possui processos associados.' });
             }
             
-            if (svc.targetPort && await isPortListening(svc.targetPort)) {
-                return res.status(400).json({ error: `A porta interna ${svc.targetPort} já está ocupada.` });
+            if (svc.type === 'node') {
+                await startNodeProcess(svc, index, services);
+            } else {
+                if (svc.targetPort && await isPortListening(svc.targetPort)) {
+                    return res.status(400).json({ error: `A porta interna ${svc.targetPort} já está ocupada.` });
+                }
+                
+                const fullLogPath = path.join(__dirname, '..', '..', svc.logFile);
+                const logStream = fs.createWriteStream(fullLogPath, { flags: 'a' });
+                const parts = svc.startCmd.trim().split(/\s+/);
+                const cmd = parts[0];
+                const args = parts.slice(1);
+                
+                const child = spawn(cmd, args, {
+                    cwd: svc.path,
+                    env: { ...process.env, PORT: svc.targetPort.toString() },
+                    detached: true,
+                    stdio: ['ignore', 'pipe', 'pipe']
+                });
+                
+                child.stdout.pipe(logStream);
+                child.stderr.pipe(logStream);
+                child.unref();
+                
+                services[index].pid = child.pid;
+                services[index].status = 'online';
             }
-            
-            const fullLogPath = path.join(__dirname, '..', '..', svc.logFile);
-            const logStream = fs.createWriteStream(fullLogPath, { flags: 'a' });
-            const parts = svc.startCmd.trim().split(/\s+/);
-            const cmd = parts[0];
-            const args = parts.slice(1);
-            
-            const child = spawn(cmd, args, {
-                cwd: svc.path,
-                env: { ...process.env, PORT: svc.targetPort.toString() },
-                detached: true,
-                stdio: ['ignore', 'pipe', 'pipe']
-            });
-            
-            child.stdout.pipe(logStream);
-            child.stderr.pipe(logStream);
-            child.unref();
-            
-            services[index].pid = child.pid;
-            services[index].status = 'online';
         } else {
             if (svc.pid) {
                 try {
@@ -780,24 +1249,28 @@ setInterval(async () => {
                     }
                     
                     try {
-                        const fullLogPath = path.join(__dirname, '..', '..', svc.logFile);
-                        const logStream = fs.createWriteStream(fullLogPath, { flags: 'a' });
-                        const parts = svc.startCmd.trim().split(/\s+/);
-                        const cmd = parts[0];
-                        const args = parts.slice(1);
-                        
-                        const child = spawn(cmd, args, {
-                            cwd: svc.path,
-                            env: { ...process.env, PORT: svc.targetPort.toString() },
-                            detached: true,
-                            stdio: ['ignore', 'pipe', 'pipe']
-                        });
-                        
-                        child.stdout.pipe(logStream);
-                        child.stderr.pipe(logStream);
-                        child.unref();
-                        
-                        services[i].pid = child.pid;
+                        if (svc.type === 'node') {
+                            await startNodeProcess(svc, i, services);
+                        } else {
+                            const fullLogPath = path.join(__dirname, '..', '..', svc.logFile);
+                            const logStream = fs.createWriteStream(fullLogPath, { flags: 'a' });
+                            const parts = svc.startCmd.trim().split(/\s+/);
+                            const cmd = parts[0];
+                            const args = parts.slice(1);
+                            
+                            const child = spawn(cmd, args, {
+                                cwd: svc.path,
+                                env: { ...process.env, PORT: svc.targetPort.toString() },
+                                detached: true,
+                                stdio: ['ignore', 'pipe', 'pipe']
+                            });
+                            
+                            child.stdout.pipe(logStream);
+                            child.stderr.pipe(logStream);
+                            child.unref();
+                            
+                            services[i].pid = child.pid;
+                        }
                         modified = true;
                     } catch (err) {
                         console.error(`[Daemon] Falha ao auto-reiniciar ${svc.name}:`, err.message);

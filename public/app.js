@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 // ============================================================
 //  TERMUX CPANEL â€” app.js v4.0
 //  Boot Sequence + All Modules
@@ -252,32 +252,60 @@ function toggleSidebar() {
 function initSocket() {
     try {
         socket = io();
-        // Eventos do servidor â€” nomes corretos
+        window.socket = socket; // Garante que socket esteja exposto globalmente
+        // Eventos do servidor — nomes corretos
         socket.on('noip-log',      data => appendNoipLog(data));
         socket.on('log-data',      line => appendLogLine(line));
         socket.on('cloudflared-login-log', data => appendCloudflaredLoginLog(data));
         socket.on('cloudflared-login-url', url => openCloudflaredAuthUrl(url));
         socket.on('cloudflared-login-status', data => updateCloudflaredLoginUi(data));
-        // Terminal SSH â€” recebe dados do shell remoto
+        // Terminal SSH — recebe dados do shell remoto
         socket.on('terminal-data', data => {
             if (window._term) window._term.write(data);
         });
     } catch(e) {
-        console.warn('Socket.io nÃ£o disponÃ­vel:', e);
+        console.warn('Socket.io não disponível:', e);
     }
 }
 
 // ============================================================
-//  TERMINAL SSH â€” usa xterm.js + socket 'terminal-connect'
+//  TERMINAL SSH — usa xterm.js + socket 'terminal-connect'
 // ============================================================
 let _termInstance = null;
 
-function initTerminal() {
-    const savedHost = localStorage.getItem('ssh-host');
-    const savedPort = localStorage.getItem('ssh-port');
-    const savedUser = localStorage.getItem('ssh-user');
-    const savedPass = localStorage.getItem('ssh-pass');
-    const savedSave = localStorage.getItem('ssh-save') !== 'false';
+async function initTerminal() {
+    let savedHost = '';
+    let savedPort = '';
+    let savedUser = '';
+    let savedPass = '';
+    let savedSave = true;
+
+    // Tenta carregar as credenciais SSH salvas no servidor
+    try {
+        const res = await fetch('/api/system/settings/ssh');
+        const data = await res.json();
+        if (data.success && data.config) {
+            savedHost = data.config.host || '';
+            savedPort = data.config.port || '';
+            savedUser = data.config.username || '';
+            savedPass = data.config.password || '';
+            savedSave = data.config.save !== false;
+        } else {
+            // Fallback para localStorage
+            savedHost = localStorage.getItem('ssh-host') || '';
+            savedPort = localStorage.getItem('ssh-port') || '';
+            savedUser = localStorage.getItem('ssh-user') || '';
+            savedPass = localStorage.getItem('ssh-pass') || '';
+            savedSave = localStorage.getItem('ssh-save') !== 'false';
+        }
+    } catch (e) {
+        // Fallback para localStorage em caso de falha de rede
+        savedHost = localStorage.getItem('ssh-host') || '';
+        savedPort = localStorage.getItem('ssh-port') || '';
+        savedUser = localStorage.getItem('ssh-user') || '';
+        savedPass = localStorage.getItem('ssh-pass') || '';
+        savedSave = localStorage.getItem('ssh-save') !== 'false';
+    }
 
     const hostInput = document.getElementById('sshHost');
     const portInput = document.getElementById('sshPort');
@@ -288,15 +316,15 @@ function initTerminal() {
     if (saveCheck) saveCheck.checked = savedSave;
 
     if (savedSave) {
-        if (hostInput && savedHost) hostInput.value = savedHost;
-        if (portInput && savedPort) portInput.value = savedPort;
+        if (hostInput) hostInput.value = savedHost || '127.0.0.1';
+        if (portInput) portInput.value = savedPort || '8022';
         if (userInput && savedUser) userInput.value = savedUser;
         if (passInput && savedPass) passInput.value = savedPass;
     }
 }
 
 function connectTerminal() {
-    // LÃª campos do formulÃ¡rio SSH
+    // Lê campos do formulário SSH
     const host = document.getElementById('sshHost')?.value || '127.0.0.1';
     const port = parseInt(document.getElementById('sshPort')?.value) || 8022;
     const username = document.getElementById('sshUser')?.value;
@@ -304,23 +332,37 @@ function connectTerminal() {
     const saveCheck = document.getElementById('sshSaveDetails')?.checked;
 
     if (!username || !password) {
-        showToast('Preencha usuÃ¡rio e senha SSH!', 'warning');
+        showToast('Preencha usuário e senha SSH!', 'warning');
         return;
     }
 
-    // Salva ou limpa dados conforme o checkbox
+    // Salva ou limpa dados conforme o checkbox no localStorage e no Servidor
     if (saveCheck) {
         localStorage.setItem('ssh-host', host);
         localStorage.setItem('ssh-port', port);
         localStorage.setItem('ssh-user', username);
         localStorage.setItem('ssh-pass', password);
         localStorage.setItem('ssh-save', 'true');
+
+        // Salva as credenciais permanentemente no backend
+        fetch('/api/system/settings/ssh', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ host, port, username, password, save: true })
+        }).catch(err => console.warn('Erro ao salvar SSH no servidor:', err));
     } else {
         localStorage.removeItem('ssh-host');
         localStorage.removeItem('ssh-port');
         localStorage.removeItem('ssh-user');
         localStorage.removeItem('ssh-pass');
         localStorage.setItem('ssh-save', 'false');
+
+        // Remove as credenciais permanentemente do backend
+        fetch('/api/system/settings/ssh', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ save: false })
+        }).catch(err => console.warn('Erro ao limpar SSH do servidor:', err));
     }
 
     const container = document.getElementById('terminal-container');
@@ -330,7 +372,19 @@ function connectTerminal() {
     container.innerHTML = '';
     if (_termInstance) { try { _termInstance.dispose(); } catch(e) {} }
 
-    // Verifica se xterm.js estÃ¡ disponÃ­vel
+    // Auxiliar para cd ao conectar
+    const runCdCommand = () => {
+        if (window.terminalInitialPath) {
+            setTimeout(() => {
+                if (socket && (window._term || container.getAttribute('tabindex') === '0')) {
+                    socket.emit('terminal-input', `cd "${window.terminalInitialPath.replace(/"/g, '\\"')}"\r`);
+                    window.terminalInitialPath = null;
+                }
+            }, 1500);
+        }
+    };
+
+    // Verifica se xterm.js está disponível
     if (!window.Terminal) {
         // Fallback: terminal simples sem xterm
         container.style.cssText = 'background:#000;color:#0f0;padding:16px;height:500px;overflow-y:auto;font-family:monospace;font-size:13px;';
@@ -366,6 +420,8 @@ function connectTerminal() {
             <button class="btn btn-sm btn-secondary" onclick="const v=document.getElementById('_termInput').value;socket.emit('terminal-input',v+'\\n');document.getElementById('_termInput').value=''">Enviar</button>
         `;
         container.parentNode.appendChild(inputRow);
+
+        runCdCommand();
         return;
     }
 
@@ -384,11 +440,13 @@ function connectTerminal() {
 
     term.writeln(`\x1b[32mConectando a ${host}:${port}...\x1b[0m`);
 
-    // Envia evento de conexÃ£o ao servidor
+    // Envia evento de conexão ao servidor
     socket.emit('terminal-connect', { host, port, username, password });
 
     // Envia teclas digitadas ao servidor
     term.onData(data => socket.emit('terminal-input', data));
+
+    runCdCommand();
 }
 
 let tempUnit = 'C';
@@ -2759,6 +2817,20 @@ function installHostingFormWatchers() {
 }
 
 function openHostingModal() {
+    window.editingHostingId = null;
+    
+    // Restaura titulo e botao
+    const title = document.getElementById('hsModalTitle');
+    if (title) title.innerHTML = '🚀 Criar Novo Serviço';
+    const submitBtn = document.querySelector('#hostingModal button[type="submit"]');
+    if (submitBtn) submitBtn.textContent = 'Criar Serviço';
+    
+    // Restaura visibilidade
+    const createIndexLabel = document.getElementById('hsCreateIndexLabel');
+    if (createIndexLabel) createIndexLabel.classList.remove('hidden');
+    const hsCreateTunnelLabel = document.getElementById('hsCreateTunnelLabel');
+    if (hsCreateTunnelLabel) hsCreateTunnelLabel.classList.remove('hidden');
+
     // Reset form fields
     document.getElementById('hsName').value = '';
     document.getElementById('hsDomain').value = '0.0.0.0';
@@ -2862,6 +2934,7 @@ async function populateExistingTunnelsDropdown() {
 }
 
 function closeHostingModal() {
+    window.editingHostingId = null;
     const modal = document.getElementById('hostingModal');
     if (modal) modal.classList.add('hidden');
 }
@@ -3032,7 +3105,11 @@ function renderHostingGrid(filterType = 'all') {
                         </button>
                     ` : ''}
                     
-                    <button class="btn btn-danger btn-sm" onclick="deleteHostingService('${svc.id}', '${svc.name}')" style="padding:8px 12px;" title="Remover ServiÃ§o">
+                    <button class="btn btn-secondary btn-sm" onclick="editHostingService('${svc.id}')" style="padding:8px 12px;" title="Editar Serviço">
+                        <i data-lucide="edit-3"></i>
+                    </button>
+                    
+                    <button class="btn btn-danger btn-sm" onclick="deleteHostingService('${svc.id}', '${svc.name}')" style="padding:8px 12px;" title="Remover Serviço">
                         <i data-lucide="trash-2"></i>
                     </button>
                 </div>
@@ -3099,25 +3176,25 @@ async function createHostingService(e) {
     const tunnelHostname = document.getElementById('hsTunnelHostname')?.value?.trim() || '';
 
     if (!name || !slug || !Number.isInteger(listenPort)) {
-        showToast('Nome e Porta P?blica s?o obrigat?rios!', 'warning');
+        showToast('Nome e Porta Pública são obrigatórios!', 'warning');
         return;
     }
     if (listenPort < 1 || listenPort > 65535) {
-        showToast('Porta p?blica inv?lida (1-65535).', 'warning');
+        showToast('Porta pública inválida (1-65535).', 'warning');
         return;
     }
 
-    if (createTunnel) {
+    if (createTunnel && !window.editingHostingId) {
         if (!tunnelHostname || !isValidPublicHostname(tunnelHostname)) {
-            showToast('Hostname p?blico inv?lido para t?nel Cloudflare.', 'warning');
+            showToast('Hostname público inválido para túnel Cloudflare.', 'warning');
             return;
         }
         if (tunnelAction === 'new' && !tunnelName) {
-            showToast('Nome do novo t?nel ? obrigat?rio.', 'warning');
+            showToast('Nome do novo túnel é obrigatório.', 'warning');
             return;
         }
         if (tunnelAction === 'existing' && !tunnelExistingId) {
-            showToast('Selecione um t?nel existente.', 'warning');
+            showToast('Selecione um túnel existente.', 'warning');
             return;
         }
     }
@@ -3125,7 +3202,9 @@ async function createHostingService(e) {
     const submitBtn = e.target.querySelector('button[type="submit"]');
     const originalText = submitBtn.innerHTML;
     submitBtn.disabled = true;
-    submitBtn.innerHTML = '<i data-lucide="loader" class="spin"></i> Criando...';
+    submitBtn.innerHTML = window.editingHostingId 
+        ? '<i data-lucide="loader" class="spin"></i> Salvando...'
+        : '<i data-lucide="loader" class="spin"></i> Criando...';
     lucide.createIcons();
 
     try {
@@ -3149,7 +3228,31 @@ async function createHostingService(e) {
             tunnelHostname
         };
 
-        const res = await safeFetch(`${API_BASE}/hosting`, 'POST', payload, 120000);
+        let res;
+        if (window.editingHostingId) {
+            res = await safeFetch(`${API_BASE}/hosting/${window.editingHostingId}/edit`, 'POST', payload, 120000);
+        } else {
+            res = await safeFetch(`${API_BASE}/hosting`, 'POST', payload, 120000);
+        }
+
+        if (res?.success && window.editingHostingId) {
+            showToast('Serviço atualizado com sucesso!', 'success');
+            setTimeout(async () => {
+                showToast('Reiniciando servidor NGINX automaticamente...', 'info');
+                const nginxRes = await safeFetch(`${API_BASE}/nginx/action`, 'POST', { action: 'restart' }, 30000);
+                if (nginxRes?.success) {
+                    showToast('NGINX reiniciado com sucesso. Atualizando seção de Hospedagem...', 'success');
+                } else {
+                    showToast('Serviço atualizado, mas falhou ao reiniciar NGINX automaticamente.', 'warning');
+                }
+                const refreshBtn = document.querySelector('#tab-hosting > div.page-header > div.toolbar-group > button.btn.btn-secondary.btn-sm');
+                if (refreshBtn) refreshBtn.click();
+                else fetchHostingServices();
+            }, 3000);
+            closeHostingModal();
+            fetchHostingServices();
+            return;
+        }
 
         if (res?.success) {
             window.hostingLastSuggestedPort = Math.max(window.hostingLastSuggestedPort || 4000, listenPort + 1);
@@ -6001,3 +6104,47 @@ window.closeModal = function(id) {
 
 
 
+
+
+function editHostingService(id) {
+    const svc = window.hostingServices.find(s => s.id === id);
+    if (!svc) return;
+
+    window.editingHostingId = id;
+
+    // Altera titulo e botao
+    const title = document.getElementById('hsModalTitle');
+    if (title) title.innerHTML = `⚙️ Editar Serviço: ${svc.name}`;
+    const submitBtn = document.querySelector('#hostingModal button[type="submit"]');
+    if (submitBtn) submitBtn.textContent = 'Salvar Alterações';
+
+    // Popula campos
+    document.getElementById('hsName').value = svc.name || '';
+    document.getElementById('hsDomain').value = svc.domain || '0.0.0.0';
+    document.getElementById('hsListenPort').value = svc.listenPort || '';
+    document.getElementById('hsPath').value = svc.path || '';
+    document.getElementById('hsTargetPort').value = svc.targetPort || '';
+    document.getElementById('hsStartCmd').value = svc.startCmd || '';
+    document.getElementById('hsType').value = svc.type || 'php';
+    document.getElementById('hsAutoRestart').checked = !!svc.autoRestart;
+    document.getElementById('hsCreateIndex').checked = false;
+
+    // Esconde opçoes nao editaveis
+    const createIndexLabel = document.getElementById('hsCreateIndexLabel');
+    if (createIndexLabel) createIndexLabel.classList.add('hidden');
+    const hsCreateTunnelLabel = document.getElementById('hsCreateTunnelLabel');
+    if (hsCreateTunnelLabel) hsCreateTunnelLabel.classList.add('hidden');
+    const hsTunnelFields = document.getElementById('hsTunnelFields');
+    if (hsTunnelFields) hsTunnelFields.classList.add('hidden');
+
+    // Trigger dynamic visible fields logic
+    toggleHostingFormFields();
+
+    // Open Modal overlay
+    const modal = document.getElementById('hostingModal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        lucide.createIcons();
+    }
+}
+window.editHostingService = editHostingService;

@@ -1110,7 +1110,7 @@
             <div id="hostingModal" class="modal-overlay hidden">
                 <div class="modal-card">
                     <div class="modal-header">
-                        <h2>🚀 Criar Novo Serviço</h2>
+                        <h2 id="hsModalTitle">🚀 Criar Novo Serviço</h2>
                         <button class="btn-icon-ghost" type="button" onclick="closeHostingModal()"><i data-lucide="x"></i></button>
                     </div>
                     <form onsubmit="createHostingService(event)">
@@ -1843,7 +1843,7 @@
 <div class="fm-toast-container" id="fm-toast-container"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.173"></script>
+<script src="filemanager.js?v=0.2.174"></script>
 <script>
 window.toggleHostingTunnelFields = window.toggleHostingTunnelFields || function () {
     var checked = document.getElementById('hsCreateTunnel') && document.getElementById('hsCreateTunnel').checked;

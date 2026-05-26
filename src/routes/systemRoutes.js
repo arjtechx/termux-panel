@@ -179,6 +179,38 @@ router.post('/api/system/settings/auth', (req, res) => {
     }
 });
 
+const SSH_CONFIG_FILE = path.join(__dirname, '..', '..', 'config', 'ssh.json');
+
+router.get('/api/system/settings/ssh', (req, res) => {
+    try {
+        if (fs.existsSync(SSH_CONFIG_FILE)) {
+            const config = JSON.parse(fs.readFileSync(SSH_CONFIG_FILE, 'utf8'));
+            return res.json({ success: true, config });
+        }
+        res.json({ success: true, config: null });
+    } catch(err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.post('/api/system/settings/ssh', (req, res) => {
+    try {
+        const { host, port, username, password, save } = req.body;
+        if (save === false) {
+            if (fs.existsSync(SSH_CONFIG_FILE)) {
+                fs.unlinkSync(SSH_CONFIG_FILE);
+            }
+            return res.json({ success: true, message: 'Configurações de SSH removidas do servidor.' });
+        }
+        const config = { host, port, username, password, save };
+        fs.writeFileSync(SSH_CONFIG_FILE, JSON.stringify(config, null, 2));
+        res.json({ success: true, message: 'Configurações de SSH salvas no servidor.' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+
 router.post('/api/system/settings/autostart/toggle', (req, res) => {
     try {
         const { active } = req.body;

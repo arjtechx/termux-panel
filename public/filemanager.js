@@ -969,20 +969,48 @@ async function fmExtractFile(filepath) {
 // ─── CONVERSÃO DE TERMINAL RÁPIDA ────────────────────────────
 function fmTerminalHere() {
     // Muda a aba e seta o comando no terminal
-    const sshHost = document.getElementById('sshHost');
     const tabTerminal = document.querySelector('[data-target="tab-terminal"], .mobile-nav-item[data-target="tab-terminal"]');
     
     if (tabTerminal) {
+        let username = document.getElementById('sshUser')?.value || '';
+        let password = document.getElementById('sshPass')?.value || '';
+
+        // Se não tiver usuário ou senha preenchidos nem no localStorage, solicita
+        if (!username) {
+            username = prompt('Digite o usuário SSH (ex: android):');
+            if (!username) return;
+            const uInput = document.getElementById('sshUser');
+            if (uInput) uInput.value = username;
+            
+            const saveCheck = document.getElementById('sshSaveDetails')?.checked;
+            if (saveCheck) localStorage.setItem('ssh-user', username);
+        }
+
+        if (!password) {
+            password = prompt('Digite a senha SSH:');
+            if (!password) return;
+            const pInput = document.getElementById('sshPass');
+            if (pInput) pInput.value = password;
+            
+            const saveCheck = document.getElementById('sshSaveDetails')?.checked;
+            if (saveCheck) localStorage.setItem('ssh-pass', password);
+        }
+
         showToast('Abertura do terminal requisitada na pasta: ' + currentFmPath, 'info');
         tabTerminal.click();
         
-        // Adiciona um pequeno atraso para conexão Web
-        setTimeout(() => {
-            if (window.term) {
-                // Tenta injetar comando cd
+        // Se já estiver conectado, executa cd imediatamente
+        if (window._term && window.socket) {
+            setTimeout(() => {
                 window.socket.emit('terminal-input', `cd "${currentFmPath.replace(/"/g, '\\"')}"\r`);
+            }, 600);
+        } else {
+            // Caso contrário, agenda o cd para pós-conexão e conecta
+            window.terminalInitialPath = currentFmPath;
+            if (typeof connectTerminal === 'function') {
+                connectTerminal();
             }
-        }, 1200);
+        }
     }
 }
 
