@@ -78,9 +78,12 @@ async function repairNginxBootstrap() {
     }
 }
 
-function execStrict(cmd, timeout = 20000) {
+function execStrict(cmd, options = 20000) {
+    const execOptions = typeof options === 'object'
+        ? { killSignal: 'SIGKILL', ...options }
+        : { timeout: options, killSignal: 'SIGKILL' };
     return new Promise((resolve, reject) => {
-        exec(cmd, { timeout, killSignal: 'SIGKILL' }, (error, stdout, stderr) => {
+        exec(cmd, execOptions, (error, stdout, stderr) => {
             const output = `${stdout || ''}${stderr || ''}`.trim();
             if (error) return reject(new Error(output || error.message));
             resolve(output);
