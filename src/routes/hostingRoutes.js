@@ -323,6 +323,16 @@ async function startNodeProcess(svc, index, services, customCmd) {
         }
     }
 
+    // 3.5. Garante permissão de execução na pasta node_modules/.bin (evita Permission denied no Termux)
+    const binPath = path.join(svc.path, 'node_modules', '.bin');
+    if (fs.existsSync(binPath)) {
+        try {
+            await execStrict(`chmod -R +x "${binPath}"`);
+        } catch (e) {
+            console.error(`[Hosting] Falha ao dar chmod +x no .bin:`, e.message);
+        }
+    }
+
     // 4. Inicia o processo
     const cmdToRun = customCmd || svc.startCmd;
     if (customCmd) {
