@@ -1275,6 +1275,52 @@ input:focus, textarea:focus { outline: none; border-color: var(--primary); }
     align-items: start;
 }
 
+#tab-database .db-workbench-strip {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(160px, 1fr)) auto;
+    gap: 12px;
+    align-items: stretch;
+    margin-bottom: 20px;
+}
+
+#tab-database .db-workbench-item,
+#tab-database .db-workbench-actions {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    padding: 12px 14px;
+    box-shadow: var(--shadow);
+    min-width: 0;
+}
+
+#tab-database .db-workbench-item span {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--text-muted);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+
+#tab-database .db-workbench-item strong {
+    display: block;
+    color: var(--text);
+    font-size: 0.95rem;
+    line-height: 1.25;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#tab-database .db-workbench-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+}
+
 #tab-database .db-list-card {
     padding: 0;
     overflow: hidden;
@@ -1406,7 +1452,7 @@ input:focus, textarea:focus { outline: none; border-color: var(--primary); }
 
 #tab-database .mini-grid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(110px, 1fr));
+    grid-template-columns: repeat(6, minmax(110px, 1fr));
     gap: 12px;
     margin-bottom: 20px;
 }
@@ -1560,6 +1606,27 @@ input:focus, textarea:focus { outline: none; border-color: var(--primary); }
     border-bottom: 1px solid var(--border);
 }
 
+#tab-database .db-table-preview-head .toolbar-group {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+#tab-database #db-table-search {
+    width: 190px;
+    min-width: 140px;
+    padding: 7px 10px;
+    font-size: 0.8rem;
+}
+
+#tab-database #db-table-limit {
+    min-width: 76px;
+    padding: 7px 9px;
+    font-size: 0.8rem;
+}
+
 #tab-database .db-table-scroll {
     overflow: auto;
     max-height: 420px;
@@ -1590,6 +1657,19 @@ input:focus, textarea:focus { outline: none; border-color: var(--primary); }
     background: var(--surface);
 }
 
+#tab-database .db-backup-panel {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+}
+
+#tab-database .db-backup-panel select {
+    min-width: 0;
+    width: 100%;
+    padding: 9px 10px;
+}
+
 #tab-database .disabled-action {
     opacity: 0.45;
     cursor: not-allowed !important;
@@ -1599,6 +1679,9 @@ input:focus, textarea:focus { outline: none; border-color: var(--primary); }
 @media(max-width:1100px) {
     #tab-database .db-manager-grid {
         grid-template-columns: 1fr;
+    }
+    #tab-database .db-workbench-strip {
+        grid-template-columns: repeat(2, minmax(160px, 1fr));
     }
     #tab-database .mini-grid {
         grid-template-columns: repeat(2, 1fr);
@@ -1610,6 +1693,11 @@ input:focus, textarea:focus { outline: none; border-color: var(--primary); }
         grid-template-columns: 1fr;
     }
     #tab-database .inline-form {
+        grid-template-columns: 1fr;
+    }
+    #tab-database .db-workbench-strip,
+    #tab-database .db-backup-panel,
+    #tab-database .db-table-manager {
         grid-template-columns: 1fr;
     }
     #tab-database .db-detail-top {

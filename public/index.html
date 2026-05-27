@@ -847,7 +847,7 @@
                 </div>
 
                 <!-- Controles MariaDB -->
-                <div class="card" style="margin-bottom:20px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:16px 20px;">
+                <div class="card db-service-bar" style="margin-bottom:20px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:16px 20px;">
                     <strong style="flex:1; min-width:120px;">Controles do Serviço</strong>
                     <button class="btn btn-success btn-sm" onclick="mariadbAction('start')">
                         <i data-lucide="play"></i> Iniciar
@@ -859,6 +859,29 @@
                         <i data-lucide="refresh-cw"></i> Reiniciar
                     </button>
                     <div id="mariadb-msg" style="font-size:0.8rem; color:var(--text-muted);"></div>
+                </div>
+
+                <div class="db-workbench-strip">
+                    <div class="db-workbench-item">
+                        <span>Banco selecionado</span>
+                        <strong id="db-workbench-current">--</strong>
+                    </div>
+                    <div class="db-workbench-item">
+                        <span>Registros estimados</span>
+                        <strong id="db-workbench-rows">--</strong>
+                    </div>
+                    <div class="db-workbench-item">
+                        <span>Maior tabela</span>
+                        <strong id="db-workbench-largest">--</strong>
+                    </div>
+                    <div class="db-workbench-actions">
+                        <button class="btn btn-secondary btn-sm" onclick="refreshDatabaseWorkbench()">
+                            <i data-lucide="refresh-cw"></i> Atualizar
+                        </button>
+                        <button class="btn btn-secondary btn-sm" onclick="actionSqlLog()">
+                            <i data-lucide="scroll-text"></i> Logs
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Diagnóstico Completo de Stack de Banco -->
@@ -939,6 +962,14 @@
                                         <span>Collation</span>
                                         <strong id="db-detail-collation">--</strong>
                                     </div>
+                                    <div class="mini-stat">
+                                        <span>Registros</span>
+                                        <strong id="db-detail-rows">--</strong>
+                                    </div>
+                                    <div class="mini-stat">
+                                        <span>Maior tabela</span>
+                                        <strong id="db-detail-largest">--</strong>
+                                    </div>
                                 </div>
                             </div>
 
@@ -979,6 +1010,22 @@
                                                 <div class="muted-note" id="db-table-meta">Sem tabela selecionada.</div>
                                             </div>
                                             <div class="toolbar-group">
+                                                <input type="search" id="db-table-search" placeholder="Filtrar registros..." onkeydown="if(event.key === 'Enter') openDbTable(currentDbTable, 1)" aria-label="Filtrar registros da tabela">
+                                                <select id="db-table-limit" onchange="openDbTable(currentDbTable, 1)" aria-label="Registros por pagina">
+                                                    <option value="25">25</option>
+                                                    <option value="50" selected>50</option>
+                                                    <option value="100">100</option>
+                                                    <option value="200">200</option>
+                                                </select>
+                                                <button class="btn btn-secondary btn-sm" onclick="openDbTable(currentDbTable, 1)">
+                                                    <i data-lucide="search"></i>
+                                                </button>
+                                                <button class="btn btn-secondary btn-sm" onclick="showDbTableStructure()">
+                                                    <i data-lucide="braces"></i> Estrutura
+                                                </button>
+                                                <button class="btn btn-secondary btn-sm" onclick="exportCurrentDbTableCsv()">
+                                                    <i data-lucide="file-down"></i> CSV
+                                                </button>
                                                 <button class="btn btn-secondary btn-sm" onclick="loadCurrentDbTableRows(-1)">
                                                     <i data-lucide="chevron-left"></i>
                                                 </button>
@@ -996,6 +1043,18 @@
                                         </div>
                                     </div>
                                 </div>
+                            </div>
+                            <div class="action-section">
+                                <h3><i data-lucide="archive-restore" style="width:14px;height:14px;vertical-align:middle;"></i> Backups SQL</h3>
+                                <div class="db-backup-panel">
+                                    <select id="dbRestoreFile" aria-label="Backup SQL disponivel">
+                                        <option value="">Carregando backups...</option>
+                                    </select>
+                                    <button class="btn btn-secondary btn-sm" onclick="actionRestoreSelected()" id="btn-restore-selected">
+                                        <i data-lucide="upload"></i> Restaurar Selecionado
+                                    </button>
+                                </div>
+                                <div class="muted-note">Os arquivos SQL sao lidos da pasta de backups do painel.</div>
                             </div>
                             <!-- Seção: Manutenção -->
                             <div class="action-section">
@@ -1977,7 +2036,7 @@
 <div class="fm-toast-container" id="fm-toast-container"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.183"></script>
+<script src="filemanager.js?v=0.2.184"></script>
 <script>
 window.toggleHostingTunnelFields = window.toggleHostingTunnelFields || function () {
     var checked = document.getElementById('hsCreateTunnel') && document.getElementById('hsCreateTunnel').checked;

@@ -28,16 +28,33 @@ router.get('/api/db', async (req, res) => {
     try {
         const conn = await getDbConn();
         const [rows] = await conn.query('SHOW DATABASES');
-        const [sizeRows] = await conn.query(`
+        const [metaRows] = await conn.query(`
             SELECT table_schema AS name,
-                   ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS size_mb
+                   COUNT(*) AS tables_count,
+                   COALESCE(SUM(table_rows), 0) AS rows_count,
+                   ROUND(COALESCE(SUM(data_length + index_length), 0) / 1024 / 1024, 2) AS size_mb,
+                   SUBSTRING_INDEX(GROUP_CONCAT(DISTINCT engine ORDER BY engine SEPARATOR ', '), ',', 1) AS engine,
+                   SUBSTRING_INDEX(GROUP_CONCAT(DISTINCT table_collation ORDER BY table_collation SEPARATOR ', '), ',', 1) AS collation
             FROM information_schema.tables
             GROUP BY table_schema
         `);
         await conn.end();
-        const sizeMap = {};
-        sizeRows.forEach(r => sizeMap[r.name] = r.size_mb);
-        res.json({ databases: rows.map(r => ({ name: r.Database, size_mb: sizeMap[r.Database] || 0 })) });
+        const metaMap = {};
+        metaRows.forEach(r => { metaMap[r.name] = r; });
+        res.json({
+            databases: rows.map(r => {
+                const meta = metaMap[r.Database] || {};
+                return {
+                    name: r.Database,
+                    size_mb: Number(meta.size_mb || 0),
+                    tables_count: Number(meta.tables_count || 0),
+                    rows_count: Number(meta.rows_count || 0),
+                    engine: meta.engine || (isSystemDb(r.Database) ? 'System' : 'InnoDB'),
+                    collation: meta.collation || 'N/A',
+                    system: isSystemDb(r.Database)
+                };
+            })
+        });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -653,6 +670,7 @@ router.get('/api/db/table', async (req, res) => {
     const limit = Math.min(Math.max(Number.parseInt(req.query.limit || '50', 10) || 50, 1), 200);
     const page = Math.max(Number.parseInt(req.query.page || '1', 10) || 1, 1);
     const offset = (page - 1) * limit;
+    const search = String(req.query.search || '').trim().slice(0, 100);
 
     if (!dbName || !tableName) {
         return res.status(400).json({ success: false, error: 'Banco e tabela sao obrigatorios.' });
@@ -673,8 +691,22 @@ router.get('/api/db/table', async (req, res) => {
             'SELECT column_name AS name, column_type AS type, is_nullable AS nullable, column_key AS column_key FROM information_schema.columns WHERE table_schema = ? AND table_name = ? ORDER BY ordinal_position',
             [dbName, tableName]
         );
-        const [[countRow]] = await conn.query(`SELECT COUNT(*) AS total FROM ${quoteAnyIdentifier(dbName)}.${quoteAnyIdentifier(tableName)}`);
-        const [rows] = await conn.query(`SELECT * FROM ${quoteAnyIdentifier(dbName)}.${quoteAnyIdentifier(tableName)} LIMIT ${limit} OFFSET ${offset}`);
+        const searchableColumns = columns
+            .filter(col => /(char|text|enum|set|json|int|decimal|float|double|date|time|year)/i.test(col.type || ''))
+            .map(col => col.name);
+        const whereSql = search && searchableColumns.length
+            ? ` WHERE CONCAT_WS(' ', ${searchableColumns.map(quoteAnyIdentifier).join(', ')}) LIKE ?`
+            : '';
+        const whereParams = whereSql ? [`%${search}%`] : [];
+
+        const [[countRow]] = await conn.query(
+            `SELECT COUNT(*) AS total FROM ${quoteAnyIdentifier(dbName)}.${quoteAnyIdentifier(tableName)}${whereSql}`,
+            whereParams
+        );
+        const [rows] = await conn.query(
+            `SELECT * FROM ${quoteAnyIdentifier(dbName)}.${quoteAnyIdentifier(tableName)}${whereSql} LIMIT ${limit} OFFSET ${offset}`,
+            whereParams
+        );
 
         res.json({
             success: true,
@@ -683,6 +715,7 @@ router.get('/api/db/table', async (req, res) => {
             page,
             limit,
             total: Number(countRow.total || 0),
+            search,
             columns,
             rows: rows.map(row => Object.fromEntries(Object.entries(row).map(([key, value]) => [key, normalizeDbCell(value)])))
         });
@@ -690,6 +723,75 @@ router.get('/api/db/table', async (req, res) => {
         res.status(500).json({ success: false, error: err.message });
     } finally {
         try { if (conn) await conn.end(); } catch (_) {}
+    }
+});
+
+router.get('/api/db/table/structure', async (req, res) => {
+    const dbName = sanitizeDbName(req.query.db);
+    const tableName = sanitizeTableName(req.query.table);
+
+    if (!dbName || !tableName) {
+        return res.status(400).json({ success: false, error: 'Banco e tabela sao obrigatorios.' });
+    }
+
+    let conn;
+    try {
+        conn = await getDbConn();
+        const [columns] = await conn.query(`
+            SELECT
+                column_name AS name,
+                column_type AS type,
+                is_nullable AS nullable,
+                column_key AS column_key,
+                column_default AS default_value,
+                extra,
+                column_comment AS comment
+            FROM information_schema.columns
+            WHERE table_schema = ? AND table_name = ?
+            ORDER BY ordinal_position
+        `, [dbName, tableName]);
+        const [indexes] = await conn.query(`SHOW INDEX FROM ${quoteAnyIdentifier(dbName)}.${quoteAnyIdentifier(tableName)}`);
+        const [[status]] = await conn.query(`
+            SELECT engine, table_rows AS rows_count,
+                   ROUND((data_length + index_length) / 1024 / 1024, 2) AS size_mb,
+                   table_collation AS collation,
+                   create_time AS created_at,
+                   update_time AS updated_at
+            FROM information_schema.tables
+            WHERE table_schema = ? AND table_name = ?
+        `, [dbName, tableName]);
+
+        res.json({
+            success: true,
+            database: dbName,
+            table: tableName,
+            status: status || {},
+            columns,
+            indexes: indexes.map(row => ({
+                name: row.Key_name,
+                column: row.Column_name,
+                unique: row.Non_unique === 0,
+                sequence: row.Seq_in_index,
+                type: row.Index_type
+            }))
+        });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    } finally {
+        try { if (conn) await conn.end(); } catch (_) {}
+    }
+});
+
+router.get('/api/db/actions-log', (req, res) => {
+    try {
+        if (!fs.existsSync(DB_ACTIONS_LOG)) {
+            return res.json({ success: true, lines: [] });
+        }
+        const limit = Math.min(Math.max(Number.parseInt(req.query.limit || '80', 10) || 80, 1), 300);
+        const lines = fs.readFileSync(DB_ACTIONS_LOG, 'utf8').split(/\r?\n/).filter(Boolean).slice(-limit);
+        res.json({ success: true, lines });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 

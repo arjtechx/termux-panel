@@ -1047,6 +1047,8 @@ async function fetchDatabases() {
 let currentDbManager = null;
 let currentDbTable = null;
 let currentDbTablePage = 1;
+let currentDbTableRows = [];
+let currentDbTableColumns = [];
 
 function isSystemDatabase(db) {
     if (!db) return false;
@@ -1055,6 +1057,10 @@ function isSystemDatabase(db) {
 
 async function selectDatabase(dbName) {
     currentDbManager = dbName;
+    currentDbTable = null;
+    currentDbTablePage = 1;
+    currentDbTableRows = [];
+    currentDbTableColumns = [];
     
     // Highlight active database item
     document.querySelectorAll('#db-list-container .db-item').forEach(item => {
@@ -1086,7 +1092,7 @@ async function selectDatabase(dbName) {
 
     // Security locks on dangerous controls
     const dangerousButtons = [
-        'btn-restore', 'btn-optimize', 'btn-repair', 
+        'btn-restore', 'btn-restore-selected', 'btn-optimize', 'btn-repair', 
         'btn-create-user', 'btn-reset-password', 'btn-permissions', 
         'btn-rename', 'btn-drop'
     ];
@@ -1110,6 +1116,15 @@ async function selectDatabase(dbName) {
         dropInput.disabled = system;
         dropInput.value = '';
     }
+
+    const tableSearch = document.getElementById('db-table-search');
+    if (tableSearch) tableSearch.value = '';
+    const tableTitle = document.getElementById('db-table-title');
+    if (tableTitle) tableTitle.textContent = 'Tabela';
+    const tableMeta = document.getElementById('db-table-meta');
+    if (tableMeta) tableMeta.textContent = 'Sem tabela selecionada.';
+    const tableData = document.getElementById('db-table-data');
+    if (tableData) tableData.innerHTML = '<tbody><tr><td>Abra uma tabela para visualizar os registros.</td></tr></tbody>';
     
     const dropBtn = document.getElementById('btn-drop');
     if (dropBtn) {
@@ -1142,6 +1157,21 @@ async function loadDbDetails(dbName) {
         
         const collationEl = document.getElementById('db-detail-collation');
         if (collationEl) collationEl.textContent = data.collation ?? 'utf8mb4_general_ci';
+
+        const rowsEl = document.getElementById('db-detail-rows');
+        if (rowsEl) rowsEl.textContent = Number(data.totalRows || 0).toLocaleString('pt-BR');
+
+        const largestEl = document.getElementById('db-detail-largest');
+        if (largestEl) largestEl.textContent = data.largestTable || 'N/A';
+
+        const currentEl = document.getElementById('db-workbench-current');
+        if (currentEl) currentEl.textContent = dbName;
+
+        const wbRowsEl = document.getElementById('db-workbench-rows');
+        if (wbRowsEl) wbRowsEl.textContent = Number(data.totalRows || 0).toLocaleString('pt-BR');
+
+        const wbLargestEl = document.getElementById('db-workbench-largest');
+        if (wbLargestEl) wbLargestEl.textContent = data.largestTable || 'N/A';
     } catch (err) {
         console.error('Erro ao carregar detalhes do banco:', err);
     }
@@ -1274,6 +1304,8 @@ async function openDbTable(tableName, page = 1) {
     if (!currentDbManager || !tableName) return;
     currentDbTable = tableName;
     currentDbTablePage = Math.max(page, 1);
+    const limit = Number(document.getElementById('db-table-limit')?.value || 50);
+    const search = document.getElementById('db-table-search')?.value.trim() || '';
     document.querySelectorAll('#db-table-list .db-table-button').forEach(btn => {
         btn.classList.toggle('active', btn.querySelector('span')?.textContent === tableName);
     });
@@ -1285,7 +1317,7 @@ async function openDbTable(tableName, page = 1) {
     if (tableEl) tableEl.innerHTML = '<tbody><tr><td>Carregando...</td></tr></tbody>';
 
     try {
-        const data = await safeFetch(`${API_BASE}/db/table?db=${encodeURIComponent(currentDbManager)}&table=${encodeURIComponent(tableName)}&page=${currentDbTablePage}&limit=50`);
+        const data = await safeFetch(`${API_BASE}/db/table?db=${encodeURIComponent(currentDbManager)}&table=${encodeURIComponent(tableName)}&page=${currentDbTablePage}&limit=${limit}&search=${encodeURIComponent(search)}`);
         if (!data?.success) throw new Error(data?.error || 'Falha ao abrir tabela.');
         renderDbTableRows(data);
     } catch (err) {
@@ -1301,11 +1333,14 @@ function renderDbTableRows(data) {
     const metaEl = document.getElementById('db-table-meta');
     const columns = data.columns || [];
     const rows = data.rows || [];
+    currentDbTableRows = rows;
+    currentDbTableColumns = columns;
     if (titleEl) titleEl.textContent = data.table || 'Tabela';
     if (metaEl) {
         const start = rows.length ? ((data.page - 1) * data.limit) + 1 : 0;
         const end = rows.length ? start + rows.length - 1 : 0;
-        metaEl.textContent = `${Number(data.total || 0).toLocaleString('pt-BR')} registros | exibindo ${start}-${end} | pagina ${data.page}`;
+        const suffix = data.search ? ` | filtro: "${data.search}"` : '';
+        metaEl.textContent = `${Number(data.total || 0).toLocaleString('pt-BR')} registros | exibindo ${start}-${end} | pagina ${data.page}${suffix}`;
     }
     if (!tableEl) return;
     if (!columns.length) {
@@ -1323,6 +1358,75 @@ function formatDbCell(value) {
     if (value === null || value === undefined) return 'NULL';
     if (typeof value === 'object') return JSON.stringify(value);
     return String(value);
+}
+
+async function showDbTableStructure() {
+    if (!currentDbManager || !currentDbTable) {
+        return showToast('Abra uma tabela primeiro.', 'warning');
+    }
+    const tableEl = document.getElementById('db-table-data');
+    const metaEl = document.getElementById('db-table-meta');
+    if (metaEl) metaEl.textContent = 'Carregando estrutura da tabela...';
+    if (tableEl) tableEl.innerHTML = '<tbody><tr><td>Carregando estrutura...</td></tr></tbody>';
+
+    try {
+        const data = await safeFetch(`${API_BASE}/db/table/structure?db=${encodeURIComponent(currentDbManager)}&table=${encodeURIComponent(currentDbTable)}`);
+        if (!data?.success) throw new Error(data?.error || 'Falha ao carregar estrutura.');
+        const columns = data.columns || [];
+        const indexes = data.indexes || [];
+        if (metaEl) {
+            const status = data.status || {};
+            metaEl.textContent = `${columns.length} colunas | ${indexes.length} indices | ${status.engine || 'engine N/A'} | ${status.size_mb || 0} MB`;
+        }
+        if (!tableEl) return;
+        const structureHead = '<thead><tr><th>Coluna</th><th>Tipo</th><th>Nulo</th><th>Chave</th><th>Padrao</th><th>Extra</th></tr></thead>';
+        const structureBody = columns.length
+            ? `<tbody>${columns.map(col => `
+                <tr>
+                    <td>${escapeHtml(col.name)}</td>
+                    <td>${escapeHtml(col.type)}</td>
+                    <td>${escapeHtml(col.nullable)}</td>
+                    <td>${escapeHtml(col.column_key || '-')}</td>
+                    <td>${escapeHtml(col.default_value ?? 'NULL')}</td>
+                    <td>${escapeHtml(col.extra || '-')}</td>
+                </tr>
+            `).join('')}</tbody>`
+            : '<tbody><tr><td colspan="6">Nenhuma coluna encontrada.</td></tr></tbody>';
+        tableEl.innerHTML = structureHead + structureBody;
+        logToDbConsole('describe ' + currentDbTable, `Estrutura carregada: ${columns.length} colunas e ${indexes.length} indices.`);
+    } catch (err) {
+        if (metaEl) metaEl.textContent = err.message;
+        if (tableEl) tableEl.innerHTML = `<tbody><tr><td>${escapeHtml(err.message)}</td></tr></tbody>`;
+        logToDbConsole('describe ' + currentDbTable, err.message, true);
+    }
+}
+
+function exportCurrentDbTableCsv() {
+    if (!currentDbTableRows.length || !currentDbTableColumns.length) {
+        return showToast('Abra uma tabela com registros para exportar.', 'warning');
+    }
+    const csvEscape = value => `"${formatDbCell(value).replace(/"/g, '""')}"`;
+    const header = currentDbTableColumns.map(col => csvEscape(col.name)).join(',');
+    const body = currentDbTableRows.map(row => currentDbTableColumns.map(col => csvEscape(row[col.name])).join(',')).join('\n');
+    const blob = new Blob([header + '\n' + body], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${currentDbManager}-${currentDbTable}-pagina-${currentDbTablePage}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    logToDbConsole('export_csv ' + currentDbTable, `Exportados ${currentDbTableRows.length} registros visiveis para CSV.`);
+}
+
+async function refreshDatabaseWorkbench() {
+    const tableToReload = currentDbTable;
+    const pageToReload = currentDbTablePage;
+    await fetchDatabases();
+    if (currentDbManager) await loadDbDetails(currentDbManager);
+    if (tableToReload) await openDbTable(tableToReload, pageToReload);
+    showToast('Gerenciador de banco atualizado.', 'success');
 }
 
 async function loadCurrentDbTableRows(delta) {
@@ -1364,6 +1468,30 @@ async function actionRestore() {
         }
     } catch(err) {
         logToDbConsole('mysql -u root -p ' + currentDbManager + ' < ' + file, `âŒ Erro de rede ao restaurar: ${err.message}`, true);
+    }
+}
+
+async function actionRestoreSelected() {
+    const file = document.getElementById('dbRestoreFile')?.value;
+    if (!file) return showToast('Selecione um backup SQL primeiro.', 'warning');
+    if (!currentDbManager) return showToast('Selecione um banco primeiro.', 'warning');
+
+    if (!confirm(`Restaurar "${file}" no banco "${currentDbManager}"? Os dados atuais podem ser substituidos.`)) return;
+
+    logToDbConsole('restore_selected ' + file, `Restaurando backup selecionado em "${currentDbManager}"...`);
+    try {
+        const result = await safeFetch(`${API_BASE}/db/restore`, 'POST', { filename: file, dbName: currentDbManager }, 120000);
+        if (result?.success) {
+            logToDbConsole('restore_selected ' + file, `Backup "${file}" restaurado com sucesso em "${currentDbManager}".`);
+            showToast('Backup restaurado com sucesso!', 'success');
+            await loadDbDetails(currentDbManager);
+            if (currentDbTable) await openDbTable(currentDbTable, 1);
+        } else {
+            throw new Error(result?.error || 'Falha ao restaurar backup.');
+        }
+    } catch (err) {
+        logToDbConsole('restore_selected ' + file, err.message, true);
+        showToast(err.message, 'error');
     }
 }
 
@@ -1435,6 +1563,21 @@ async function actionSqlLog() {
         `âœ“ query: SELECT table_name, data_length FROM information_schema.tables WHERE table_schema='${currentDbManager}';\n` +
         `âœ“ status: 200 OK\n` +
         `âœ“ Nenhuma anomalia de transaÃ§Ã£o relatada nas Ãºltimas 24 horas.`);
+}
+
+async function actionSqlLogLegacy() {
+    logToDbConsole('database_actions_log --tail=80', 'Buscando historico real de acoes do gerenciador...');
+    try {
+        const data = await safeFetch(`${API_BASE}/db/actions-log?limit=80`);
+        if (!data?.success) throw new Error(data?.error || 'Falha ao carregar logs.');
+        const lines = data.lines || [];
+        logToDbConsole(
+            'database_actions_log --tail=80',
+            lines.length ? lines.join('\n') : 'Nenhuma acao registrada ainda.'
+        );
+    } catch (err) {
+        logToDbConsole('database_actions_log --tail=80', err.message, true);
+    }
 }
 
 async function actionListUsers() {
