@@ -1,5 +1,7 @@
 {
-  "host": "localhost",
-  "user": "admin",
-  "password": "ArjDb@Secure99!"
+    "host": "192.168.1.107",
+    "port": 3306,
+    "user": "admin",
+    "password": "mapamundi",
+    "database": "painel"
 }

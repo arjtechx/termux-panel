@@ -178,7 +178,7 @@ router.post('/api/db/migrate-external', async (req, res) => {
             [sourceDatabase]
         );
 
-        await runCmd(`mysqldump ${mysqlCliArgs({ ...currentConfig, database: sourceDatabase })} ${shellQuote(sourceDatabase)} > ${shellQuote(backupPath)}`);
+        await writeSqlDumpFromConnection(sourceConn, sourceDatabase, backupPath);
 
         externalConn = await mysql.createConnection({
             host: externalConfig.host,
@@ -189,12 +189,17 @@ router.post('/api/db/migrate-external', async (req, res) => {
         });
         await externalConn.ping();
         await externalConn.query(`CREATE DATABASE IF NOT EXISTS ${quoteDbIdentifier(externalConfig.database)} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
-        await externalConn.end();
-        externalConn = null;
+        const [[{ count: targetTablesBefore }]] = await externalConn.query(
+            'SELECT COUNT(*) AS count FROM information_schema.tables WHERE table_schema = ?',
+            [externalConfig.database]
+        );
+        let targetBackupFile = null;
+        if (Number(targetTablesBefore) > 0) {
+            targetBackupFile = `db-MIGRATE-EXTERNAL-TARGET-BEFORE-${externalConfig.database}-${ts}.sql`;
+            await writeSqlDumpFromConnection(externalConn, externalConfig.database, safeBackupPath(targetBackupFile));
+        }
 
-        await runCmd(`mysql ${mysqlCliArgs(externalConfig)} ${shellQuote(externalConfig.database)} < ${shellQuote(backupPath)}`);
-
-        externalConn = await mysql.createConnection(externalConfig);
+        await copyDatabaseWithMysql2(sourceConn, externalConn, sourceDatabase, externalConfig.database);
         const [[{ count: targetTables }]] = await externalConn.query(
             'SELECT COUNT(*) AS count FROM information_schema.tables WHERE table_schema = ?',
             [externalConfig.database]
@@ -221,6 +226,7 @@ router.post('/api/db/migrate-external', async (req, res) => {
             success: true,
             message: `Migracao concluida. Banco antigo preservado e dump salvo em ${backupFile}.`,
             backupFile,
+            targetBackupFile,
             sourceDatabase,
             targetDatabase: externalConfig.database,
             sourceTables,
@@ -437,6 +443,89 @@ function safeBackupPath(filename) {
         throw new Error('Arquivo de backup invalido.');
     }
     return path.join(BACKUP_DIR, base);
+}
+
+function quoteAnyIdentifier(name) {
+    return `\`${String(name).replace(/`/g, '``')}\``;
+}
+
+function sqlLiteral(value) {
+    if (value === null || value === undefined) return 'NULL';
+    if (Buffer.isBuffer(value)) return `X'${value.toString('hex')}'`;
+    if (value instanceof Date) return quoteSqlString(value.toISOString().slice(0, 19).replace('T', ' '));
+    if (typeof value === 'number') return Number.isFinite(value) ? String(value) : 'NULL';
+    if (typeof value === 'boolean') return value ? '1' : '0';
+    if (typeof value === 'object') return quoteSqlString(JSON.stringify(value));
+    return quoteSqlString(value);
+}
+
+async function listDatabaseTables(conn, database) {
+    const [rows] = await conn.query(
+        'SELECT table_name AS name FROM information_schema.tables WHERE table_schema = ? AND table_type = ? ORDER BY table_name',
+        [database, 'BASE TABLE']
+    );
+    return rows.map(row => row.name);
+}
+
+async function writeSqlDumpFromConnection(conn, database, filePath) {
+    const tables = await listDatabaseTables(conn, database);
+    const lines = [
+        `-- termux-panel SQL backup`,
+        `-- database: ${database}`,
+        `-- created_at: ${new Date().toISOString()}`,
+        'SET FOREIGN_KEY_CHECKS=0;',
+        ''
+    ];
+
+    for (const table of tables) {
+        const [[createRow]] = await conn.query(`SHOW CREATE TABLE ${quoteAnyIdentifier(database)}.${quoteAnyIdentifier(table)}`);
+        const createSql = createRow['Create Table'];
+        lines.push(`DROP TABLE IF EXISTS ${quoteAnyIdentifier(table)};`);
+        lines.push(`${createSql};`);
+
+        const [rows] = await conn.query(`SELECT * FROM ${quoteAnyIdentifier(database)}.${quoteAnyIdentifier(table)}`);
+        for (const row of rows) {
+            const columns = Object.keys(row);
+            if (!columns.length) continue;
+            const colSql = columns.map(quoteAnyIdentifier).join(', ');
+            const valSql = columns.map(col => sqlLiteral(row[col])).join(', ');
+            lines.push(`INSERT INTO ${quoteAnyIdentifier(table)} (${colSql}) VALUES (${valSql});`);
+        }
+        lines.push('');
+    }
+
+    lines.push('SET FOREIGN_KEY_CHECKS=1;', '');
+    fs.writeFileSync(filePath, lines.join('\n'), 'utf8');
+}
+
+async function copyDatabaseWithMysql2(sourceConn, targetConn, sourceDatabase, targetDatabase) {
+    const sourceTables = await listDatabaseTables(sourceConn, sourceDatabase);
+    await targetConn.query('SET FOREIGN_KEY_CHECKS=0');
+    const targetTables = await listDatabaseTables(targetConn, targetDatabase);
+    for (const table of targetTables.reverse()) {
+        await targetConn.query(`DROP TABLE IF EXISTS ${quoteAnyIdentifier(targetDatabase)}.${quoteAnyIdentifier(table)}`);
+    }
+
+    for (const table of sourceTables) {
+        const [[createRow]] = await sourceConn.query(`SHOW CREATE TABLE ${quoteAnyIdentifier(sourceDatabase)}.${quoteAnyIdentifier(table)}`);
+        const createSql = createRow['Create Table'].replace(
+            new RegExp(`^CREATE TABLE ${quoteAnyIdentifier(table).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`),
+            `CREATE TABLE ${quoteAnyIdentifier(targetDatabase)}.${quoteAnyIdentifier(table)}`
+        );
+        await targetConn.query(createSql);
+
+        const [rows] = await sourceConn.query(`SELECT * FROM ${quoteAnyIdentifier(sourceDatabase)}.${quoteAnyIdentifier(table)}`);
+        for (let i = 0; i < rows.length; i += 200) {
+            const chunk = rows.slice(i, i + 200);
+            if (!chunk.length) continue;
+            const columns = Object.keys(chunk[0]);
+            if (!columns.length) continue;
+            const colSql = columns.map(quoteAnyIdentifier).join(', ');
+            const values = chunk.map(row => columns.map(col => row[col]));
+            await targetConn.query(`INSERT INTO ${quoteAnyIdentifier(targetDatabase)}.${quoteAnyIdentifier(table)} (${colSql}) VALUES ?`, [values]);
+        }
+    }
+    await targetConn.query('SET FOREIGN_KEY_CHECKS=1');
 }
 
 // API: Database details (size, engine, collations, tables count, total rows, mtime)

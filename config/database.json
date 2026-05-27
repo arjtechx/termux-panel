@@ -1,7 +1,7 @@
 {
-    "host": "127.0.0.1",
+    "host": "192.168.1.107",
     "port": 3306,
-    "database": "painel",
     "user": "admin",
-    "password": "ArjDb@Secure99!"
+    "password": "mapamundi",
+    "database": "painel"
 }

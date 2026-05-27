@@ -1695,7 +1695,8 @@ async function migrateToExternalDb() {
             throw new Error('Falha na migracao. Verifique os logs do servidor.');
         }
 
-        const msg = `Migracao concluida.\nOrigem preservada: ${result.sourceDatabase}\nDestino: ${result.targetDatabase}\nTabelas: ${result.sourceTables} -> ${result.targetTables}\nBackup SQL: ${result.backupFile}`;
+        const targetBackup = result.targetBackupFile ? `\nBackup anterior do destino: ${result.targetBackupFile}` : '';
+        const msg = `Migracao concluida.\nOrigem preservada: ${result.sourceDatabase}\nDestino: ${result.targetDatabase}\nTabelas: ${result.sourceTables} -> ${result.targetTables}\nBackup SQL: ${result.backupFile}${targetBackup}`;
         logToDbConsole('db_migrate_external', msg);
         showToast('Migracao concluida. Reiniciando painel...', 'success');
         if (statusEl) statusEl.textContent = 'Migracao validada. Reiniciando o painel para usar o banco externo...';
