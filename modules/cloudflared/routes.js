@@ -1,4 +1,4 @@
-﻿const express = require('express');
+const express = require('express');
 const manager = require('./manager');
 const processManager = require('./process');
 const { upsertCloudflareRouteFromHosting } = require('./hostingIntegration');
@@ -9,7 +9,7 @@ module.exports = function createCloudflaredRoutes() {
     // Listar todas as instâncias (retorna infos + status do processo)
     router.get('/cloudflared/instances', async (req, res) => {
         try {
-            const instances = manager.getInstances();
+            const instances = (await manager.getInstances());
             const result = [];
             for (const inst of instances) {
                 const status = await processManager.getInstanceStatus(inst.id);
@@ -22,9 +22,9 @@ module.exports = function createCloudflaredRoutes() {
     });
 
     // Criar nova instância
-    router.post('/cloudflared/instances', (req, res) => {
+    router.post('/cloudflared/instances', async (req, res) => {
         try {
-            const inst = manager.createInstance(req.body);
+            const inst = await manager.createInstance(req.body);
             res.json({ success: true, instance: inst });
         } catch (err) {
             res.status(400).json({ success: false, error: err.message });
@@ -32,9 +32,9 @@ module.exports = function createCloudflaredRoutes() {
     });
 
     // Editar instância
-    router.put('/cloudflared/instances/:id', (req, res) => {
+    router.put('/cloudflared/instances/:id', async (req, res) => {
         try {
-            const inst = manager.updateInstance(req.params.id, req.body);
+            const inst = await manager.updateInstance(req.params.id, req.body);
             res.json({ success: true, instance: inst });
         } catch (err) {
             res.status(400).json({ success: false, error: err.message });
@@ -42,9 +42,9 @@ module.exports = function createCloudflaredRoutes() {
     });
 
     // Deletar instância (protegidas são bloqueadas no manager)
-    router.delete('/cloudflared/instances/:id', (req, res) => {
+    router.delete('/cloudflared/instances/:id', async (req, res) => {
         try {
-            const result = manager.deleteInstance(req.params.id);
+            const result = await manager.deleteInstance(req.params.id);
             res.json(result);
         } catch (err) {
             res.status(400).json({ success: false, error: err.message });
@@ -52,9 +52,9 @@ module.exports = function createCloudflaredRoutes() {
     });
 
     // Start
-    router.post('/cloudflared/instances/:id/start', (req, res) => {
+    router.post('/cloudflared/instances/:id/start', async (req, res) => {
         try {
-            const inst = manager.getInstances().find(i => i.id === req.params.id);
+            const inst = (await manager.getInstances()).find(i => i.id === req.params.id);
             if (!inst) throw new Error('Instância não encontrada.');
             const result = processManager.startInstance(inst);
             res.json(result);
@@ -64,9 +64,9 @@ module.exports = function createCloudflaredRoutes() {
     });
 
     // Stop
-    router.post('/cloudflared/instances/:id/stop', (req, res) => {
+    router.post('/cloudflared/instances/:id/stop', async (req, res) => {
         try {
-            const inst = manager.getInstances().find(i => i.id === req.params.id);
+            const inst = (await manager.getInstances()).find(i => i.id === req.params.id);
             if (!inst) throw new Error('Instância não encontrada.');
             const force = !!(req.body && req.body.force === true);
             if (inst.protected && !force) {
@@ -82,7 +82,7 @@ module.exports = function createCloudflaredRoutes() {
     // Restart Hard
     router.post('/cloudflared/instances/:id/restart', async (req, res) => {
         try {
-            const inst = manager.getInstances().find(i => i.id === req.params.id);
+            const inst = (await manager.getInstances()).find(i => i.id === req.params.id);
             if (!inst) throw new Error('Instância não encontrada.');
             const force = !!(req.body && req.body.force === true);
             if (inst.protected && !force) {
@@ -100,7 +100,7 @@ module.exports = function createCloudflaredRoutes() {
     // Reload Safe (Zero Downtime)
     router.post('/cloudflared/instances/:id/reload-safe', async (req, res) => {
         try {
-            const inst = manager.getInstances().find(i => i.id === req.params.id);
+            const inst = (await manager.getInstances()).find(i => i.id === req.params.id);
             if (!inst) throw new Error('Instância não encontrada.');
             const force = !!(req.body && req.body.force === true);
             if (inst.protected && !force) {
@@ -116,7 +116,7 @@ module.exports = function createCloudflaredRoutes() {
     });
 
     // Pegar logs
-    router.get('/cloudflared/instances/:id/logs', (req, res) => {
+    router.get('/cloudflared/instances/:id/logs', async (req, res) => {
         try {
             const lines = parseInt(req.query.lines) || 100;
             const logs = processManager.readLogs(req.params.id, lines);
@@ -127,7 +127,7 @@ module.exports = function createCloudflaredRoutes() {
     });
 
     // Kill all zombies
-    router.post('/cloudflared/system/kill-zombies', (req, res) => {
+    router.post('/cloudflared/system/kill-zombies', async (req, res) => {
         res.json(processManager.killAllZombies());
     });
 
@@ -142,7 +142,7 @@ module.exports = function createCloudflaredRoutes() {
     });
 
     // Status do cert.pem (login Cloudflare)
-    router.get('/cloudflared/system/login-status', (req, res) => {
+    router.get('/cloudflared/system/login-status', async (req, res) => {
         try {
             const status = manager.getLoginStatus();
             res.json({ success: true, ...status });
@@ -152,7 +152,7 @@ module.exports = function createCloudflaredRoutes() {
     });
 
     // Remover cert.pem manualmente
-    router.post('/cloudflared/system/remove-login-config', (req, res) => {
+    router.post('/cloudflared/system/remove-login-config', async (req, res) => {
         try {
             const result = manager.removeLoginConfig();
             res.json(result);
@@ -162,9 +162,9 @@ module.exports = function createCloudflaredRoutes() {
     });
 
     // Migrar rotas legadas
-    router.post('/cloudflared/system/migrate-legacy', (req, res) => {
+    router.post('/cloudflared/system/migrate-legacy', async (req, res) => {
         try {
-            const result = manager.migrateLegacyRoutes();
+            const result = await manager.migrateLegacyRoutes();
             res.json(result);
         } catch (err) {
             res.status(500).json({ success: false, error: err.message });
@@ -172,9 +172,9 @@ module.exports = function createCloudflaredRoutes() {
     });
 
     // Integração central para aba Hospedagem
-    router.post('/cloudflared/routes/from-hosting', (req, res) => {
+    router.post('/cloudflared/routes/from-hosting', async (req, res) => {
         try {
-            const result = upsertCloudflareRouteFromHosting(req.body || {});
+            const result = await upsertCloudflareRouteFromHosting(req.body || {});
             res.json(result);
         } catch (err) {
             res.status(400).json({ success: false, error: err.message });

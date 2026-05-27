@@ -26,8 +26,8 @@ function parseTunnelHeader() {
   };
 }
 
-function resolveTunnelContext() {
-  const instances = manager.getInstances();
+async function resolveTunnelContext() {
+  const instances = (await manager.getInstances());
   const preferred = instances.find(i => i.tunnelId);
   if (preferred) {
     return {
@@ -56,8 +56,8 @@ function validatePayload(payload) {
   if (!['http', 'https', 'tcp'].includes(proto)) throw new Error('internalProtocol inválido.');
 }
 
-function assertNoDuplicateHostnamePath(hostname, routePath, skipInstanceId) {
-  const all = manager.getInstances();
+async function assertNoDuplicateHostnamePath(hostname, routePath, skipInstanceId) {
+  const all = (await manager.getInstances());
   const normHost = String(hostname || '').trim().toLowerCase();
   const normPath = String(routePath || '/').trim() || '/';
   for (const inst of all) {
@@ -73,10 +73,10 @@ function assertNoDuplicateHostnamePath(hostname, routePath, skipInstanceId) {
   }
 }
 
-function upsertCloudflareRouteFromHosting(payload) {
+async function upsertCloudflareRouteFromHosting(payload) {
   validatePayload(payload);
 
-  const tunnelCtx = resolveTunnelContext();
+  const tunnelCtx = await resolveTunnelContext();
   if (!tunnelCtx.tunnelId) {
     throw new Error('Configure primeiro o Cloudflare Manager (login/túnel) antes de publicar externamente.');
   }
@@ -101,8 +101,8 @@ function upsertCloudflareRouteFromHosting(payload) {
     targetPort: internalPort
   };
 
-  const current = manager.getInstances().find(i => i.id === instanceId);
-  assertNoDuplicateHostnamePath(publicHost, routePath, current ? instanceId : '');
+  const current = (await manager.getInstances()).find(i => i.id === instanceId);
+  await assertNoDuplicateHostnamePath(publicHost, routePath, current ? instanceId : '');
 
   let instance;
   if (current) {
@@ -111,7 +111,7 @@ function upsertCloudflareRouteFromHosting(payload) {
       const sameOwner = String(r.name || '') === `Hosting:${serviceName}`;
       return !(sameHostPath || sameOwner);
     });
-    instance = manager.updateInstance(instanceId, {
+    instance = await manager.updateInstance(instanceId, {
       name: tunnelName,
       type: 'service',
       protected: false,
@@ -122,7 +122,7 @@ function upsertCloudflareRouteFromHosting(payload) {
       routes: [...kept, route]
     });
   } else {
-    instance = manager.createInstance({
+    instance = await manager.createInstance({
       id: instanceId,
       name: tunnelName,
       type: 'service',
@@ -159,13 +159,13 @@ function upsertCloudflareRouteFromHosting(payload) {
   };
 }
 
-function removeCloudflareRouteFromHosting({ serviceName, publicHost, routePath = '/', tunnelName }) {
+async function removeCloudflareRouteFromHosting({ serviceName, publicHost, routePath = '/', tunnelName }) {
   const host = String(publicHost || '').trim().toLowerCase();
   const pathNorm = String(routePath || '/').trim() || '/';
   const expectedName = serviceName ? `Hosting:${String(serviceName).trim()}` : '';
   const instanceId = tunnelName ? `inst-hosting-${slug(tunnelName)}` : '';
 
-  const instances = manager.getInstances();
+  const instances = (await manager.getInstances());
   const target = instances.find(i => i.id === instanceId) || instances.find(i => (i.routes || []).some(r =>
     String(r.hostname || '').toLowerCase() === host && String(r.path || '/') === pathNorm
   ));
@@ -178,11 +178,11 @@ function removeCloudflareRouteFromHosting({ serviceName, publicHost, routePath =
   });
 
   if (kept.length === 0) {
-    manager.deleteInstance(target.id);
+    await manager.deleteInstance(target.id);
     return { success: true, removed: true, deletedInstance: true };
   }
 
-  manager.updateInstance(target.id, { routes: kept });
+  await manager.updateInstance(target.id, { routes: kept });
   return { success: true, removed: true, deletedInstance: false };
 }
 

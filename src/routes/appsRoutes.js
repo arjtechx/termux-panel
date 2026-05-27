@@ -1,14 +1,16 @@
 const express = require('express');
 const router = express.Router();
-const fs = require('fs');
-const path = require('path');
 const { checkPortStatus } = require('../utils/shell');
-
-const APPS_FILE = path.join(__dirname, '..', '..', 'config', 'apps.json');
+const db = require('../utils/db');
 
 router.get('/', async (req, res) => {
     try {
-        const apps = JSON.parse(fs.readFileSync(APPS_FILE, 'utf8'));
+        const rows = await db.query('SELECT * FROM apps');
+        const apps = rows.map(r => {
+            const data = r.data || {};
+            return { id: r.id, name: r.name, port: r.port, type: r.type, ...data };
+        });
+        
         const enhancedApps = await Promise.all(apps.map(async (app) => {
             app.status = await checkPortStatus(app.port);
             return app;
@@ -19,26 +21,27 @@ router.get('/', async (req, res) => {
     }
 });
 
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
     try {
-        const apps = JSON.parse(fs.readFileSync(APPS_FILE, 'utf8'));
         const newApp = { id: Date.now().toString(), ...req.body };
-        apps.push(newApp);
-        fs.writeFileSync(APPS_FILE, JSON.stringify(apps, null, 2));
+        await db.query('INSERT INTO apps (id, name, port, type, `data`) VALUES (?, ?, ?, ?, ?)', 
+            [newApp.id, newApp.name || 'App', newApp.port || 0, newApp.type || '', JSON.stringify(newApp)]);
         res.json(newApp);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-router.put('/:id', (req, res) => {
+router.put('/:id', async (req, res) => {
     try {
-        let apps = JSON.parse(fs.readFileSync(APPS_FILE, 'utf8'));
-        const index = apps.findIndex(a => a.id === req.params.id);
-        if (index !== -1) {
-            apps[index] = { ...apps[index], ...req.body };
-            fs.writeFileSync(APPS_FILE, JSON.stringify(apps, null, 2));
-            res.json(apps[index]);
+        const id = req.params.id;
+        const rows = await db.query('SELECT * FROM apps WHERE id = ?', [id]);
+        if (rows.length > 0) {
+            const existing = { ...rows[0], ...(rows[0].data || {}) };
+            const updated = { ...existing, ...req.body };
+            await db.query('UPDATE apps SET name=?, port=?, type=?, `data`=? WHERE id=?', 
+                [updated.name || 'App', updated.port || 0, updated.type || '', JSON.stringify(updated), id]);
+            res.json(updated);
         } else {
             res.status(404).json({ error: 'App not found' });
         }
@@ -47,11 +50,9 @@ router.put('/:id', (req, res) => {
     }
 });
 
-router.delete('/:id', (req, res) => {
+router.delete('/:id', async (req, res) => {
     try {
-        let apps = JSON.parse(fs.readFileSync(APPS_FILE, 'utf8'));
-        apps = apps.filter(a => a.id !== req.params.id);
-        fs.writeFileSync(APPS_FILE, JSON.stringify(apps, null, 2));
+        await db.query('DELETE FROM apps WHERE id = ?', [req.params.id]);
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });

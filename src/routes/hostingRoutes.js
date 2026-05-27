@@ -10,14 +10,39 @@ const { runCmd, chownToUser } = require('../utils/shell');
 
 const PREFIX = systemConfig.prefix;
 const NGINX_CONF_DIR = systemConfig.nginx_conf_dir || `${PREFIX}/etc/nginx/conf.d`;
-const HOSTING_FILE = path.join(__dirname, '..', '..', 'config', 'hosting.json');
+const db = require('../utils/db');
+
+async function getServices() {
+    const rows = await db.query('SELECT * FROM hosting');
+    return rows.map(r => ({ id: r.id, domain: r.domain, port: r.port, rootDir: r.root_dir, phpVersion: r.php_version, ...(r.data || {}) }));
+}
+
+async function saveServices(services) {
+    const existingRows = await db.query('SELECT id FROM hosting');
+    const existingIds = existingRows.map(r => String(r.id));
+    const newIds = services.map(s => String(s.id));
+    
+    const toDelete = existingIds.filter(id => !newIds.includes(id));
+    for (const id of toDelete) {
+        await db.query('DELETE FROM hosting WHERE id = ?', [id]);
+    }
+    
+    for (const svc of services) {
+        const rows = await db.query('SELECT id FROM hosting WHERE id = ?', [svc.id]);
+        if (rows.length > 0) {
+            await db.query('UPDATE hosting SET domain=?, port=?, root_dir=?, php_version=?, `data`=? WHERE id=?', 
+                [svc.domain || svc.name || '', svc.port || svc.listenPort || 0, svc.rootDir || svc.path || '', svc.phpVersion || '', JSON.stringify(svc), svc.id]);
+        } else {
+            await db.query('INSERT INTO hosting (id, domain, port, root_dir, php_version, `data`) VALUES (?, ?, ?, ?, ?, ?)',
+                [svc.id, svc.domain || svc.name || '', svc.port || svc.listenPort || 0, svc.rootDir || svc.path || '', svc.phpVersion || '', JSON.stringify(svc)]);
+        }
+    }
+}
 const HOSTING_LOGS_DIR = path.join(__dirname, '..', '..', 'logs');
 const NGINX_REPAIR_SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'nginx-termux-repair.sh');
 const HOSTING_BASE_DIR = '/data/data/com.termux/files/home/www';
 
-if (!fs.existsSync(HOSTING_FILE)) {
-    fs.writeFileSync(HOSTING_FILE, '[]');
-}
+
 if (!fs.existsSync(HOSTING_LOGS_DIR)) {
     fs.mkdirSync(HOSTING_LOGS_DIR, { recursive: true });
 }
@@ -238,7 +263,7 @@ async function killProcessHoldingPort(port) {
 
 async function handleNodeErrorAndRestart(svcId, stderrStr) {
     try {
-        const services = JSON.parse(fs.readFileSync(HOSTING_FILE, 'utf8'));
+        const services = (await getServices());
         const index = services.findIndex(s => s.id === svcId);
         if (index === -1) return;
         const svc = services[index];
@@ -250,7 +275,7 @@ async function handleNodeErrorAndRestart(svcId, stderrStr) {
             const missingModule = match[1];
             if (!missingModule.startsWith('.') && !missingModule.startsWith('/') && !path.isAbsolute(missingModule)) {
                 services[index].isInstallingModule = true;
-                fs.writeFileSync(HOSTING_FILE, JSON.stringify(services, null, 2));
+                await saveServices(services);
 
                 const fullLogPath = path.join(__dirname, '..', '..', svc.logFile);
                 const logStream = fs.createWriteStream(fullLogPath, { flags: 'a' });
@@ -258,11 +283,11 @@ async function handleNodeErrorAndRestart(svcId, stderrStr) {
                 logStream.write(`[cPanel Auto-Setup] Executando 'npm install ${missingModule}'...\n`);
                 
                 exec(`npm install ${missingModule}`, { cwd: svc.path }, async (err, stdout, stderr) => {
-                    const freshServices = JSON.parse(fs.readFileSync(HOSTING_FILE, 'utf8'));
+                    const freshServices = (await getServices());
                     const freshIdx = freshServices.findIndex(s => s.id === svcId);
                     if (freshIdx !== -1) {
                         freshServices[freshIdx].isInstallingModule = false;
-                        fs.writeFileSync(HOSTING_FILE, JSON.stringify(freshServices, null, 2));
+                        await saveServices(freshServices);
                     }
 
                     if (err) {
@@ -390,7 +415,7 @@ async function startNodeProcess(svc, index, services, customCmd) {
 }
 
 async function restartNodeService(svcId) {
-    const services = JSON.parse(fs.readFileSync(HOSTING_FILE, 'utf8'));
+    const services = (await getServices());
     const index = services.findIndex(s => s.id === svcId);
     if (index === -1) return;
     const svc = services[index];
@@ -402,13 +427,13 @@ async function restartNodeService(svcId) {
     }
 
     await startNodeProcess(svc, index, services);
-    fs.writeFileSync(HOSTING_FILE, JSON.stringify(services, null, 2));
+    await saveServices(services);
 }
 
 
 router.get('/', async (req, res) => {
     try {
-        const services = JSON.parse(fs.readFileSync(HOSTING_FILE, 'utf8'));
+        const services = (await getServices());
         const enriched = await Promise.all(services.map(async (svc) => {
             if (svc.type === 'node' || svc.type === 'python') {
                 let processAlive = false;
@@ -437,7 +462,7 @@ router.get('/', async (req, res) => {
             }
             return svc;
         }));
-        fs.writeFileSync(HOSTING_FILE, JSON.stringify(enriched, null, 2));
+        await saveServices(enriched);
         res.json({ success: true, services: enriched });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -761,7 +786,7 @@ router.post('/', async (req, res) => {
                     }
                 } else if (tunnelAction === 'existing' && tunnelExistingId) {
                     // Fetch existing instance
-                    const instances = cfManager.getInstances();
+                    const instances = (await cfManager.getInstances());
                     const existingInst = instances.find(i => i.id === tunnelExistingId);
                     
                     if (existingInst) {
@@ -817,7 +842,7 @@ router.post('/', async (req, res) => {
             }
         }
 
-        const services = JSON.parse(fs.readFileSync(HOSTING_FILE, 'utf8'));
+        const services = (await getServices());
         const newService = {
             id,
             name: displayName,
@@ -849,7 +874,7 @@ router.post('/', async (req, res) => {
         };
         
         services.push(newService);
-        fs.writeFileSync(HOSTING_FILE, JSON.stringify(services, null, 2));
+        await saveServices(services);
         
         // Responde imediatamente para evitar timeout em acesso via domínio tunelado.
         // Pós-ações rodam assíncronas em background.
@@ -870,7 +895,7 @@ router.post('/', async (req, res) => {
                 try {
                     const cfManager = require('../../modules/cloudflared/manager');
                     const cfProcess = require('../../modules/cloudflared/process');
-                    const inst = cfManager.getInstances().find(i => i.id === newService.cloudflareTunnel.instanceId);
+                    const inst = (await cfManager.getInstances()).find(i => i.id === newService.cloudflareTunnel.instanceId);
                     if (inst && inst.tunnelId) {
                         cfProcess.stopInstance(newService.cloudflareTunnel.instanceId);
                         await new Promise(r => setTimeout(r, 1000));
@@ -897,7 +922,7 @@ router.post('/:id/edit', async (req, res) => {
     const { name, domain, listenPort, targetPort, startCmd, path: sitePath, autoRestart } = req.body;
 
     try {
-        const services = JSON.parse(fs.readFileSync(HOSTING_FILE, 'utf8'));
+        const services = (await getServices());
         const index = services.findIndex(s => s.id === id);
         if (index === -1) {
             return res.status(404).json({ error: 'Serviço não encontrado' });
@@ -1086,7 +1111,7 @@ router.post('/:id/edit', async (req, res) => {
         }
 
         services[index] = svc;
-        fs.writeFileSync(HOSTING_FILE, JSON.stringify(services, null, 2));
+        await saveServices(services);
 
         res.json({ success: true, service: svc });
 
@@ -1098,7 +1123,7 @@ router.post('/:id/edit', async (req, res) => {
 
 router.delete('/:id', async (req, res) => {
     try {
-        const services = JSON.parse(fs.readFileSync(HOSTING_FILE, 'utf8'));
+        const services = (await getServices());
         const svc = services.find(s => s.id === req.params.id);
         let cloudflare = { removed: false };
 
@@ -1135,7 +1160,7 @@ router.delete('/:id', async (req, res) => {
         if (fs.existsSync(fullErrorLogPath)) fs.unlinkSync(fullErrorLogPath);
 
         const filtered = services.filter(s => s.id !== req.params.id);
-        fs.writeFileSync(HOSTING_FILE, JSON.stringify(filtered, null, 2));
+        await saveServices(filtered);
 
         try {
             if (svc.cloudflareTunnel && svc.cloudflareTunnel.hostname) {
@@ -1157,9 +1182,9 @@ router.delete('/:id', async (req, res) => {
     }
 });
 
-router.get('/:id/scripts', (req, res) => {
+router.get('/:id/scripts', async (req, res) => {
     try {
-        const services = JSON.parse(fs.readFileSync(HOSTING_FILE, 'utf8'));
+        const services = (await getServices());
         const svc = services.find(s => s.id === req.params.id);
         if (!svc) {
             return res.status(404).json({ error: 'Serviço não encontrado' });
@@ -1190,7 +1215,7 @@ router.get('/dns-check', async (req, res) => {
 router.post('/:id/toggle', async (req, res) => {
     const { active, customCmd } = req.body;
     try {
-        const services = JSON.parse(fs.readFileSync(HOSTING_FILE, 'utf8'));
+        const services = (await getServices());
         const index = services.findIndex(s => s.id === req.params.id);
         if (index === -1) {
             return res.status(404).json({ error: 'Serviço não encontrado' });
@@ -1240,16 +1265,16 @@ router.post('/:id/toggle', async (req, res) => {
             services[index].status = 'stopped';
         }
         
-        fs.writeFileSync(HOSTING_FILE, JSON.stringify(services, null, 2));
+        await saveServices(services);
         res.json({ success: true, service: services[index] });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-router.get('/:id/logs', (req, res) => {
+router.get('/:id/logs', async (req, res) => {
     try {
-        const services = JSON.parse(fs.readFileSync(HOSTING_FILE, 'utf8'));
+        const services = (await getServices());
         const svc = services.find(s => s.id === req.params.id);
         if (!svc) {
             return res.status(404).json({ error: 'Serviço não encontrado' });
@@ -1271,8 +1296,8 @@ router.get('/:id/logs', (req, res) => {
 
 setInterval(async () => {
     try {
-        if (!fs.existsSync(HOSTING_FILE)) return;
-        const services = JSON.parse(fs.readFileSync(HOSTING_FILE, 'utf8'));
+        
+        const services = (await getServices());
         let modified = false;
         
         for (let i = 0; i < services.length; i++) {
@@ -1332,7 +1357,7 @@ setInterval(async () => {
         }
         
         if (modified) {
-            fs.writeFileSync(HOSTING_FILE, JSON.stringify(services, null, 2));
+            await saveServices(services);
         }
     } catch (e) {
         console.error('[Daemon Auto-Restart] Erro:', e.message);

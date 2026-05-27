@@ -1,10 +1,7 @@
 const express = require('express');
-const fs = require('fs');
-const path = require('path');
 const axios = require('axios');
 const net = require('net');
-
-const NOIP_FILE = path.join(__dirname, '..', '..', 'config', 'noip.json');
+const db = require('../utils/db');
 
 module.exports = function(io) {
     const router = express.Router();
@@ -12,6 +9,23 @@ module.exports = function(io) {
     let noipInterval = null;
     let noipStatus = { status: 'Parado', lastUpdate: 'N/A', currentIP: 'N/A', log: [] };
     let lastSent = { ipv4: '', ipv6: '' };
+
+    async function getConfig() {
+        const rows = await db.query('SELECT value FROM settings WHERE `key` = ?', ['noip_config']);
+        if (rows.length > 0 && rows[0].value) {
+            try { return JSON.parse(rows[0].value); } catch(e) {}
+        }
+        return {};
+    }
+
+    async function saveConfig(config) {
+        const rows = await db.query('SELECT `key` FROM settings WHERE `key` = ?', ['noip_config']);
+        if (rows.length > 0) {
+            await db.query('UPDATE settings SET value=? WHERE `key`=?', [JSON.stringify(config), 'noip_config']);
+        } else {
+            await db.query('INSERT INTO settings (`key`, value) VALUES (?, ?)', ['noip_config', JSON.stringify(config)]);
+        }
+    }
 
     function logNoip(msg) {
         noipStatus.log.unshift(`[${new Date().toLocaleTimeString()}] ${msg}`);
@@ -33,9 +47,8 @@ module.exports = function(io) {
 
     async function startNoipUpdater() {
         if (noipInterval) clearInterval(noipInterval);
-        if (!fs.existsSync(NOIP_FILE)) return;
-
-        const config = JSON.parse(fs.readFileSync(NOIP_FILE, 'utf8'));
+        
+        const config = await getConfig();
         if (!config.username || !config.password || !config.hostname) {
             noipStatus.status = 'Erro: Credenciais incompletas';
             logNoip('Erro: configure usuário, senha e hostname antes de iniciar.');
@@ -130,16 +143,17 @@ module.exports = function(io) {
         logNoip('Serviço NO-IP parado.');
     }
 
-    if (fs.existsSync(NOIP_FILE)) {
+    // Auto start check on load
+    setTimeout(async () => {
         try {
-            const config = JSON.parse(fs.readFileSync(NOIP_FILE, 'utf8'));
+            const config = await getConfig();
             if (config.autostart) startNoipUpdater();
         } catch (_) {}
-    }
+    }, 1000);
 
-    router.get('/', (req, res) => {
+    router.get('/', async (req, res) => {
         try {
-            const config = fs.existsSync(NOIP_FILE) ? JSON.parse(fs.readFileSync(NOIP_FILE, 'utf8')) : {};
+            const config = await getConfig();
             res.json({
                 status: noipStatus.status,
                 currentIp: noipStatus.currentIP,
@@ -156,9 +170,9 @@ module.exports = function(io) {
         }
     });
 
-    router.post('/', (req, res) => {
+    router.post('/', async (req, res) => {
         try {
-            const prev = fs.existsSync(NOIP_FILE) ? JSON.parse(fs.readFileSync(NOIP_FILE, 'utf8')) : {};
+            const prev = await getConfig();
             const body = req.body || {};
             const ipType = ['ipv4', 'ipv6', 'both'].includes(body.ipType) ? body.ipType : 'both';
             const interval = Number.isInteger(body.interval) && body.interval > 0 ? body.interval : 15;
@@ -171,7 +185,7 @@ module.exports = function(io) {
                 autostart: !!body.autostart
             };
 
-            fs.writeFileSync(NOIP_FILE, JSON.stringify(next, null, 2));
+            await saveConfig(next);
             if (next.autostart) {
                 startNoipUpdater();
             } else {

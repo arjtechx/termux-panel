@@ -11,6 +11,11 @@ const { Client } = require('ssh2');
 const mysql = require('mysql2/promise');
 const net = require('net');
 const crypto = require('crypto');
+const db = require('./src/utils/db');
+
+// Inicia banco de dados e migrações
+db.initDb().catch(e => console.error('[DB] Erro de inicialização:', e.message));
+
 
 const app = express();
 const SERVER_CONFIG_FILE = path.join(__dirname, 'config', 'server.json');
@@ -163,11 +168,11 @@ app.use(checkAuth);
 
 app.use(express.static(path.join(__dirname, 'public')));
 // --- Auth Routes ---
-app.post('/api/login', (req, res) => {
+app.post('/api/login', async (req, res) => {
     const { user, pass } = req.body;
     try {
-        const auth = readAuthConfig();
-        if (user === auth.user && pass === auth.pass) {
+        const users = await db.query('SELECT * FROM users WHERE username = ?', [user]);
+        if (users.length > 0 && users[0].password === pass) {
             req.session.authenticated = true;
             setTimeout(() => {
                 cleanupDuplicatePanelProcesses().catch(() => {});
@@ -186,7 +191,6 @@ app.post('/api/logout', (req, res) => {
     req.session.destroy();
     res.json({ success: true });
 });
-
 
 // --- Modular Router Mounts ---
 const appsRoutes = require('./src/routes/appsRoutes');

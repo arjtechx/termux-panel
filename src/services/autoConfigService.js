@@ -1,4 +1,4 @@
-﻿const { detectServices } = require('./serviceDiscoveryService');
+const { detectServices } = require('./serviceDiscoveryService');
 const { FILES, readJson, writeJson, logLine } = require('./autoConfigStorage');
 const { buildCloudflaredConfig, writeCloudflaredConfig } = require('./cloudflareService');
 const { buildNginxConfig, writeNginxConfig } = require('./nginxService');
@@ -101,10 +101,10 @@ async function apply(input) {
   return { success: true, backup, validation: runtimeVal, syntaxValidation: syntaxVal };
 }
 
-function syncAutoconfigCloudflaredInstance(conf) {
+async function syncAutoconfigCloudflaredInstance(conf) {
   const state = readJson(FILES.services, { services: [] });
   const services = Array.isArray(state.services) ? state.services : [];
-  const tunnelContext = resolveTunnelContext();
+  const tunnelContext = await resolveTunnelContext();
 
   const routes = [];
   if (conf.mode === 'cloudflare_nginx') {
@@ -148,13 +148,13 @@ function syncAutoconfigCloudflaredInstance(conf) {
     logLine('services', 'Autoconfiguração sem tunnelId detectado: instância salva sem auto-restart para evitar loop de erro.');
   }
 
-  const exists = cloudflaredManager.getInstances().some(i => i.id === AUTOCONFIG_INSTANCE_ID);
-  if (exists) cloudflaredManager.updateInstance(AUTOCONFIG_INSTANCE_ID, payload);
-  else cloudflaredManager.createInstance(payload);
+  const exists = (await cloudflaredManager.getInstances()).some(i => i.id === AUTOCONFIG_INSTANCE_ID);
+  if (exists) await cloudflaredManager.updateInstance(AUTOCONFIG_INSTANCE_ID, payload);
+  else await cloudflaredManager.createInstance(payload);
 }
 
-function resolveTunnelContext() {
-  const instances = cloudflaredManager.getInstances();
+async function resolveTunnelContext() {
+  const instances = (await cloudflaredManager.getInstances());
   const preferred = instances.find(i => i.id !== AUTOCONFIG_INSTANCE_ID && i.tunnelId);
   if (preferred) {
     return {

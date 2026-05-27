@@ -12,26 +12,49 @@ const CONFIGS_DIR = path.join(PANEL_DIR, 'config', 'cloudflared');
 const HOME_DIR = process.env.HOME || os.homedir() || '/data/data/com.termux/files/home';
 
 if (!fs.existsSync(CONFIGS_DIR)) fs.mkdirSync(CONFIGS_DIR, { recursive: true });
-if (!fs.existsSync(path.dirname(DB_FILE))) fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
-if (!fs.existsSync(DB_FILE)) fs.writeFileSync(DB_FILE, JSON.stringify([]));
 
-function getInstances() {
+
+
+const db = require('../../src/utils/db');
+
+async function getInstances() {
     try {
-        const instances = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-        if (!Array.isArray(instances)) return [];
-        return instances.map((inst) => ({
-            ...inst,
-            protected: inst.protected === true || inst.protected === 'true' || inst.protected === 1,
-            routes: normalizeRoutes(inst.routes || [])
-        }));
-    } catch {
+        const rows = await db.query('SELECT * FROM cloudflared_instances');
+        return rows.map(r => {
+            const data = typeof r.data === 'string' ? JSON.parse(r.data) : (r.data || {});
+            return {
+                ...data,
+                id: r.id,
+                name: r.name,
+                token: r.token,
+                protected: data.protected === true || data.protected === 'true' || data.protected === 1,
+                routes: normalizeRoutes(data.routes || [])
+            };
+        });
+    } catch (e) {
+        console.error('[CLOUDFLARED] Erro ao buscar instâncias:', e.message);
         return [];
     }
 }
 
-function saveInstances(instances) {
-    fs.writeFileSync(DB_FILE, JSON.stringify(instances, null, 2));
-}
+async function saveInstances(instances) {
+    try {
+        const ids = instances.map(i => i.id).filter(Boolean);
+        if (ids.length > 0) {
+            await db.query('DELETE FROM cloudflared_instances WHERE id NOT IN (' + ids.map(() => '?').join(',') + ')', ids);
+        } else {
+            await db.query('DELETE FROM cloudflared_instances');
+        }
+        for (const inst of instances) {
+            await db.query(
+                'INSERT INTO cloudflared_instances (id, name, token, `data`) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE name = VALUES(name), token = VALUES(token), `data` = VALUES(`data`)',
+                [inst.id, inst.name, inst.token || '', JSON.stringify(inst)]
+            );
+        }
+    } catch (e) {
+        console.error('[CLOUDFLARED] Erro ao salvar instâncias:', e.message);
+    }
+} 
 
 function normalizeRouteType(routeType, protocol) {
     const explicit = (routeType || '').toLowerCase();
@@ -93,22 +116,6 @@ function normalizeRoutes(routes) {
     return routes.map(r => normalizeRoute(r || {}));
 }
 
-function applyDnsRoutesForInstance(inst) {
-    const warnings = [];
-    if (!inst || !inst.tunnelId) return warnings;
-    const binary = processManager.getCloudflaredBinaryPath();
-    if (!inst.routes || !Array.isArray(inst.routes)) return warnings;
-    inst.routes.forEach(route => {
-        if (!route || !route.hostname) return;
-        try {
-            execSync(`"${binary}" tunnel route dns "${inst.tunnelId}" "${route.hostname}"`, { stdio: 'ignore' });
-        } catch (e) {
-            warnings.push(`Falha ao vincular DNS ${route.hostname}: ${e.message}`);
-        }
-    });
-    return warnings;
-}
-
 function generateYamlForInstance(instance, tempNext = false) {
     let yaml = `# Configuração automática gerada pelo Termux Panel - Instância: ${instance.name}\n`;
     
@@ -168,8 +175,8 @@ function generateYamlForInstance(instance, tempNext = false) {
     return configPath;
 }
 
-function createInstance(data) {
-    const instances = getInstances();
+async function createInstance(data) {
+    const instances = (await getInstances());
     
     const id = data.id || `inst-${Date.now()}`;
     const newInstance = {
@@ -202,17 +209,13 @@ function createInstance(data) {
     }
 
     generateYamlForInstance(newInstance);
-    const dnsWarnings = applyDnsRoutesForInstance(newInstance);
-    if (dnsWarnings.length) {
-        newInstance.dnsWarnings = dnsWarnings;
-    }
     instances.push(newInstance);
-    saveInstances(instances);
+    await saveInstances(instances);
     return newInstance;
 }
 
-function updateInstance(id, data) {
-    const instances = getInstances();
+async function updateInstance(id, data) {
+    const instances = (await getInstances());
     const idx = instances.findIndex(i => i.id === id);
     if (idx === -1) throw new Error('Instância não encontrada.');
 
@@ -231,16 +234,26 @@ function updateInstance(id, data) {
     generateYamlForInstance(inst); // Regenerate yaml
     
     // Roteamento DNS automático para novas rotas
-    const dnsWarnings = applyDnsRoutesForInstance(inst);
-    if (dnsWarnings.length) inst.dnsWarnings = dnsWarnings;
+    if (inst.tunnelId) {
+        const binary = processManager.getCloudflaredBinaryPath();
+        if (inst.routes && Array.isArray(inst.routes)) {
+            inst.routes.forEach(route => {
+                if (route.hostname) {
+                    try {
+                        execSync(`"${binary}" tunnel route dns "${inst.tunnelId}" "${route.hostname}"`, { stdio: 'ignore' });
+                    } catch (e) {}
+                }
+            });
+        }
+    }
 
     instances[idx] = inst;
-    saveInstances(instances);
+    await saveInstances(instances);
     return inst;
 }
 
-function deleteInstance(id) {
-    let instances = getInstances();
+async function deleteInstance(id) {
+    let instances = (await getInstances());
     const inst = instances.find(i => i.id === id);
     if (!inst) throw new Error('Instância não encontrada.');
     if (inst.protected) throw new Error('Esta instância está protegida e não pode ser excluída.');
@@ -251,13 +264,13 @@ function deleteInstance(id) {
     // Não apagamos o credentialsFile para segurança, o usuário pode ter outros usos
 
     instances = instances.filter(i => i.id !== id);
-    saveInstances(instances);
+    await saveInstances(instances);
     return { success: true };
 }
 
-function initAutoStart() {
+async function initAutoStart() {
     console.log('[CLOUDFLARED] Iniciando túneis salvos...');
-    const instances = getInstances();
+    const instances = (await getInstances());
     instances.forEach(inst => {
         // Como o design quer que os túneis subam no autoStart
         try {
@@ -360,7 +373,7 @@ function startCloudflareLogin() {
 }
 
 
-function migrateLegacyRoutes() {
+async function migrateLegacyRoutes() {
     const oldRoutesFile = path.join(PANEL_DIR, 'data', 'cloudflared-routes.json');
     if (!fs.existsSync(oldRoutesFile)) {
         return { success: false, error: 'Arquivo antigo (cloudflared-routes.json) não encontrado.' };
@@ -378,7 +391,7 @@ function migrateLegacyRoutes() {
         return { success: false, error: 'Nenhuma rota no arquivo antigo.' };
     }
 
-    const instances = getInstances();
+    const instances = (await getInstances());
     const jaMigrado = instances.some(i => i.name === 'Túneis Legados (Migração)');
     if (jaMigrado) {
         return { success: true, message: 'Já migrado anteriormente.' };
@@ -431,7 +444,7 @@ function migrateLegacyRoutes() {
 
 
     instances.push(novaInstancia);
-    saveInstances(instances);
+    await saveInstances(instances);
     return { success: true, message: 'Rotas antigas resgatadas com sucesso!' };
 }
 
