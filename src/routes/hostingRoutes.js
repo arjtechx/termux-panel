@@ -744,7 +744,7 @@ router.post('/', async (req, res) => {
                 if (tunnelAction === 'new') {
                     // Create new Cloudflare instance
                     const instName = safeServiceName(tunnelName ? tunnelName.trim() : cleanName);
-                    const newInst = cfManager.createInstance({
+                    const newInst = await cfManager.createInstance({
                         name: instName,
                         type: 'service',
                         protected: false,
@@ -766,7 +766,7 @@ router.post('/', async (req, res) => {
                     if (!newInst.tunnelId) {
                         // Evita deixar instância quebrada (sem tunnelId) que falha ao iniciar/reiniciar.
                         try {
-                            if (newInst.id) cfManager.deleteInstance(newInst.id);
+                            if (newInst.id) await cfManager.deleteInstance(newInst.id);
                         } catch (_) {}
                         cfTunnelInstanceId = null;
                         cfWarning = 'Serviço criado, mas o túnel não recebeu tunnelId. Verifique login Cloudflare e permissões DNS da zona.';
@@ -805,7 +805,7 @@ router.post('/', async (req, res) => {
                             });
                             
                             // Save updated instance which recreates configuration yaml
-                            const updatedInst = cfManager.updateInstance(existingInst.id, {
+                            const updatedInst = await cfManager.updateInstance(existingInst.id, {
                                 routes: updatedRoutes
                             });
                             cfTunnelInstanceId = updatedInst.id;

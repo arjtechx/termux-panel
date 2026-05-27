@@ -1,4 +1,4 @@
-﻿const express = require('express');
+const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const autoConfig = require('../services/autoConfigService');
@@ -31,7 +31,7 @@ router.post('/generate-ssh', async (req, res) => {
   try {
     const domain = String(req.body.domain || '').trim();
     if (!domain) throw new Error('Domínio principal é obrigatório.');
-    res.json(autoConfig.generateSshAccess({
+    res.json(await autoConfig.generateSshAccess({
       domain,
       sshHostname: req.body.sshHostname,
       targetHost: req.body.targetHost,

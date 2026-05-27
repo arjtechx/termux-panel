@@ -1639,6 +1639,82 @@ async function saveDbSetup() {
     }
 }
 
+async function showExternalDbMigration() {
+    await preloadDbSetupFields();
+    const setup = await safeFetch(`${API_BASE}/db/setup`);
+    const currentDb = setup?.config?.database || 'painel';
+    const dbNameEl = document.getElementById('externalDbName');
+    if (dbNameEl && !dbNameEl.value) dbNameEl.value = currentDb;
+    const statusEl = document.getElementById('externalDbMigrationStatus');
+    if (statusEl) statusEl.textContent = '';
+    document.getElementById('dbExternalMigrationModal')?.classList.remove('hidden');
+    if (window.lucide) lucide.createIcons();
+}
+
+function closeExternalDbMigration() {
+    document.getElementById('dbExternalMigrationModal')?.classList.add('hidden');
+}
+
+async function migrateToExternalDb() {
+    const body = {
+        host: document.getElementById('externalDbHost')?.value.trim(),
+        port: Number(document.getElementById('externalDbPort')?.value || 3306),
+        user: document.getElementById('externalDbUser')?.value.trim(),
+        password: document.getElementById('externalDbPass')?.value || '',
+        database: document.getElementById('externalDbName')?.value.trim()
+    };
+
+    if (!body.host || !body.user || !body.database) {
+        showToast('Preencha host, usuario e nome do banco externo.', 'warning');
+        return;
+    }
+    if (!/^[A-Za-z0-9_]+$/.test(body.database)) {
+        showToast('Nome do banco invalido. Use apenas letras, numeros e underline.', 'warning');
+        return;
+    }
+    if (!confirm('Migrar agora para o banco externo? O banco antigo sera preservado e a configuracao do painel sera alterada somente apos validacao.')) {
+        return;
+    }
+
+    const btn = document.getElementById('btnExternalDbMigration');
+    const statusEl = document.getElementById('externalDbMigrationStatus');
+    const originalHtml = btn?.innerHTML;
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i data-lucide="loader" class="spin"></i> Migrando...';
+    }
+    if (statusEl) {
+        statusEl.textContent = 'Testando conexao externa, gerando dump e importando dados. Isso pode levar alguns minutos.';
+    }
+    logToDbConsole('db_migrate_external', `Iniciando migracao para ${body.host}:${body.port}/${body.database}...`);
+    if (window.lucide) lucide.createIcons();
+
+    try {
+        const result = await safeFetch(`${API_BASE}/db/migrate-external`, 'POST', body, 180000);
+        if (!result?.success) {
+            throw new Error('Falha na migracao. Verifique os logs do servidor.');
+        }
+
+        const msg = `Migracao concluida.\nOrigem preservada: ${result.sourceDatabase}\nDestino: ${result.targetDatabase}\nTabelas: ${result.sourceTables} -> ${result.targetTables}\nBackup SQL: ${result.backupFile}`;
+        logToDbConsole('db_migrate_external', msg);
+        showToast('Migracao concluida. Reiniciando painel...', 'success');
+        if (statusEl) statusEl.textContent = 'Migracao validada. Reiniciando o painel para usar o banco externo...';
+
+        await safeFetch(`${API_BASE}/system/restart`, 'POST', {}, 10000);
+        setTimeout(() => window.location.reload(), 6000);
+    } catch (err) {
+        logToDbConsole('db_migrate_external', err.message, true);
+        showToast(err.message, 'error');
+        if (statusEl) statusEl.textContent = err.message;
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+            if (window.lucide) lucide.createIcons();
+        }
+    }
+}
+
 
 // ============================================================
 //  PHPMYADMIN SSO

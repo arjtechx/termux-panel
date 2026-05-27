@@ -214,11 +214,11 @@ function upsertSshRouteInInstance(inst, sshHostname, options = {}) {
   return [...kept, sshRoute];
 }
 
-function ensureAutoconfigBaseInstance(domain, tunnelContext) {
-  const instances = cloudflaredManager.getInstances();
+async function ensureAutoconfigBaseInstance(domain, tunnelContext) {
+  const instances = await cloudflaredManager.getInstances();
   const existing = instances.find(i => i.id === AUTOCONFIG_INSTANCE_ID);
   if (existing) return existing;
-  return cloudflaredManager.createInstance({
+  return await cloudflaredManager.createInstance({
     id: AUTOCONFIG_INSTANCE_ID,
     name: AUTOCONFIG_INSTANCE_NAME,
     type: 'service',
@@ -231,18 +231,18 @@ function ensureAutoconfigBaseInstance(domain, tunnelContext) {
   });
 }
 
-function generateSshAccess({ domain, sshHostname, targetHost, targetPort }) {
+async function generateSshAccess({ domain, sshHostname, targetHost, targetPort }) {
   const cleanDomain = String(domain || '').trim();
   if (!cleanDomain) throw new Error('Domínio principal é obrigatório.');
 
-  const tunnelContext = resolveTunnelContext();
+  const tunnelContext = await resolveTunnelContext();
   const desiredHostname = String(sshHostname || '').trim().toLowerCase() || deriveSshHostname(cleanDomain);
   const desiredTargetHost = String(targetHost || 'localhost').trim() || 'localhost';
   const desiredTargetPort = Number.parseInt(targetPort, 10) || 8022;
   if (desiredTargetPort < 1 || desiredTargetPort > 65535) {
     throw new Error('Porta SSH inválida. Use 1-65535.');
   }
-  const instances = cloudflaredManager.getInstances();
+  const instances = await cloudflaredManager.getInstances();
   const existing = instances.find(i => i.id === AUTOCONFIG_INSTANCE_ID);
   const base = existing || {
     id: AUTOCONFIG_INSTANCE_ID,
@@ -274,11 +274,11 @@ function generateSshAccess({ domain, sshHostname, targetHost, targetPort }) {
   };
 
   const updated = existing
-    ? cloudflaredManager.updateInstance(AUTOCONFIG_INSTANCE_ID, payload)
-    : cloudflaredManager.createInstance(payload);
+    ? await cloudflaredManager.updateInstance(AUTOCONFIG_INSTANCE_ID, payload)
+    : await cloudflaredManager.createInstance(payload);
   logLine('services', `Acesso SSH gerado: ${desiredHostname} -> ssh://${desiredTargetHost}:${desiredTargetPort}`);
 
-  const afterUpsert = cloudflaredManager.getInstances().find(i => i.id === AUTOCONFIG_INSTANCE_ID);
+  const afterUpsert = (await cloudflaredManager.getInstances()).find(i => i.id === AUTOCONFIG_INSTANCE_ID);
   if (!afterUpsert) {
     throw new Error('Falha ao salvar a instância SSH na lista do Cloudflared Manager.');
   }

@@ -808,6 +808,9 @@
                         <button class="btn btn-secondary btn-sm" onclick="showDbSetup()">
                             <i data-lucide="settings"></i> Configurar Root
                         </button>
+                        <button class="btn btn-secondary btn-sm" onclick="showExternalDbMigration()">
+                            <i data-lucide="send"></i> Migrar Externo
+                        </button>
                         <button class="btn btn-primary btn-sm" onclick="openPhpMyAdmin(null)">
                             <i data-lucide="shield-check"></i> Root phpMyAdmin
                         </button>
@@ -1063,6 +1066,51 @@
                         <div class="form-actions" style="margin-top:20px">
                             <button class="btn btn-success" onclick="saveDbSetup()">Salvar e Testar</button>
                             <button class="btn btn-secondary" onclick="document.getElementById('dbSetupModal').classList.add('hidden')">Cancelar</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="dbExternalMigrationModal" class="modal hidden">
+                    <div class="modal-box">
+                        <div class="modal-header">
+                            <h3><i data-lucide="send"></i> Migrar para MariaDB/MySQL externo</h3>
+                            <button class="btn btn-secondary btn-sm" onclick="closeExternalDbMigration()">✕</button>
+                        </div>
+                        <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:16px;">
+                            O painel vai gerar um dump do banco atual, importar no servidor externo, validar a quantidade de tabelas e preservar o banco antigo como backup.
+                        </p>
+                        <div class="form-stack">
+                            <div class="form-row">
+                                <div>
+                                    <label class="form-label">Host externo</label>
+                                    <input type="text" id="externalDbHost" placeholder="ex: db.exemplo.com" required>
+                                </div>
+                                <div>
+                                    <label class="form-label">Porta</label>
+                                    <input type="number" id="externalDbPort" value="3306" min="1" max="65535">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div>
+                                    <label class="form-label">Usuario</label>
+                                    <input type="text" id="externalDbUser" placeholder="usuario_mysql" required>
+                                </div>
+                                <div>
+                                    <label class="form-label">Senha</label>
+                                    <input type="password" id="externalDbPass" placeholder="Senha do servidor externo">
+                                </div>
+                            </div>
+                            <div>
+                                <label class="form-label">Nome do Banco</label>
+                                <input type="text" id="externalDbName" placeholder="painel" pattern="^[A-Za-z0-9_]+$" required>
+                            </div>
+                        </div>
+                        <div id="externalDbMigrationStatus" class="muted-note" style="margin-top:12px;"></div>
+                        <div class="form-actions" style="margin-top:20px">
+                            <button class="btn btn-success" id="btnExternalDbMigration" onclick="migrateToExternalDb()">
+                                <i data-lucide="database-backup"></i> Testar e Migrar
+                            </button>
+                            <button class="btn btn-secondary" onclick="closeExternalDbMigration()">Cancelar</button>
                         </div>
                     </div>
                 </div>
@@ -1893,7 +1941,7 @@
 <div class="fm-toast-container" id="fm-toast-container"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.180"></script>
+<script src="filemanager.js?v=0.2.181"></script>
 <script>
 window.toggleHostingTunnelFields = window.toggleHostingTunnelFields || function () {
     var checked = document.getElementById('hsCreateTunnel') && document.getElementById('hsCreateTunnel').checked;

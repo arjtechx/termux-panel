@@ -144,6 +144,99 @@ router.get('/api/db/setup', (req, res) => {
     }
 });
 
+// Migrar banco atual para servidor MariaDB/MySQL externo mantendo a origem intacta.
+router.post('/api/db/migrate-external', async (req, res) => {
+    let sourceConn;
+    let externalConn;
+
+    try {
+        const currentConfig = getFullDbConfig();
+        const sourceDatabase = assertDbName(currentConfig.database || req.body.sourceDatabase || 'painel', 'Banco atual');
+        const externalConfig = {
+            host: assertSqlHost(req.body.host || ''),
+            port: Number.parseInt(req.body.port ?? 3306, 10) || 3306,
+            user: assertUsername(req.body.user || '', 'Usuario externo'),
+            password: String(req.body.password ?? ''),
+            database: assertDbName(req.body.database || sourceDatabase, 'Banco externo')
+        };
+
+        if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
+        const ts = new Date().toISOString().replace(/[:.]/g, '-');
+        const backupFile = `db-MIGRATE-EXTERNAL-${sourceDatabase}-${ts}.sql`;
+        const backupPath = safeBackupPath(backupFile);
+
+        sourceConn = await mysql.createConnection({
+            host: currentConfig.host || '127.0.0.1',
+            port: currentConfig.port || 3306,
+            user: currentConfig.user || 'root',
+            password: currentConfig.password || '',
+            database: sourceDatabase
+        });
+
+        const [[{ count: sourceTables }]] = await sourceConn.query(
+            'SELECT COUNT(*) AS count FROM information_schema.tables WHERE table_schema = ?',
+            [sourceDatabase]
+        );
+
+        await runCmd(`mysqldump ${mysqlCliArgs({ ...currentConfig, database: sourceDatabase })} ${shellQuote(sourceDatabase)} > ${shellQuote(backupPath)}`);
+
+        externalConn = await mysql.createConnection({
+            host: externalConfig.host,
+            port: externalConfig.port,
+            user: externalConfig.user,
+            password: externalConfig.password,
+            multipleStatements: false
+        });
+        await externalConn.ping();
+        await externalConn.query(`CREATE DATABASE IF NOT EXISTS ${quoteDbIdentifier(externalConfig.database)} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+        await externalConn.end();
+        externalConn = null;
+
+        await runCmd(`mysql ${mysqlCliArgs(externalConfig)} ${shellQuote(externalConfig.database)} < ${shellQuote(backupPath)}`);
+
+        externalConn = await mysql.createConnection(externalConfig);
+        const [[{ count: targetTables }]] = await externalConn.query(
+            'SELECT COUNT(*) AS count FROM information_schema.tables WHERE table_schema = ?',
+            [externalConfig.database]
+        );
+
+        if (Number(sourceTables) !== Number(targetTables)) {
+            throw new Error(`Validacao falhou: origem tem ${sourceTables} tabelas e destino tem ${targetTables}. Configuracao local nao foi alterada.`);
+        }
+
+        const configBackupSuffix = `.before-external-${ts}.json`;
+        if (fs.existsSync(DB_FULL_FILE)) {
+            fs.copyFileSync(DB_FULL_FILE, `${DB_FULL_FILE}${configBackupSuffix}`);
+        }
+        if (fs.existsSync(DB_FILE)) {
+            fs.copyFileSync(DB_FILE, `${DB_FILE}${configBackupSuffix}`);
+        }
+
+        fs.writeFileSync(DB_FULL_FILE, JSON.stringify(externalConfig, null, 4));
+        fs.writeFileSync(DB_FILE, JSON.stringify(externalConfig, null, 4));
+
+        logDbAction('MIGRATE_EXTERNAL', `${sourceDatabase} -> ${externalConfig.host}/${externalConfig.database}`, req.session?.adminUser, 'SUCCESS');
+
+        res.json({
+            success: true,
+            message: `Migracao concluida. Banco antigo preservado e dump salvo em ${backupFile}.`,
+            backupFile,
+            sourceDatabase,
+            targetDatabase: externalConfig.database,
+            sourceTables,
+            targetTables,
+            oldDatabasePreserved: true,
+            restartRequired: true
+        });
+    } catch (err) {
+        logDbAction('MIGRATE_EXTERNAL', req.body?.database || 'external', req.session?.adminUser, 'FAILED', err.message);
+        res.status(500).json({ success: false, error: err.message });
+    } finally {
+        try { if (sourceConn) await sourceConn.end(); } catch (_) {}
+        try { if (externalConn) await externalConn.end(); } catch (_) {}
+    }
+});
+
 // Criar banco + usuário
 router.post('/api/db/create', async (req, res) => {
     const { dbName, dbUser, dbPass } = req.body;
