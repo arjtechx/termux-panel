@@ -1013,6 +1013,10 @@ input:focus, textarea:focus { outline: none; border-color: var(--primary); }
 .mobile-nav { display: none; }
 
 @media (max-width: 768px) {
+    #tab-database .db-table-manager {
+        grid-template-columns: 1fr;
+    }
+
     .sidebar { position: fixed; top: var(--navbar-h, 64px); left: 0; height: calc(100vh - 64px); transform: translateX(-100%); z-index: 150; transition: transform 0.3s ease; }
     .sidebar.open { transform: translateX(0); }
     .sidebar-backdrop.show { display: block; }
@@ -1503,6 +1507,87 @@ input:focus, textarea:focus { outline: none; border-color: var(--primary); }
     line-height: 1.6;
     overflow: auto;
     white-space: pre-wrap;
+}
+
+#tab-database .db-table-manager {
+    display: grid;
+    grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+    gap: 12px;
+}
+
+#tab-database .db-table-sidebar {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    min-height: 240px;
+    max-height: 420px;
+    overflow: auto;
+    padding: 8px;
+    background: var(--surface2);
+}
+
+#tab-database .db-table-button {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 9px 10px;
+    border: 0;
+    border-radius: 6px;
+    color: var(--text);
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+}
+
+#tab-database .db-table-button:hover,
+#tab-database .db-table-button.active {
+    background: rgba(99, 102, 241, 0.12);
+}
+
+#tab-database .db-table-preview {
+    min-width: 0;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface2);
+}
+
+#tab-database .db-table-preview-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+#tab-database .db-table-scroll {
+    overflow: auto;
+    max-height: 420px;
+}
+
+#tab-database .db-data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+}
+
+#tab-database .db-data-table th,
+#tab-database .db-data-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    vertical-align: top;
+    white-space: nowrap;
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#tab-database .db-data-table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--surface);
 }
 
 #tab-database .disabled-action {

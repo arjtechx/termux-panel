@@ -385,6 +385,11 @@ function sanitizeUsername(name) {
     return name.replace(/[^a-zA-Z0-9_-]/g, '');
 }
 
+function sanitizeTableName(name) {
+    if (!name) return '';
+    return String(name).replace(/[^a-zA-Z0-9_$-]/g, '').slice(0, 128);
+}
+
 function assertDbName(name, label = 'Banco') {
     const raw = String(name || '').trim();
     if (!/^[A-Za-z0-9_]{1,64}$/.test(raw)) {
@@ -457,6 +462,15 @@ function sqlLiteral(value) {
     if (typeof value === 'boolean') return value ? '1' : '0';
     if (typeof value === 'object') return quoteSqlString(JSON.stringify(value));
     return quoteSqlString(value);
+}
+
+function normalizeDbCell(value) {
+    if (value === null || value === undefined) return null;
+    if (Buffer.isBuffer(value)) return `[binary ${value.length} bytes]`;
+    if (value instanceof Date) return value.toISOString();
+    if (typeof value === 'bigint') return value.toString();
+    if (typeof value === 'object') return JSON.stringify(value);
+    return value;
 }
 
 async function listDatabaseTables(conn, database) {
@@ -606,6 +620,76 @@ router.get('/api/db/details', async (req, res) => {
         });
     } catch(err) {
         res.status(500).json({ error: err.message });
+    }
+});
+
+router.get('/api/db/tables', async (req, res) => {
+    const dbName = sanitizeDbName(req.query.db);
+    if (!dbName) return res.status(400).json({ success: false, error: 'Nome do banco e obrigatorio.' });
+
+    try {
+        const conn = await getDbConn();
+        const [tables] = await conn.query(`
+            SELECT
+                table_name AS name,
+                engine,
+                table_rows AS rows_count,
+                ROUND((data_length + index_length) / 1024 / 1024, 2) AS size_mb,
+                table_collation AS collation
+            FROM information_schema.tables
+            WHERE table_schema = ? AND table_type = 'BASE TABLE'
+            ORDER BY table_name
+        `, [dbName]);
+        await conn.end();
+        res.json({ success: true, database: dbName, tables });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+router.get('/api/db/table', async (req, res) => {
+    const dbName = sanitizeDbName(req.query.db);
+    const tableName = sanitizeTableName(req.query.table);
+    const limit = Math.min(Math.max(Number.parseInt(req.query.limit || '50', 10) || 50, 1), 200);
+    const page = Math.max(Number.parseInt(req.query.page || '1', 10) || 1, 1);
+    const offset = (page - 1) * limit;
+
+    if (!dbName || !tableName) {
+        return res.status(400).json({ success: false, error: 'Banco e tabela sao obrigatorios.' });
+    }
+
+    let conn;
+    try {
+        conn = await getDbConn();
+        const [[exists]] = await conn.query(
+            'SELECT COUNT(*) AS count FROM information_schema.tables WHERE table_schema = ? AND table_name = ? AND table_type = ?',
+            [dbName, tableName, 'BASE TABLE']
+        );
+        if (!Number(exists.count)) {
+            return res.status(404).json({ success: false, error: 'Tabela nao encontrada.' });
+        }
+
+        const [columns] = await conn.query(
+            'SELECT column_name AS name, column_type AS type, is_nullable AS nullable, column_key AS column_key FROM information_schema.columns WHERE table_schema = ? AND table_name = ? ORDER BY ordinal_position',
+            [dbName, tableName]
+        );
+        const [[countRow]] = await conn.query(`SELECT COUNT(*) AS total FROM ${quoteAnyIdentifier(dbName)}.${quoteAnyIdentifier(tableName)}`);
+        const [rows] = await conn.query(`SELECT * FROM ${quoteAnyIdentifier(dbName)}.${quoteAnyIdentifier(tableName)} LIMIT ${limit} OFFSET ${offset}`);
+
+        res.json({
+            success: true,
+            database: dbName,
+            table: tableName,
+            page,
+            limit,
+            total: Number(countRow.total || 0),
+            columns,
+            rows: rows.map(row => Object.fromEntries(Object.entries(row).map(([key, value]) => [key, normalizeDbCell(value)])))
+        });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    } finally {
+        try { if (conn) await conn.end(); } catch (_) {}
     }
 });
 
@@ -1451,7 +1535,6 @@ function getConfiguredNginxPorts(prefix) {
         ? [path.join(prefix, 'etc', 'nginx', 'conf.d')] 
         : ['/etc/nginx/conf.d', '/etc/nginx/sites-enabled'];
     const ports = new Set();
-    ports.add(8080); // Porta padrão do phpMyAdmin SSO
     
     for (const confDir of confDirs) {
         try {
@@ -1520,17 +1603,11 @@ router.get('/api/mariadb/diagnose', async (req, res) => {
                 mysqlDirOwner = statOut.trim();
             }
         } catch(e) {}
-        
-        // 4. PHP e phpMyAdmin (Mocked on WSL for local validation without breaking Termux)
-        const phpRunning = isTermux 
-            ? await runCmd('pgrep -f "php-fpm"').then(r => !!r).catch(() => false)
-            : true;
-        const pmaDir = isTermux 
-            ? path.join(prefix, 'share', 'phpmyadmin') 
-            : '/usr/share/phpmyadmin';
-        const pmaExists = isTermux ? fs.existsSync(pmaDir) : true;
-        const configIncExists = isTermux ? fs.existsSync(path.join(pmaDir, 'config.inc.php')) : true;
-        const autologinExists = isTermux ? fs.existsSync(path.join(pmaDir, 'autologin.php')) : true;
+        // 4. Gerenciador SQL nativo do painel
+        const phpRunning = true;
+        const pmaExists = true;
+        const configIncExists = true;
+        const autologinExists = true;
         
         // 5. Nginx Diagnóstico Avançado (Evita falsos negativos no WSL/Linux)
         const hasNginxBinary = await runCmd('command -v nginx').then(r => !!r).catch(() => false);
@@ -1597,11 +1674,8 @@ router.get('/api/mariadb/diagnose', async (req, res) => {
         } else if (!nginxProcessActive && activePorts.length === 0) {
             nginxRunning = false;
         }
- 
-        const pmaVhostFile = isTermux 
-            ? path.join(prefix, 'etc', 'nginx', 'conf.d', 'phpmyadmin.conf')
-            : '/etc/nginx/conf.d/phpmyadmin.conf';
-        const pmaVhostExists = isTermux ? fs.existsSync(pmaVhostFile) : true;
+        const pmaVhostFile = '';
+        const pmaVhostExists = true;
         
                 // 6. Teste de SSO local (Desativado - Transicionado para Cookie Auth)
         let tokenValidationOk = true;

@@ -41,6 +41,7 @@ SUDO=""
 ENV_PREFIX=""
 MYSQL_DIR=""
 INSTALLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DB_MODE="local"
 
 function repair_nginx_bootstrap() {
     if [ "$IS_TERMUX" != true ]; then
@@ -316,6 +317,13 @@ function configure_database_interactive() {
     echo -e "${CYAN}════════════════════════════════════════${RESET}"
     echo ""
 
+    if [ "$DB_MODE" = "external" ]; then
+        read -p "  Host MariaDB/MySQL externo [ex: 192.168.1.107]: " DB_HOST
+        DB_HOST=${DB_HOST:-127.0.0.1}
+    else
+        DB_HOST="127.0.0.1"
+    fi
+
     read -p "  Usuário Admin DB    [padrão: admin]: " DB_USER
     DB_USER=${DB_USER:-admin}
 
@@ -330,10 +338,15 @@ function configure_database_interactive() {
     DB_NAME=${DB_NAME:-painel}
 
     echo ""
-    log "Criando banco '$DB_NAME' e usuário '$DB_USER'..."
+    log "Criando/verificando banco '$DB_NAME' e usuário '$DB_USER'..."
 
-    # Executa os SQLs como root sem senha (instalação nova)
-    mysql -u root 2>/dev/null <<EOSQL
+    if [ "$DB_MODE" = "external" ]; then
+        mariadb -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASS" -e "CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\`;" 2>/dev/null || \
+        mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASS" -e "CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\`;" 2>/dev/null || \
+        warn "Nao foi possivel criar/verificar o banco externo automaticamente. O painel tentara inicializar as tabelas no primeiro boot."
+    else
+        # Executa os SQLs como root sem senha (instalação nova)
+        mysql -u root 2>/dev/null <<EOSQL
 CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\`;
 CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';
 CREATE USER IF NOT EXISTS '${DB_USER}'@'127.0.0.1' IDENTIFIED BY '${DB_PASS}';
@@ -342,22 +355,23 @@ GRANT ALL PRIVILEGES ON *.* TO '${DB_USER}'@'127.0.0.1' WITH GRANT OPTION;
 FLUSH PRIVILEGES;
 EOSQL
 
-    local sql_result=$?
+        local sql_result=$?
 
-    if [ $sql_result -ne 0 ]; then
-        warn "Criação via root sem senha falhou. Tentando alternativa..."
-        mysql -u root -e "
-            CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\`;
-            CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';
-            GRANT ALL PRIVILEGES ON *.* TO '${DB_USER}'@'localhost' WITH GRANT OPTION;
-            FLUSH PRIVILEGES;" 2>/dev/null || true
+        if [ $sql_result -ne 0 ]; then
+            warn "Criação via root sem senha falhou. Tentando alternativa..."
+            mysql -u root -e "
+                CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\`;
+                CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';
+                GRANT ALL PRIVILEGES ON *.* TO '${DB_USER}'@'localhost' WITH GRANT OPTION;
+                FLUSH PRIVILEGES;" 2>/dev/null || true
+        fi
     fi
 
     # ─── [9] SALVAR CONFIG ───────────────────────────────────────
     mkdir -p config
     cat <<EOF > config/database.json
 {
-    "host": "127.0.0.1",
+    "host": "$DB_HOST",
     "port": $DB_PORT,
     "database": "$DB_NAME",
     "user": "$DB_USER",
@@ -368,7 +382,7 @@ EOF
     # Manter compatibilidade com db.json (usado pelo server.js)
     cat <<EOF > config/db.json
 {
-    "host": "127.0.0.1",
+    "host": "$DB_HOST",
     "port": $DB_PORT,
     "database": "$DB_NAME",
     "user": "$DB_USER",
@@ -384,11 +398,12 @@ function test_db_connection() {
     local cfg_user="$1"
     local cfg_pass="$2"
     local cfg_port="${3:-3306}"
+    local cfg_host="${4:-127.0.0.1}"
 
     log "Testando conexão com MariaDB..."
-    if mariadb -u "$cfg_user" -p"$cfg_pass" -P "$cfg_port" -e "SHOW DATABASES;" >/dev/null 2>&1; then
+    if mariadb -h "$cfg_host" -u "$cfg_user" -p"$cfg_pass" -P "$cfg_port" -e "SHOW DATABASES;" >/dev/null 2>&1; then
         ok "Conexão OK! Bancos disponíveis:"
-        mariadb -u "$cfg_user" -p"$cfg_pass" -P "$cfg_port" -e "SHOW DATABASES;" 2>/dev/null
+        mariadb -h "$cfg_host" -u "$cfg_user" -p"$cfg_pass" -P "$cfg_port" -e "SHOW DATABASES;" 2>/dev/null
         return 0
     else
         err "Falha ao conectar com usuário '$cfg_user'."
@@ -400,51 +415,18 @@ function test_db_connection() {
         if [[ "$retry_opt" == "1" ]]; then
             configure_database_interactive
             if [ -f config/database.json ]; then
-                local u p po
+                local u p po h
                 u=$(python3 -c "import json,sys; d=json.load(open('config/database.json')); print(d.get('user',''))" 2>/dev/null)
                 p=$(python3 -c "import json,sys; d=json.load(open('config/database.json')); print(d.get('password',''))" 2>/dev/null)
                 po=$(python3 -c "import json,sys; d=json.load(open('config/database.json')); print(d.get('port',3306))" 2>/dev/null)
-                test_db_connection "$u" "$p" "$po"
+                h=$(python3 -c "import json,sys; d=json.load(open('config/database.json')); print(d.get('host','127.0.0.1'))" 2>/dev/null)
+                test_db_connection "$u" "$p" "$po" "$h"
             fi
         fi
         return 1
     fi
 }
 
-# ─── [11] GERAR config.inc.php DO PHPMYADMIN ────────────────────
-function generate_phpmyadmin_config() {
-    local pma_cfg_dir=""
-    if [ -d "$ENV_PREFIX/share/phpmyadmin" ]; then
-        pma_cfg_dir="$ENV_PREFIX/share/phpmyadmin"
-    elif [ -d "/usr/share/phpmyadmin" ]; then
-        pma_cfg_dir="/usr/share/phpmyadmin"
-    fi
-
-    if [ -z "$pma_cfg_dir" ]; then
-        warn "phpMyAdmin não encontrado. Pulando configuração."
-        return
-    fi
-
-    local db_user db_pass
-    db_user=$(python3 -c "import json; d=json.load(open('config/database.json')); print(d.get('user','admin'))" 2>/dev/null || echo "admin")
-    db_pass=$(python3 -c "import json; d=json.load(open('config/database.json')); print(d.get('password',''))" 2>/dev/null || echo "")
-
-    cat <<EOF > "$pma_cfg_dir/config.inc.php"
-<?php
-\$cfg['blowfish_secret'] = '$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 32)';
-\$i = 0;
-\$i++;
-\$cfg['Servers'][\$i]['auth_type']   = 'config';
-\$cfg['Servers'][\$i]['host']        = '127.0.0.1';
-\$cfg['Servers'][\$i]['port']        = '3306';
-\$cfg['Servers'][\$i]['user']        = '${db_user}';
-\$cfg['Servers'][\$i]['password']    = '${db_pass}';
-\$cfg['Servers'][\$i]['AllowNoPassword'] = true;
-EOF
-    ok "config.inc.php do phpMyAdmin gerado em: $pma_cfg_dir"
-}
-
-# ─── [12] RECUPERAÇÃO DO MARIADB (Recovery) ─────────────────────
 function mariadb_recovery() {
     show_banner
     echo -e "${RED}════════════════════════════════════════${RESET}"
@@ -537,46 +519,59 @@ function install_panel() {
     sleep 2
 
     echo ""
-    log "Verificando instalação existente do MariaDB..."
-    local mariadb_found
-    mariadb_found=$(detect_mariadb)
+    ask "Onde o painel deve usar o banco de dados?"
+    echo "  [1] MariaDB local neste aparelho (padrão)"
+    echo "  [2] MariaDB/MySQL externo"
+    read -p "Opção: " db_mode_opt
+    if [[ "$db_mode_opt" == "2" ]]; then
+        DB_MODE="external"
+        log "Banco externo selecionado. MariaDB local nao sera iniciado nem configurado."
+        repair_packages
+    else
+        DB_MODE="local"
+        log "Verificando instalação existente do MariaDB..."
+        local mariadb_found
+        mariadb_found=$(detect_mariadb)
 
-    if [ "$mariadb_found" = "true" ]; then
-        echo ""
-        warn "MariaDB existente detectado!"
-        echo ""
-        echo "  [1] Reutilizar instalação atual"
-        echo "  [2] Reinstalar do zero (REMOVE dados antigos)"
-        echo ""
-        read -p "Opção: " db_opt
+        if [ "$mariadb_found" = "true" ]; then
+            echo ""
+            warn "MariaDB existente detectado!"
+            echo ""
+            echo "  [1] Reutilizar instalação atual"
+            echo "  [2] Reinstalar do zero (REMOVE dados antigos)"
+            echo ""
+            read -p "Opção: " db_opt
 
-        if [[ "$db_opt" == "2" ]]; then
-            remove_mariadb_completely
+            if [[ "$db_opt" == "2" ]]; then
+                remove_mariadb_completely
+                repair_packages
+                install_mariadb_clean
+                init_mariadb
+            else
+                log "Reutilizando MariaDB existente..."
+                repair_packages
+            fi
+        else
+            log "Nenhum MariaDB encontrado. Instalando..."
             repair_packages
             install_mariadb_clean
             init_mariadb
-        else
-            log "Reutilizando MariaDB existente..."
-            repair_packages
         fi
-    else
-        log "Nenhum MariaDB encontrado. Instalando..."
-        repair_packages
-        install_mariadb_clean
-        init_mariadb
-    fi
 
-    # Subir MariaDB
-    generate_my_cnf
-    start_mariadb_temp
+        # Subir MariaDB
+        generate_my_cnf
+        start_mariadb_temp
+    fi
 
     # Verificar deps restantes (nodejs, nginx, etc.)
     log "Instalando outras dependências..."
     if [ "$IS_TERMUX" = true ]; then
-        pkg install -y nodejs nginx cloudflared termux-api coreutils procps zip unzip psmisc lsof python php php-fpm phpmyadmin 2>/dev/null || true
+        pkg install -y nodejs nginx cloudflared termux-api coreutils procps zip unzip psmisc lsof python php php-fpm mariadb 2>/dev/null || true
         repair_nginx_bootstrap
     else
-        ${SUDO}apt-get install -y nodejs nginx coreutils procps zip unzip psmisc lsof python3 php-fpm 2>/dev/null || true
+        local mariadb_pkg="mariadb-client"
+        if [ "$DB_MODE" = "local" ]; then mariadb_pkg="mariadb-server mariadb-client"; fi
+        ${SUDO}apt-get install -y nodejs nginx coreutils procps zip unzip psmisc lsof python3 php-fpm $mariadb_pkg 2>/dev/null || true
     fi
 
     # Validação e Download do Cloudflared oficial se ausente ou quebrado
@@ -662,18 +657,14 @@ function install_panel() {
     configure_database_interactive
 
     # ─── Testar conexão ─────────────────────────────────────────
-    local db_user db_pass db_port
+    local db_user db_pass db_port db_host
     db_user=$(python3 -c "import json; d=json.load(open('config/database.json')); print(d.get('user','admin'))" 2>/dev/null || echo "admin")
     db_pass=$(python3 -c "import json; d=json.load(open('config/database.json')); print(d.get('password',''))" 2>/dev/null || echo "")
     db_port=$(python3 -c "import json; d=json.load(open('config/database.json')); print(d.get('port',3306))" 2>/dev/null || echo "3306")
-    test_db_connection "$db_user" "$db_pass" "$db_port"
-
-    # ─── phpMyAdmin ──────────────────────────────────────────────
-    generate_phpmyadmin_config
+    db_host=$(python3 -c "import json; d=json.load(open('config/database.json')); print(d.get('host','127.0.0.1'))" 2>/dev/null || echo "127.0.0.1")
+    test_db_connection "$db_user" "$db_pass" "$db_port" "$db_host"
     repair_nginx_bootstrap
-    if [ -f "scripts/setup-pma-sso.sh" ]; then
-        bash scripts/setup-pma-sso.sh || warn "SSO do phpMyAdmin nao foi configurado. Rode scripts/health-check.sh para detalhes."
-    fi
+    log "Gerenciador SQL nativo habilitado no painel."
 
     # ─── Ajustar Permissões Críticas ─────────────────────────────
     log "Garantindo permissões corretas para o usuário local..."
@@ -739,9 +730,7 @@ function update_panel() {
     fi
 
     repair_nginx_bootstrap
-    if [ -f "scripts/setup-pma-sso.sh" ]; then
-        bash scripts/setup-pma-sso.sh || warn "SSO do phpMyAdmin nao foi configurado. Rode scripts/health-check.sh para detalhes."
-    fi
+    log "Gerenciador SQL nativo habilitado no painel."
 
     # ─── Atualizando dependências Node...
     log "Atualizando dependências Node..."
@@ -875,4 +864,3 @@ while true; do
         *) warn "Opção inválida." ;;
     esac
 done
-

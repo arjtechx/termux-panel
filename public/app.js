@@ -1031,8 +1031,9 @@ async function fetchDatabases() {
 
     const dbNames = data.databases.map(db => typeof db === 'string' ? db : db.name);
     if (dbNames.length > 0) {
+        const preferredDb = dbNames.find(name => name === 'painel') || dbNames.find(name => !isSystemDatabase(name)) || dbNames[0];
         if (!currentDbManager || !dbNames.includes(currentDbManager)) {
-            selectDatabase(dbNames[0]);
+            selectDatabase(preferredDb);
         } else {
             selectDatabase(currentDbManager);
         }
@@ -1044,6 +1045,8 @@ async function fetchDatabases() {
 
 // Global state for database manager
 let currentDbManager = null;
+let currentDbTable = null;
+let currentDbTablePage = 1;
 
 function isSystemDatabase(db) {
     if (!db) return false;
@@ -1222,23 +1225,110 @@ async function handleCreateDatabase(e) {
     }
 }
 
-function getPhpMyAdminBaseUrl() {
-    // Sempre usar rota relativa do painel: funciona local e via túnel.
-    return '';
-}
-
-async function actionPhpMyAdmin() {
-    logToDbConsole('open_phpmyadmin --db=' + currentDbManager, `Redirecionando para o phpMyAdmin (Cookie Auth)...`);
-    const baseUrl = getPhpMyAdminBaseUrl();
-    const url = `${baseUrl}/phpmyadmin/index.php${currentDbManager ? '?db=' + encodeURIComponent(currentDbManager) : ''}`;
-    window.open(url, '_blank');
+async function actionOpenDbManager() {
+    if (!currentDbManager) return showToast('Selecione um banco primeiro.', 'warning');
+    const browser = document.getElementById('db-table-browser');
+    browser?.classList.remove('hidden');
+    await actionShowTables();
+    browser?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 async function actionShowTables() {
-    logToDbConsole('open_phpmyadmin_tables --db=' + currentDbManager, `Redirecionando para estrutura de tabelas no phpMyAdmin...`);
-    const baseUrl = getPhpMyAdminBaseUrl();
-    const tablesUrl = `${baseUrl}/phpmyadmin/index.php?db=${encodeURIComponent(currentDbManager)}&target=${encodeURIComponent('tbl_structure.php')}`;
-    window.open(tablesUrl, '_blank');
+    if (!currentDbManager) return showToast('Selecione um banco primeiro.', 'warning');
+    logToDbConsole('panel_db_manager --tables ' + currentDbManager, `Carregando tabelas de "${currentDbManager}" no gerenciador do painel...`);
+    const listEl = document.getElementById('db-table-list');
+    if (listEl) listEl.innerHTML = '<div class="muted-note">Carregando tabelas...</div>';
+    try {
+        const data = await safeFetch(`${API_BASE}/db/tables?db=${encodeURIComponent(currentDbManager)}`);
+        if (!data?.success) throw new Error(data?.error || 'Falha ao listar tabelas.');
+        renderDbTableList(data.tables || []);
+        const first = (data.tables || [])[0]?.name;
+        if (first) await openDbTable(first, 1);
+        else renderDbTableRows({ columns: [], rows: [], total: 0, page: 1, limit: 50, table: '' });
+    } catch (err) {
+        if (listEl) listEl.innerHTML = `<div class="muted-note">${escapeHtml(err.message)}</div>`;
+        logToDbConsole('panel_db_manager --tables ' + currentDbManager, err.message, true);
+    }
+}
+
+function closeDbTableBrowser() {
+    document.getElementById('db-table-browser')?.classList.add('hidden');
+}
+
+function renderDbTableList(tables) {
+    const listEl = document.getElementById('db-table-list');
+    if (!listEl) return;
+    if (!tables.length) {
+        listEl.innerHTML = '<div class="muted-note">Nenhuma tabela encontrada.</div>';
+        return;
+    }
+    listEl.innerHTML = tables.map(table => `
+        <button class="db-table-button ${table.name === currentDbTable ? 'active' : ''}" onclick="openDbTable(decodeURIComponent('${encodeURIComponent(table.name)}'), 1)">
+            <span>${escapeHtml(table.name)}</span>
+            <small>${Number(table.rows_count || 0).toLocaleString('pt-BR')}</small>
+        </button>
+    `).join('');
+}
+
+async function openDbTable(tableName, page = 1) {
+    if (!currentDbManager || !tableName) return;
+    currentDbTable = tableName;
+    currentDbTablePage = Math.max(page, 1);
+    document.querySelectorAll('#db-table-list .db-table-button').forEach(btn => {
+        btn.classList.toggle('active', btn.querySelector('span')?.textContent === tableName);
+    });
+    const titleEl = document.getElementById('db-table-title');
+    const metaEl = document.getElementById('db-table-meta');
+    const tableEl = document.getElementById('db-table-data');
+    if (titleEl) titleEl.textContent = tableName;
+    if (metaEl) metaEl.textContent = 'Carregando registros...';
+    if (tableEl) tableEl.innerHTML = '<tbody><tr><td>Carregando...</td></tr></tbody>';
+
+    try {
+        const data = await safeFetch(`${API_BASE}/db/table?db=${encodeURIComponent(currentDbManager)}&table=${encodeURIComponent(tableName)}&page=${currentDbTablePage}&limit=50`);
+        if (!data?.success) throw new Error(data?.error || 'Falha ao abrir tabela.');
+        renderDbTableRows(data);
+    } catch (err) {
+        if (metaEl) metaEl.textContent = err.message;
+        if (tableEl) tableEl.innerHTML = `<tbody><tr><td>${escapeHtml(err.message)}</td></tr></tbody>`;
+        logToDbConsole('panel_db_manager --table ' + tableName, err.message, true);
+    }
+}
+
+function renderDbTableRows(data) {
+    const tableEl = document.getElementById('db-table-data');
+    const titleEl = document.getElementById('db-table-title');
+    const metaEl = document.getElementById('db-table-meta');
+    const columns = data.columns || [];
+    const rows = data.rows || [];
+    if (titleEl) titleEl.textContent = data.table || 'Tabela';
+    if (metaEl) {
+        const start = rows.length ? ((data.page - 1) * data.limit) + 1 : 0;
+        const end = rows.length ? start + rows.length - 1 : 0;
+        metaEl.textContent = `${Number(data.total || 0).toLocaleString('pt-BR')} registros | exibindo ${start}-${end} | pagina ${data.page}`;
+    }
+    if (!tableEl) return;
+    if (!columns.length) {
+        tableEl.innerHTML = '<tbody><tr><td>Nenhuma coluna encontrada.</td></tr></tbody>';
+        return;
+    }
+    const head = `<thead><tr>${columns.map(col => `<th title="${escapeHtml(col.type || '')}">${escapeHtml(col.name)}</th>`).join('')}</tr></thead>`;
+    const body = rows.length
+        ? `<tbody>${rows.map(row => `<tr>${columns.map(col => `<td title="${escapeHtml(formatDbCell(row[col.name]))}">${escapeHtml(formatDbCell(row[col.name]))}</td>`).join('')}</tr>`).join('')}</tbody>`
+        : '<tbody><tr><td colspan="' + columns.length + '">Tabela vazia.</td></tr></tbody>';
+    tableEl.innerHTML = head + body;
+}
+
+function formatDbCell(value) {
+    if (value === null || value === undefined) return 'NULL';
+    if (typeof value === 'object') return JSON.stringify(value);
+    return String(value);
+}
+
+async function loadCurrentDbTableRows(delta) {
+    if (!currentDbTable) return;
+    const nextPage = Math.max(1, currentDbTablePage + delta);
+    await openDbTable(currentDbTable, nextPage);
 }
 
 async function actionBackup() {
@@ -1718,26 +1808,7 @@ async function migrateToExternalDb() {
 
 
 // ============================================================
-//  PHPMYADMIN SSO
-// ============================================================
-async function openPhpMyAdmin(dbName = null, targetPage = null) {
-    const baseUrl = getPhpMyAdminBaseUrl();
-    let url = `${baseUrl}/phpmyadmin/index.php`;
-    const params = [];
-    if (dbName) {
-        params.push(`db=${encodeURIComponent(dbName)}`);
-    }
-    if (targetPage) {
-        params.push(`target=${encodeURIComponent(targetPage)}`);
-    }
-    if (params.length > 0) {
-        url += '?' + params.join('&');
-    }
-    window.open(url, '_blank');
-}
-
-// ============================================================
-//  MARIADB & PHPMYADMIN DIAGNOSTICS
+//  MARIADB & DATABASE DIAGNOSTICS
 // ============================================================
 async function checkMariaDBDiagnostics() {
     const btn = document.getElementById('btn-run-diagnostics');
@@ -1832,20 +1903,20 @@ async function checkMariaDBDiagnostics() {
 
                     <div style="background:rgba(255,255,255,0.02); padding:14px; border-radius:6px; border:1px solid rgba(255,255,255,0.05);">
                         <h4 style="margin-top:0; margin-bottom:10px; font-size:0.875rem; display:flex; align-items:center; gap:6px; color:var(--primary);">
-                            <i data-lucide="globe" style="width:14px;height:14px;"></i> phpMyAdmin & PHP
+                            <i data-lucide="globe" style="width:14px;height:14px;"></i> Gerenciador SQL do Painel
                         </h4>
                         <div style="font-size:0.82rem; display:flex; flex-direction:column; gap:6px;">
                             <div style="display:flex; justify-content:space-between; align-items:center;">
                                 <span>PHP-FPM Ativo:</span> ${badge(d.php.phpRunning)}
                             </div>
                             <div style="display:flex; justify-content:space-between; align-items:center;">
-                                <span>DiretÃ³rio phpMyAdmin:</span> ${badge(d.php.pmaExists)}
+                                <span>Gerenciador nativo:</span> ${badge(d.php.pmaExists)}
                             </div>
                             <div style="display:flex; justify-content:space-between; align-items:center;">
-                                <span>config.inc.php SSO:</span> ${badge(d.php.configIncExists)}
+                                <span>API de tabelas:</span> ${badge(d.php.configIncExists)}
                             </div>
                             <div style="display:flex; justify-content:space-between; align-items:center;">
-                                <span>autologin.php SSO:</span> ${badge(d.php.autologinExists)}
+                                <span>API de registros:</span> ${badge(d.php.autologinExists)}
                             </div>
                         </div>
                     </div>
@@ -5071,7 +5142,7 @@ function cfrRenderRoutes(routes) {
     if (!listEl) return;
 
     if (!routes || routes.length === 0) {
-        listEl.innerHTML = `<tr><td colspan="7" style="padding: 20px; text-align: center; color: var(--text-muted);">Nenhuma rota configurada. Clique em "Preset phpMyAdmin" ou "Adicionar Rota" para comeÃ§ar.</td></tr>`;
+        listEl.innerHTML = `<tr><td colspan="7" style="padding: 20px; text-align: center; color: var(--text-muted);">Nenhuma rota configurada. Clique em "Adicionar Rota" para comecar.</td></tr>`;
         return;
     }
 
@@ -5214,7 +5285,7 @@ function cfrUpdateUrlPreview() {
     if (pathInput) {
         const isSsh = protocol === 'ssh';
         pathInput.disabled = isSsh;
-        pathInput.placeholder = isSsh ? 'Path não aplicável para SSH' : 'Ex: / ou /phpmyadmin/';
+        pathInput.placeholder = isSsh ? 'Path não aplicável para SSH' : 'Ex: / ou /api/';
         if (isSsh) pathInput.value = '';
     }
 }
@@ -5770,61 +5841,36 @@ async function cfrRestartCloudflared() {
 
 async function cfrCreatePresetPma() {
     try {
-        showToast('Criando presets do Proxy Reverso...', 'info');
-
-        const hasPma = cfrRoutesListCached.some(r => r.path === '/phpmyadmin/' || r.name.toLowerCase().includes('phpmyadmin'));
+        showToast('Criando preset do painel...', 'info');
         const hasMain = cfrRoutesListCached.some(r => r.path === '/');
-
-        let createdCount = 0;
-
-        if (!hasPma) {
-            const resPma = await fetch(`${API_BASE}/cloudflared/routes`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    name: 'phpMyAdmin',
-                    hostname: 'panel.arjtechbr.site',
-                    path: '/phpmyadmin/',
-                    order: 1,
-                    targetProtocol: 'http',
-                    targetHost: '127.0.0.1',
-                    targetPort: 8080,
-                    enabled: true
-                })
-            });
-            if (resPma.ok) createdCount++;
+        if (hasMain) {
+            showToast('O preset do painel ja existe na lista de rotas.', 'info');
+            return;
         }
 
-        if (!hasMain) {
-            const resMain = await fetch(`${API_BASE}/cloudflared/routes`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    name: 'Painel Principal',
-                    hostname: 'panel.arjtechbr.site',
-                    path: '/',
-                    order: 2,
-                    targetProtocol: 'http',
-                    targetHost: '127.0.0.1',
-                    targetPort: 8088,
-                    enabled: true
-                })
-            });
-            if (resMain.ok) createdCount++;
-        }
+        const resMain = await fetch(`${API_BASE}/cloudflared/routes`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name: 'Painel Principal',
+                hostname: 'panel.arjtechbr.site',
+                path: '/',
+                order: 1,
+                targetProtocol: 'http',
+                targetHost: '127.0.0.1',
+                targetPort: 8088,
+                enabled: true
+            })
+        });
 
-        if (createdCount > 0) {
-            showToast('Preset criado com sucesso!', 'success');
-            cfrFetchRoutes();
-        } else {
-            showToast('Os presets jÃ¡ existem na lista de rotas.', 'info');
-        }
+        if (!resMain.ok) throw new Error(`HTTP ${resMain.status}`);
+        showToast('Preset do painel criado com sucesso!', 'success');
+        cfrFetchRoutes();
     } catch (err) {
         console.error('[cfrCreatePresetPma] Erro:', err);
-        showToast('Erro ao criar presets: ' + err.message, 'error');
+        showToast('Erro ao criar preset: ' + err.message, 'error');
     }
 }
-
 function cfrShowLogs() {
     document.getElementById('cfLogModalTitle').textContent = `ðŸ“œ Logs: Cloudflared Ingress`;
     document.getElementById('cfLogsModal').classList.remove('hidden');

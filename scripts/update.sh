@@ -283,11 +283,7 @@ function ensure_cloudflared_binary() {
 }
 ensure_cloudflared_binary
 
-log "Aplicando configuração SSO do phpMyAdmin..."
-if [ -f "$SCRIPT_DIR/setup-pma-sso.sh" ]; then
-    bash "$SCRIPT_DIR/setup-pma-sso.sh"
-fi
-
+log "Gerenciador SQL nativo disponivel no painel."
 log "Verificando e iniciando PHP-FPM..."
 PHPOUT=$(php-fpm --daemonize 2>&1)
 if [ $? -eq 0 ]; then

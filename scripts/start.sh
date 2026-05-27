@@ -114,19 +114,29 @@ fi
 DB_USER="root"
 DB_PASS=""
 DB_PORT="3306"
+DB_HOST="127.0.0.1"
 DB_CONFIG="$PANEL_DIR/config/database.json"
 DB_FILE="$PANEL_DIR/config/db.json"
 
 if [ -f "$DB_CONFIG" ]; then
+    DB_HOST=$(python3 -c "import json; d=json.load(open('$DB_CONFIG')); print(d.get('host','127.0.0.1'))" 2>/dev/null || echo "127.0.0.1")
     DB_USER=$(python3 -c "import json; d=json.load(open('$DB_CONFIG')); print(d.get('user','root'))" 2>/dev/null || echo "root")
     DB_PASS=$(python3 -c "import json; d=json.load(open('$DB_CONFIG')); print(d.get('password',''))" 2>/dev/null || echo "")
     DB_PORT=$(python3 -c "import json; d=json.load(open('$DB_CONFIG')); print(d.get('port',3306))" 2>/dev/null || echo "3306")
 elif [ -f "$DB_FILE" ]; then
+    DB_HOST=$(python3 -c "import json; d=json.load(open('$DB_FILE')); print(d.get('host','127.0.0.1'))" 2>/dev/null || echo "127.0.0.1")
     DB_USER=$(python3 -c "import json; d=json.load(open('$DB_FILE')); print(d.get('user','root'))" 2>/dev/null || echo "root")
     DB_PASS=$(python3 -c "import json; d=json.load(open('$DB_FILE')); print(d.get('password',''))" 2>/dev/null || echo "")
 fi
 
 MYSQL_DATA_DIR="$PREFIX/var/lib/mysql"
+
+db_host_is_local() {
+    case "$DB_HOST" in
+        ""|"localhost"|"127.0.0.1"|"::1") return 0 ;;
+        *) return 1 ;;
+    esac
+}
 
 # ─── 1. PHP-FPM ─────────────────────────────────────────────────
 log "Verificando PHP-FPM..."
@@ -166,10 +176,10 @@ fi
 log "Verificando MariaDB..."
 
 mariadb_is_running() {
-    if mysql -u "$DB_USER" ${DB_PASS:+-p"$DB_PASS"} -e "SELECT 1" >/dev/null 2>&1; then
+    if mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" ${DB_PASS:+-p"$DB_PASS"} -e "SELECT 1" >/dev/null 2>&1; then
         return 0
     fi
-    if mysql -u root -e "SELECT 1" >/dev/null 2>&1; then
+    if db_host_is_local && mysql -u root -e "SELECT 1" >/dev/null 2>&1; then
         return 0
     fi
     return 1
@@ -229,7 +239,13 @@ start_mariadb_daemon() {
     return 1
 }
 
-if mariadb_is_running; then
+if ! db_host_is_local; then
+    if mariadb_is_running; then
+        ok "MariaDB externo conectado em $DB_HOST:$DB_PORT."
+    else
+        warn "MariaDB externo nao respondeu em $DB_HOST:$DB_PORT. O painel pode iniciar com funcoes limitadas."
+    fi
+elif mariadb_is_running; then
     ok "MariaDB já está rodando."
 else
     log "Iniciando MariaDB..."
@@ -246,12 +262,6 @@ if command -v nginx >/dev/null 2>&1; then
     if [ -f "$PANEL_DIR/scripts/nginx-termux-repair.sh" ]; then
         sh "$PANEL_DIR/scripts/nginx-termux-repair.sh" >"$PREFIX/tmp/termux-panel-nginx-repair.log" 2>&1 || \
             warn "Reparo NGINX/mime.types falhou."
-    fi
-
-    if [ -f "$PANEL_DIR/scripts/setup-pma-sso.sh" ]; then
-        bash "$PANEL_DIR/scripts/setup-pma-sso.sh" >/dev/null 2>&1 && \
-            ok "SSO do phpMyAdmin configurado." || \
-            warn "SSO do phpMyAdmin nao foi configurado."
     fi
 
     if [ "$USE_SU" = "true" ]; then

@@ -811,8 +811,8 @@
                         <button class="btn btn-secondary btn-sm" onclick="showExternalDbMigration()">
                             <i data-lucide="send"></i> Migrar Externo
                         </button>
-                        <button class="btn btn-primary btn-sm" onclick="openPhpMyAdmin(null)">
-                            <i data-lucide="shield-check"></i> Root phpMyAdmin
+                        <button class="btn btn-primary btn-sm" onclick="actionOpenDbManager()">
+                            <i data-lucide="table"></i> Gerenciador SQL
                         </button>
                     </div>
                 </div>
@@ -873,7 +873,7 @@
                         </button>
                     </div>
                     <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:16px;">
-                        Verifique a integridade física dos binários, permissões de pastas, serviço MariaDB, sockets, PHP-FPM, Nginx e validadores de token SSO em um clique.
+                        Verifique a integridade dos binarios, permissoes de pastas, servico MariaDB, sockets, Nginx e APIs do gerenciador SQL em um clique.
                     </p>
                     <div id="mariadb-diag-result" class="hidden" style="padding:16px; background:var(--surface2); border:1px solid var(--border); border-radius:8px;">
                         <!-- Dynamic diagnostic results will go here -->
@@ -946,8 +946,8 @@
                             <div class="action-section">
                                 <h3><i data-lucide="zap" style="width:14px;height:14px;vertical-align:middle;"></i> Ações Rápidas</h3>
                                 <div class="action-grid">
-                                    <button class="btn btn-primary btn-sm" onclick="actionPhpMyAdmin()" id="btn-phpmyadmin">
-                                        <i data-lucide="external-link"></i> phpMyAdmin
+                                    <button class="btn btn-primary btn-sm" onclick="actionOpenDbManager()" id="btn-db-manager">
+                                        <i data-lucide="table"></i> Gerenciador
                                     </button>
                                     <button class="btn btn-secondary btn-sm" onclick="actionShowTables()" id="btn-show-tables">
                                         <i data-lucide="database"></i> Tabelas
@@ -961,6 +961,42 @@
                                 </div>
                             </div>
 
+                            <div class="action-section hidden" id="db-table-browser">
+                                <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+                                    <h3 style="margin:0;"><i data-lucide="table" style="width:14px;height:14px;vertical-align:middle;"></i> Gerenciador de Tabelas</h3>
+                                    <button class="btn btn-secondary btn-sm" onclick="closeDbTableBrowser()">
+                                        <i data-lucide="x"></i> Fechar
+                                    </button>
+                                </div>
+                                <div class="db-table-manager">
+                                    <div class="db-table-sidebar" id="db-table-list">
+                                        <div class="muted-note">Selecione um banco para carregar tabelas.</div>
+                                    </div>
+                                    <div class="db-table-preview">
+                                        <div class="db-table-preview-head">
+                                            <div>
+                                                <strong id="db-table-title">Tabela</strong>
+                                                <div class="muted-note" id="db-table-meta">Sem tabela selecionada.</div>
+                                            </div>
+                                            <div class="toolbar-group">
+                                                <button class="btn btn-secondary btn-sm" onclick="loadCurrentDbTableRows(-1)">
+                                                    <i data-lucide="chevron-left"></i>
+                                                </button>
+                                                <button class="btn btn-secondary btn-sm" onclick="loadCurrentDbTableRows(1)">
+                                                    <i data-lucide="chevron-right"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div class="db-table-scroll">
+                                            <table class="db-data-table" id="db-table-data">
+                                                <tbody>
+                                                    <tr><td>Abra uma tabela para visualizar os registros.</td></tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                             <!-- Seção: Manutenção -->
                             <div class="action-section">
                                 <h3><i data-lucide="wrench" style="width:14px;height:14px;vertical-align:middle;"></i> Manutenção</h3>
@@ -1941,7 +1977,7 @@
 <div class="fm-toast-container" id="fm-toast-container"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="filemanager.js?v=0.2.182"></script>
+<script src="filemanager.js?v=0.2.183"></script>
 <script>
 window.toggleHostingTunnelFields = window.toggleHostingTunnelFields || function () {
     var checked = document.getElementById('hsCreateTunnel') && document.getElementById('hsCreateTunnel').checked;

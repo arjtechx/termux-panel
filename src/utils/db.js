@@ -116,6 +116,7 @@ async function initDb() {
         if (isDbEmpty) {
             console.log('[DB] Banco vazio. Verificando possibilidade de migração de dados...');
             await migrateJsonData(p);
+            await migrateExtraJsonData(p);
         }
 
     } catch (err) {
@@ -165,7 +166,7 @@ async function migrateJsonData(p) {
             for (const srv of services) {
                 if (!srv.id) srv.id = Date.now().toString() + Math.floor(Math.random()*1000);
                 await p.query('INSERT IGNORE INTO hosting (id, domain, port, root_dir, php_version, `data`) VALUES (?, ?, ?, ?, ?, ?)', 
-                    [srv.id, srv.domain || srv.name || 'Site', srv.port || 0, srv.rootDir || '', srv.phpVersion || '', JSON.stringify(srv)]);
+                    [srv.id, srv.domain || srv.name || 'Site', srv.port || srv.listenPort || 0, srv.rootDir || srv.path || '', srv.phpVersion || '', JSON.stringify(srv)]);
             }
             console.log('[DB] Migrado: hosting.json');
         } catch (e) { console.error('Erro ao migrar hosting.json', e.message); }
@@ -196,6 +197,65 @@ async function migrateJsonData(p) {
     }
     
     console.log('[DB] Migração inicial concluída. Você pode manter os .json antigos como backup.');
+}
+
+async function migrateExtraJsonData(p) {
+    const panelDir = path.join(__dirname, '..', '..');
+    const configDir = path.join(panelDir, 'config');
+    const dataDir = path.join(panelDir, 'data');
+
+    const upsertSetting = async (key, value) => {
+        await p.query(
+            'INSERT INTO settings (`key`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)',
+            [key, value]
+        );
+    };
+
+    const readJson = (file, fallback) => {
+        try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_) { return fallback; }
+    };
+
+    const cloudflaredInstancesFile = path.join(dataDir, 'cloudflared-instances.json');
+    if (fs.existsSync(cloudflaredInstancesFile)) {
+        try {
+            const instances = readJson(cloudflaredInstancesFile, []);
+            for (const inst of instances) {
+                if (!inst.id) inst.id = Date.now().toString() + Math.floor(Math.random() * 1000);
+                await p.query(
+                    'INSERT INTO cloudflared_instances (id, name, token, `data`) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE name = VALUES(name), token = VALUES(token), `data` = VALUES(`data`)',
+                    [inst.id, inst.name || inst.domain || inst.hostname || 'Tunnel', inst.token || '', JSON.stringify(inst)]
+                );
+            }
+            console.log('[DB] Migrado: data/cloudflared-instances.json');
+        } catch (e) { console.error('Erro ao migrar data/cloudflared-instances.json', e.message); }
+    }
+
+    const snapshotFiles = [
+        path.join(configDir, 'apps.json'),
+        path.join(configDir, 'auth.json'),
+        path.join(configDir, 'hosting.json'),
+        path.join(configDir, 'noip.json'),
+        path.join(configDir, 'system.json'),
+        path.join(configDir, 'ssh.json'),
+        path.join(configDir, 'memory.json'),
+        path.join(configDir, 'network-access.json'),
+        path.join(configDir, 'ui-state.json'),
+        path.join(dataDir, 'cloudflared-instances.json'),
+        path.join(dataDir, 'cloudflared-routes.json'),
+        path.join(dataDir, 'services.json'),
+        path.join(dataDir, 'routes.json'),
+        path.join(dataDir, 'tunnel-config.json')
+    ];
+
+    for (const file of snapshotFiles) {
+        if (!fs.existsSync(file)) continue;
+        const rel = path.relative(panelDir, file).replace(/\\/g, '/');
+        try {
+            await upsertSetting(`file_snapshot:${rel}`, fs.readFileSync(file, 'utf8'));
+        } catch (e) {
+            console.error(`Erro ao salvar snapshot ${rel}`, e.message);
+        }
+    }
 }
 
 module.exports = {
